@@ -391,10 +391,10 @@ CHAPTERS: list[dict[str, Any]] = [
 
 
 CHECK_LABELS = {
-    "assembly_von_mises_ok": "装配等效应力校核",
-    "operating_axial_ok": "服役轴向应力校核",
-    "residual_clamp_ok": "残余夹紧力校核",
-    "additional_load_ok": "附加载荷能力校核",
+    "assembly_von_mises_ok": "装配等效应力校核（VDI R4）",
+    "operating_axial_ok": "服役轴向应力校核（VDI R5）",
+    "residual_clamp_ok": "残余夹紧力校核（VDI R3）",
+    "additional_load_ok": "附加载荷能力参考估算 ⚠",
 }
 
 
@@ -455,7 +455,8 @@ class BoltPage(QWidget):
 
         nav_card = QFrame(self)
         nav_card.setObjectName("Card")
-        nav_card.setFixedWidth(280)
+        nav_card.setMinimumWidth(220)
+        nav_card.setMaximumWidth(320)
         nav_layout = QVBoxLayout(nav_card)
         nav_layout.setContentsMargins(12, 12, 12, 12)
         nav_layout.setSpacing(8)
@@ -480,7 +481,7 @@ class BoltPage(QWidget):
         footer_layout.setContentsMargins(16, 10, 16, 10)
         footer_layout.setSpacing(6)
         self.overall_badge = QLabel("等待计算", footer)
-        self.overall_badge.setObjectName("FailBadge")
+        self.overall_badge.setObjectName("WaitBadge")
         self.info_label = QLabel("选择左侧章节填写参数；聚焦字段可查看说明。", footer)
         self.info_label.setObjectName("SectionHint")
         self.info_label.setWordWrap(True)
@@ -758,7 +759,10 @@ class BoltPage(QWidget):
         self.message_box.clear()
         for badge in self._check_badges.values():
             self._set_badge(badge, "待计算", False)
-        self._set_badge(self.overall_badge, "等待计算", False)
+        self.overall_badge.setText("等待计算")
+        self.overall_badge.setObjectName("WaitBadge")
+        self.overall_badge.style().unpolish(self.overall_badge)
+        self.overall_badge.style().polish(self.overall_badge)
         self.diagram_widget.set_forces(0.0, 0.0, 0.0)
         self.info_label.setText("参数已重置为默认值。")
 
@@ -824,13 +828,21 @@ class BoltPage(QWidget):
         force = result["forces"]
         stresses = result["stresses_mpa"]
         fa_max = payload.get("loads", {}).get("FA_max", 0.0)
+
+        def _ratio(actual: float, allowed: float) -> str:
+            if allowed == 0:
+                return "N/A"
+            return f"{actual / allowed * 100:.1f}%"
+
         metric_lines = [
-            f"• 预紧力范围: FMmin = {inter['FMmin_N']:.1f} N, FMmax = {inter['FMmax_N']:.1f} N",
-            f"• 拧紧扭矩范围: MAmin = {torque['MA_min_Nm']:.2f} N·m, MAmax = {torque['MA_max_Nm']:.2f} N·m",
-            f"• 残余夹紧力: FK,res = {force['F_K_residual_N']:.1f} N (需求 {inter['F_K_required_N']:.1f} N)",
-            f"• 附加载荷能力: FA,max = {fa_max:.1f} N (允许 {force['FA_perm_N']:.1f} N)",
-            f"• 装配等效应力: {stresses['sigma_vm_assembly']:.1f} MPa (允许 {stresses['sigma_allow_assembly']:.1f} MPa)",
-            f"• 服役轴向应力: {stresses['sigma_ax_work']:.1f} MPa (允许 {stresses['sigma_allow_work']:.1f} MPa)",
+            f"• 预紧力范围: FMmin = {inter['FMmin_N']:.1f} N,  FMmax = {inter['FMmax_N']:.1f} N",
+            f"• 拧紧扭矩范围: MAmin = {torque['MA_min_Nm']:.2f} N·m,  MAmax = {torque['MA_max_Nm']:.2f} N·m",
+            f"• 残余夹紧力: FK,res = {force['F_K_residual_N']:.1f} N  /  需求 {inter['F_K_required_N']:.1f} N",
+            f"• 装配等效应力: {stresses['sigma_vm_assembly']:.1f} MPa  /  允许 {stresses['sigma_allow_assembly']:.1f} MPa"
+            f"  [{_ratio(stresses['sigma_vm_assembly'], stresses['sigma_allow_assembly'])}]",
+            f"• 服役轴向应力: {stresses['sigma_ax_work']:.1f} MPa  /  允许 {stresses['sigma_allow_work']:.1f} MPa"
+            f"  [{_ratio(stresses['sigma_ax_work'], stresses['sigma_allow_work'])}]",
+            f"• 附加载荷参考: FA,max = {fa_max:.1f} N  /  参考上限 {force['FA_perm_N']:.1f} N  (⚠ 参考估算，非 VDI 标准项)",
         ]
         self.metrics_text.setText("\n".join(metric_lines))
 
@@ -838,7 +850,9 @@ class BoltPage(QWidget):
         for warning in result.get("warnings", []):
             messages.append(f"[警告] {warning}")
         messages.extend(self._build_recommendations(result))
-        self.message_box.setPlainText("\n".join(messages) if messages else "未发现额外警告。")
+        messages.append("[说明] 本版本校核范围：装配强度(R4)、服役强度(R5)、残余夹紧力(R3)。"
+                        "支承面压强、螺纹脱扣、疲劳校核等尚未覆盖。")
+        self.message_box.setPlainText("\n".join(messages))
 
         self.diagram_widget.set_forces(inter["FMmin_N"], fa_max, force["F_K_residual_N"])
 

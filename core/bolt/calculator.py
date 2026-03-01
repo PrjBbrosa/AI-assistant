@@ -84,9 +84,17 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     p = _positive(float(_require(fastener, "p", "fastener")), "fastener.p")
     rp02 = _positive(float(_require(fastener, "Rp02", "fastener")), "fastener.Rp02")
     alpha_a = _positive(float(_require(tightening, "alpha_A", "tightening")), "tightening.alpha_A")
+    if alpha_a < 1.0:
+        raise InputError(f"tightening.alpha_A 必须 >= 1（当前值 {alpha_a}），散差系数不能使 FMmax < FMmin。")
     mu_thread = _positive(float(_require(tightening, "mu_thread", "tightening")), "tightening.mu_thread")
+    if mu_thread > 1.0:
+        raise InputError(f"tightening.mu_thread 超出合理范围（{mu_thread} > 1），请确认单位。")
     mu_bearing = _positive(float(_require(tightening, "mu_bearing", "tightening")), "tightening.mu_bearing")
+    if mu_bearing > 1.0:
+        raise InputError(f"tightening.mu_bearing 超出合理范围（{mu_bearing} > 1），请确认单位。")
     utilization = _positive(float(tightening.get("utilization", 0.9)), "tightening.utilization")
+    if utilization > 1.0:
+        raise InputError(f"tightening.utilization 不能超过 1（当前值 {utilization}）。")
     prevailing_torque = float(tightening.get("prevailing_torque", 0.0))
     flank_angle_deg = float(tightening.get("thread_flank_angle_deg", 60.0))
 
@@ -170,6 +178,9 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     residual_tol = max(1e-6, 1e-9 * max(abs(f_k_residual), abs(f_k_required), 1.0))
     pass_residual = f_k_residual + residual_tol >= f_k_required
 
+    # 附加载荷能力参考估算（非 VDI 2230 正式校核项）：
+    # 基于 10% 屈服强度裕量估算允许附加轴向载荷上限，供参考。
+    # VDI 2230 对轴向外载的正式控制通过 FMmin 设计（R1）和应力校核（R4/R5）完成。
     if phi_n <= 0:
         f_a_perm = math.inf
         pass_additional = False
@@ -180,10 +191,10 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     warnings = []
     if phi_n >= 1.0:
         warnings.append(
-            "phi_n >= 1.0, axial external load almost fully enters bolt; check stiffness model and n."
+            "phi_n >= 1.0：外载几乎全部进入螺栓，请核查刚度模型与载荷导入系数 n。"
         )
     if utilization > 0.95:
-        warnings.append("High assembly utilization (>0.95). Verify friction scatter and process capability.")
+        warnings.append("装配利用系数偏高（>0.95），建议核查摩擦散差与装配工艺能力。")
 
     checks_out = {
         "assembly_von_mises_ok": pass_assembly,
@@ -228,8 +239,8 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         "overall_pass": all(checks_out.values()),
         "warnings": warnings,
         "scope_note": (
-            "This is a VDI 2230 core-chain implementation (engineering first pass), "
-            "not a full-standard all-cases solver."
+            "本工具覆盖 VDI 2230 核心链路（装配强度、服役强度、残余夹紧力），"
+            "不包含完整标准全部工况（疲劳谱、支承面压强、螺纹脱扣、偏心载荷等）。"
         ),
     }
 

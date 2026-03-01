@@ -176,6 +176,14 @@ def apply_theme(app: QApplication) -> None:
             padding: 5px 10px;
             font-weight: 700;
         }
+        QLabel#WaitBadge {
+            background-color: #E8E3DA;
+            color: #6B665E;
+            border: 1px solid #D9D3CA;
+            border-radius: 10px;
+            padding: 5px 10px;
+            font-weight: 600;
+        }
         QStatusBar {
             border-top: 1px solid #D9D3CA;
             background-color: #EFEAE2;

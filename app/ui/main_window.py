@@ -32,6 +32,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Local Engineering Assistant")
         self.resize(1400, 860)
+        self.setMinimumSize(900, 620)
 
         root = QWidget(self)
         root_layout = QHBoxLayout(root)
