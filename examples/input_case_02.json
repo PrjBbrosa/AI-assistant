@@ -1,0 +1,36 @@
+{
+  "fastener": {
+    "d": 12.0,
+    "p": 1.75,
+    "Rp02": 940.0
+  },
+  "tightening": {
+    "alpha_A": 1.5,
+    "mu_thread": 0.1,
+    "mu_bearing": 0.12,
+    "utilization": 0.85,
+    "thread_flank_angle_deg": 60.0,
+    "prevailing_torque": 0.0
+  },
+  "loads": {
+    "FA_max": 6000.0,
+    "FQ_max": 600.0,
+    "seal_force_required": 0.0,
+    "embed_loss": 600.0,
+    "thermal_force_loss": 300.0,
+    "slip_friction_coefficient": 0.2,
+    "friction_interfaces": 1.0
+  },
+  "stiffness": {
+    "bolt_compliance": 1.8e-06,
+    "clamped_compliance": 2.4e-06,
+    "load_introduction_factor_n": 1.0
+  },
+  "bearing": {
+    "bearing_d_inner": 13.0,
+    "bearing_d_outer": 22.0
+  },
+  "checks": {
+    "yield_safety_operating": 1.15
+  }
+}

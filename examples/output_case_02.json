@@ -1,0 +1,88 @@
+{
+  "inputs_echo": {
+    "fastener": {
+      "d": 12.0,
+      "p": 1.75,
+      "Rp02": 940.0
+    },
+    "tightening": {
+      "alpha_A": 1.5,
+      "mu_thread": 0.1,
+      "mu_bearing": 0.12,
+      "utilization": 0.85,
+      "thread_flank_angle_deg": 60.0,
+      "prevailing_torque": 0.0
+    },
+    "loads": {
+      "FA_max": 6000.0,
+      "FQ_max": 600.0,
+      "seal_force_required": 0.0,
+      "embed_loss": 600.0,
+      "thermal_force_loss": 300.0,
+      "slip_friction_coefficient": 0.2,
+      "friction_interfaces": 1.0
+    },
+    "stiffness": {
+      "bolt_compliance": 1.8e-06,
+      "clamped_compliance": 2.4e-06,
+      "load_introduction_factor_n": 1.0
+    },
+    "bearing": {
+      "bearing_d_inner": 13.0,
+      "bearing_d_outer": 22.0
+    },
+    "checks": {
+      "yield_safety_operating": 1.15
+    }
+  },
+  "derived_geometry_mm": {
+    "As": 84.26636752380863,
+    "d2": 10.86334,
+    "d3": 9.8529775
+  },
+  "stiffness_model": {
+    "delta_s_mm_per_n": 1.8e-06,
+    "delta_p_mm_per_n": 2.4e-06,
+    "n": 1.0
+  },
+  "intermediate": {
+    "phi": 0.5714285714285715,
+    "phi_n": 0.5714285714285715,
+    "F_slip_required_N": 3000.0,
+    "F_K_required_N": 3000.0,
+    "FMmin_N": 6471.428571428571,
+    "FMmax_N": 9707.142857142855,
+    "k_thread_mm": 0.9111110552552846,
+    "k_bearing_mm": 1.05,
+    "lead_angle_deg": 2.9353995997348408,
+    "friction_angle_deg": 6.586775553629462,
+    "Dkm_mm": 17.5,
+    "M_thread_Nmm_at_FMmax": 8844.285172085225
+  },
+  "torque": {
+    "MA_min_Nm": 12.691190114723485,
+    "MA_max_Nm": 19.036785172085224
+  },
+  "stresses_mpa": {
+    "sigma_ax_assembly": 115.1959333526534,
+    "tau_assembly": 47.09018256733661,
+    "sigma_vm_assembly": 141.1472952049179,
+    "sigma_allow_assembly": 799.0,
+    "sigma_ax_work": 155.88323873107404,
+    "sigma_allow_work": 817.3913043478261
+  },
+  "forces": {
+    "F_bolt_work_max_N": 13135.714285714284,
+    "F_K_residual_N": 2999.9999999999995,
+    "FA_perm_N": 13861.817457666517
+  },
+  "checks": {
+    "assembly_von_mises_ok": true,
+    "operating_axial_ok": true,
+    "residual_clamp_ok": true,
+    "additional_load_ok": true
+  },
+  "overall_pass": true,
+  "warnings": [],
+  "scope_note": "This is a VDI 2230 core-chain implementation (engineering first pass), not a full-standard all-cases solver."
+}
