@@ -1,0 +1,39 @@
+{
+  "checks": {
+    "slip_safety_min": 1.2,
+    "stress_safety_min": 1.2
+  },
+  "options": {
+    "curve_points": 41
+  },
+  "geometry": {
+    "shaft_d_mm": 40.0,
+    "hub_outer_d_mm": 80.0,
+    "fit_length_mm": 45.0
+  },
+  "fit": {
+    "delta_min_um": 20.0,
+    "delta_max_um": 45.0
+  },
+  "roughness": {
+    "smoothing_factor": 0.4,
+    "shaft_rz_um": 6.3,
+    "hub_rz_um": 6.3
+  },
+  "materials": {
+    "shaft_e_mpa": 210000.0,
+    "shaft_nu": 0.30,
+    "shaft_yield_mpa": 600.0,
+    "hub_e_mpa": 210000.0,
+    "hub_nu": 0.30,
+    "hub_yield_mpa": 320.0
+  },
+  "loads": {
+    "torque_required_nm": 350.0,
+    "axial_force_required_n": 0.0
+  },
+  "friction": {
+    "mu_static": 0.14,
+    "mu_assembly": 0.12
+  }
+}

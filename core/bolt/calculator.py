@@ -79,6 +79,12 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     stiffness = data.get("stiffness", {})
     bearing = data.get("bearing", {})
     checks = data.get("checks", {})
+    operating = data.get("operating", {})
+    options = data.get("options", {})
+
+    check_level = str(options.get("check_level", "basic"))
+    if check_level not in {"basic", "thermal", "fatigue"}:
+        raise InputError(f"options.check_level 无效：{check_level}")
 
     d = _positive(float(_require(fastener, "d", "fastener")), "fastener.d")
     p = _positive(float(_require(fastener, "p", "fastener")), "fastener.p")
@@ -111,6 +117,7 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         "loads.thermal_force_loss",
         allow_zero=True,
     )
+    load_cycles = _positive(float(operating.get("load_cycles", 2_000_000.0)), "operating.load_cycles")
     slip_mu = float(loads.get("slip_friction_coefficient", mu_bearing))
     if fq_max > 0 and slip_mu <= 0:
         raise InputError("loads.slip_friction_coefficient must be > 0 when loads.FQ_max > 0")
@@ -140,7 +147,8 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     f_slip_required = 0.0 if fq_max == 0 else fq_max / (slip_mu * interfaces)
     f_k_required = max(seal_force_required, f_slip_required)
 
-    fm_min = f_k_required + (1.0 - phi_n) * fa_max + embed_loss + thermal_force_loss
+    thermal_effective = thermal_force_loss if check_level in {"thermal", "fatigue"} else 0.0
+    fm_min = f_k_required + (1.0 - phi_n) * fa_max + embed_loss + thermal_effective
     if fm_min <= 0:
         raise InputError("Calculated FMmin <= 0; check loads/stiffness inputs.")
     fm_max = alpha_a * fm_min
@@ -174,9 +182,20 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     sigma_allow_work = rp02 / yield_safety_operating
     pass_work = sigma_ax_work <= sigma_allow_work
 
-    f_k_residual = fm_min - embed_loss - thermal_force_loss - (1.0 - phi_n) * fa_max
+    f_k_residual = fm_min - embed_loss - thermal_effective - (1.0 - phi_n) * fa_max
     residual_tol = max(1e-6, 1e-9 * max(abs(f_k_residual), abs(f_k_required), 1.0))
     pass_residual = f_k_residual + residual_tol >= f_k_required
+
+    thermal_loss_ratio = 0.0 if fm_min <= 0 else thermal_effective / fm_min
+    pass_thermal = thermal_loss_ratio <= 0.25
+
+    sigma_a = phi_n * fa_max / (2.0 * geometry["As"])
+    sigma_m = (fm_max + 0.5 * phi_n * fa_max) / geometry["As"]
+    cycle_factor = (2_000_000.0 / load_cycles) ** 0.08 if load_cycles < 2_000_000.0 else 1.0
+    sigma_a_base = 0.18 * rp02 * cycle_factor
+    goodman_factor = max(0.1, 1.0 - sigma_m / (0.9 * rp02))
+    sigma_a_allow = sigma_a_base * goodman_factor
+    pass_fatigue = sigma_a <= sigma_a_allow
 
     # 附加载荷能力参考估算（非 VDI 2230 正式校核项）：
     # 基于 10% 屈服强度裕量估算允许附加轴向载荷上限，供参考。
@@ -195,6 +214,8 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         )
     if utilization > 0.95:
         warnings.append("装配利用系数偏高（>0.95），建议核查摩擦散差与装配工艺能力。")
+    if check_level in {"thermal", "fatigue"} and thermal_loss_ratio > 0.15:
+        warnings.append("热损失占比偏高（>15%），建议核查温差工况与材料热膨胀差。")
 
     checks_out = {
         "assembly_von_mises_ok": pass_assembly,
@@ -202,6 +223,10 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         "residual_clamp_ok": pass_residual,
         "additional_load_ok": pass_additional,
     }
+    if check_level in {"thermal", "fatigue"}:
+        checks_out["thermal_loss_ok"] = pass_thermal
+    if check_level == "fatigue":
+        checks_out["fatigue_ok"] = pass_fatigue
 
     return {
         "inputs_echo": data,
@@ -236,11 +261,24 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
             "FA_perm_N": f_a_perm,
         },
         "checks": checks_out,
+        "check_level": check_level,
+        "thermal": {
+            "thermal_loss_effective_N": thermal_effective,
+            "thermal_loss_ratio": thermal_loss_ratio,
+            "thermal_loss_ratio_limit": 0.25,
+        },
+        "fatigue": {
+            "sigma_a": sigma_a,
+            "sigma_m": sigma_m,
+            "sigma_a_allow": sigma_a_allow,
+            "load_cycles": load_cycles,
+            "cycle_factor": cycle_factor,
+            "goodman_factor": goodman_factor,
+        },
         "overall_pass": all(checks_out.values()),
         "warnings": warnings,
         "scope_note": (
             "本工具覆盖 VDI 2230 核心链路（装配强度、服役强度、残余夹紧力），"
-            "不包含完整标准全部工况（疲劳谱、支承面压强、螺纹脱扣、偏心载荷等）。"
+            "并提供温度与疲劳的工程化扩展校核。"
         ),
     }
-

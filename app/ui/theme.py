@@ -1,4 +1,4 @@
-"""Claude-inspired warm neutral theme for PySide6."""
+"""Warm neutral theme for PySide6."""
 
 from __future__ import annotations
 
@@ -165,7 +165,8 @@ def apply_theme(app: QApplication) -> None:
             color: #1E5A2F;
             border: 1px solid #A7C6A0;
             border-radius: 10px;
-            padding: 5px 10px;
+            padding: 3px 8px;
+            font-size: 11px;
             font-weight: 700;
         }
         QLabel#FailBadge {
@@ -173,7 +174,8 @@ def apply_theme(app: QApplication) -> None:
             color: #7F2D1A;
             border: 1px solid #E5A89A;
             border-radius: 10px;
-            padding: 5px 10px;
+            padding: 3px 8px;
+            font-size: 11px;
             font-weight: 700;
         }
         QLabel#WaitBadge {
@@ -181,7 +183,8 @@ def apply_theme(app: QApplication) -> None:
             color: #6B665E;
             border: 1px solid #D9D3CA;
             border-radius: 10px;
-            padding: 5px 10px;
+            padding: 3px 8px;
+            font-size: 11px;
             font-weight: 600;
         }
         QStatusBar {
