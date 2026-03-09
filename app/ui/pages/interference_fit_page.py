@@ -73,7 +73,7 @@ class FieldSpec:
 CHAPTERS: list[dict[str, Any]] = [
     {
         "title": "校核目标",
-        "subtitle": "按最小过盈量进行能力与安全系数校核。",
+        "subtitle": "定义最小安全系数与工况系数 KA，按设计载荷执行校核。",
         "fields": [
             FieldSpec(
                 "checks.slip_safety_min",
@@ -92,6 +92,15 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("checks", "stress_safety_min"),
                 default="1.20",
                 placeholder="建议 1.1~1.8",
+            ),
+            FieldSpec(
+                "loads.application_factor_ka",
+                "工况系数 KA",
+                "-",
+                "按 DIN 3990 取值，用于把名义载荷放大到设计载荷。",
+                mapping=("loads", "application_factor_ka"),
+                default="1.20",
+                placeholder="建议 1.0~2.25",
             ),
             FieldSpec(
                 "options.curve_points",
@@ -234,8 +243,8 @@ CHAPTERS: list[dict[str, Any]] = [
         ],
     },
     {
-        "title": "载荷与摩擦",
-        "subtitle": "传递需求与摩擦参数；首版按恒定摩擦系数计算。",
+        "title": "载荷与附加载荷",
+        "subtitle": "输入扭矩、轴向力、径向力和弯矩，校核防滑与张口缝风险。",
         "fields": [
             FieldSpec(
                 "loads.torque_required_nm",
@@ -256,29 +265,56 @@ CHAPTERS: list[dict[str, Any]] = [
                 placeholder="例如 0",
             ),
             FieldSpec(
-                "friction.mu_static",
-                "静摩擦系数 mu",
+                "loads.radial_force_required_n",
+                "需求径向力 F_r,req",
+                "N",
+                "用于附加接触压强与张口缝校核；无要求可填 0。",
+                mapping=("loads", "radial_force_required_n"),
+                default="0",
+                placeholder="例如 0",
+            ),
+            FieldSpec(
+                "loads.bending_moment_required_nm",
+                "需求弯矩 M_b,req",
+                "N·m",
+                "用于附加接触压强与张口缝校核；本轮按保守简化处理。",
+                mapping=("loads", "bending_moment_required_nm"),
+                default="0",
+                placeholder="例如 0",
+            ),
+        ],
+    },
+    {
+        "title": "摩擦与粗糙度",
+        "subtitle": "分开输入服役摩擦与装配摩擦，并按 DIN 7190 粗糙度压平修正有效过盈。",
+        "fields": [
+            FieldSpec(
+                "friction.mu_torque",
+                "扭矩方向摩擦系数 mu_T",
                 "-",
-                "服役阶段摩擦系数，用于可传递扭矩与轴向力能力。",
-                mapping=("friction", "mu_static"),
+                "服役阶段周向摩擦系数，用于扭矩传递能力。",
+                mapping=("friction", "mu_torque"),
+                default="0.14",
+                placeholder="建议 0.08~0.20",
+            ),
+            FieldSpec(
+                "friction.mu_axial",
+                "轴向方向摩擦系数 mu_Ax",
+                "-",
+                "服役阶段轴向摩擦系数，用于抗窜动能力。",
+                mapping=("friction", "mu_axial"),
                 default="0.14",
                 placeholder="建议 0.08~0.20",
             ),
             FieldSpec(
                 "friction.mu_assembly",
-                "装配摩擦系数 mu_A",
+                "装配摩擦系数 mu_Assy",
                 "-",
                 "装配压入阶段摩擦系数，用于压入力估算。",
                 mapping=("friction", "mu_assembly"),
                 default="0.12",
                 placeholder="建议 0.06~0.18",
             ),
-        ],
-    },
-    {
-        "title": "工艺记录",
-        "subtitle": "粗糙度压平修正 + 工艺记录。",
-        "fields": [
             FieldSpec(
                 "roughness.profile",
                 "粗糙度压平模型",
@@ -315,23 +351,6 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="6.3",
                 placeholder="例如 6.3",
             ),
-            FieldSpec(
-                "process.assembly_method",
-                "装配方式",
-                "-",
-                "用于记录工艺路线；首版不参与计算。",
-                widget_type="choice",
-                options=("压装", "热装", "液压装配", "复合装配"),
-                default="压装",
-            ),
-            FieldSpec(
-                "process.temp_delta_c",
-                "热装温差 DeltaT",
-                "°C",
-                "若采用热装可填预计温差；首版仅记录。",
-                default="0",
-                placeholder="例如 80",
-            ),
         ],
     },
 ]
@@ -339,19 +358,22 @@ CHAPTERS: list[dict[str, Any]] = [
 CHECK_LABELS = {
     "torque_ok": "扭矩能力校核（按最小过盈）",
     "axial_ok": "轴向力能力校核（按最小过盈）",
-    "combined_ok": "联合载荷利用率校核",
-    "pressure_ok": "需求压力匹配校核",
+    "gaping_ok": "张口缝校核（p_min >= p_r + p_b）",
     "fit_range_ok": "过盈量范围覆盖校核",
     "shaft_stress_ok": "轴侧应力安全系数校核",
     "hub_stress_ok": "轮毂应力安全系数校核",
 }
 
 BEGINNER_GUIDES: dict[str, str] = {
+    "loads.application_factor_ka": "工况越冲击，KA 越大，需求过盈也会随之提高。",
     "geometry.shaft_d_mm": "决定接触面积与接触半径，直接影响扭矩能力。",
     "geometry.hub_outer_d_mm": "外径越大，轮毂刚度越高、同等过盈下接触压力越低。",
     "fit.delta_min_um": "校核安全时应优先关注最小过盈工况。",
     "fit.delta_max_um": "校核应力时应优先关注最大过盈工况。",
-    "friction.mu_static": "与表面状态/润滑密切相关，是能力计算最敏感参数之一。",
+    "loads.radial_force_required_n": "径向力会抬高附加接触压强，过大时可能导致张口缝。",
+    "loads.bending_moment_required_nm": "弯矩会让接触压力分布恶化，本轮按保守简化估算附加压强。",
+    "friction.mu_torque": "与表面状态/润滑密切相关，是扭矩能力计算最敏感参数之一。",
+    "friction.mu_axial": "轴向抗滑移能力可与周向能力采用不同摩擦系数。",
     "friction.mu_assembly": "主要影响装配压入力，可与服役摩擦系数不同。",
     "materials.shaft_material": "标准材料会自动带出弹性模量和泊松比，便于快速建模。",
     "materials.hub_material": "轮毂材料对压力-应力转换影响显著，建议按实际牌号选择。",
@@ -369,7 +391,7 @@ class InterferenceFitPage(BaseChapterPage):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(
             title="过盈配合 · 圆柱面校核",
-            subtitle="轴连接首版：实心轴 + 厚壁轮毂；输入数值后执行完整校核链路。",
+            subtitle="DIN 7190 核心增强版：实心轴 + 厚壁轮毂，覆盖防滑、张口缝与应力校核。",
             parent=parent,
         )
         self._last_payload: dict[str, Any] | None = None
@@ -742,11 +764,11 @@ class InterferenceFitPage(BaseChapterPage):
 
         if overall:
             self.result_title.setText("校核通过")
-            self.result_summary.setText("该工况在当前输入范围内满足能力与应力要求。")
+            self.result_summary.setText("该工况在当前输入范围内满足 DIN 7190 核心能力、张口缝与应力要求。")
             self.set_overall_status("总体通过", "pass")
         else:
             self.result_title.setText("校核不通过")
-            self.result_summary.setText("存在未满足项，请按下方建议调整过盈/材料/几何参数。")
+            self.result_summary.setText("存在未满足项，请优先查看张口缝、需求过盈和应力侧提示。")
             self.set_overall_status("总体不通过", "fail")
 
         for key, badge in self._check_badges.items():
@@ -760,17 +782,18 @@ class InterferenceFitPage(BaseChapterPage):
         rough = result["roughness"]
         stress = result["stress_mpa"]
         safety = result["safety"]
+        add_p = result["additional_pressure_mpa"]
 
         metric_lines = [
-            f"• 接触压力: p_min={p['p_min']:.2f} MPa, p_max={p['p_max']:.2f} MPa, p_req={p['p_required']:.2f} MPa",
-            f"• 粗糙度修正: s={rough['subsidence_um']:.2f} um, delta_eff,min={rough['delta_effective_min_um']:.2f} um, delta_eff,max={rough['delta_effective_max_um']:.2f} um",
-            f"• 扭矩能力: T_min={cap['torque_min_nm']:.1f} N·m, T_max={cap['torque_max_nm']:.1f} N·m",
-            f"• 轴向能力: F_min={cap['axial_min_n']:.0f} N, F_max={cap['axial_max_n']:.0f} N",
-            f"• 压入力: F_press,min={asm['press_force_min_n']:.0f} N, F_press,max={asm['press_force_max_n']:.0f} N",
-            f"• 最小需求过盈量: delta_req={req['delta_required_um']:.2f} um",
-            f"• 应力: shaft_vm,max={stress['shaft_vm_max']:.1f} MPa, hub_vm,max={stress['hub_vm_max']:.1f} MPa, hub_sigma_theta,max={stress['hub_hoop_inner_max']:.1f} MPa",
+            f"• 设计载荷: KA={safety['application_factor_ka']:.2f}, p_req={p['p_required']:.2f} MPa, delta_req={req['delta_required_um']:.2f} um",
+            f"• 接触压力 min/mean/max: {p['p_min']:.2f} / {p['p_mean']:.2f} / {p['p_max']:.2f} MPa",
+            f"• 扭矩能力 min/mean/max: {cap['torque_min_nm']:.1f} / {cap['torque_mean_nm']:.1f} / {cap['torque_max_nm']:.1f} N·m",
+            f"• 轴向能力 min/mean/max: {cap['axial_min_n']:.0f} / {cap['axial_mean_n']:.0f} / {cap['axial_max_n']:.0f} N",
+            f"• 压入力 min/mean/max: {asm['press_force_min_n']:.0f} / {asm['press_force_mean_n']:.0f} / {asm['press_force_max_n']:.0f} N",
+            f"• 附加载荷压强: p_r={add_p['p_radial']:.2f} MPa, p_b={add_p['p_bending']:.2f} MPa, p_gap={add_p['p_gap']:.2f} MPa",
+            f"• 粗糙度修正: s={rough['subsidence_um']:.2f} um, delta_eff,min/mean/max={rough['delta_effective_min_um']:.2f} / {rough['delta_effective_mean_um']:.2f} / {rough['delta_effective_max_um']:.2f} um",
+            f"• 应力 max: shaft_vm={stress['shaft_vm_max']:.1f} MPa, hub_vm={stress['hub_vm_max']:.1f} MPa, hub_sigma_theta={stress['hub_hoop_inner_max']:.1f} MPa",
             f"• 安全系数: S_torque={safety['torque_sf']:.2f}, S_axial={safety['axial_sf']:.2f}, S_shaft={safety['shaft_sf']:.2f}, S_hub={safety['hub_sf']:.2f}",
-            f"• 联合载荷利用率: usage={safety['combined_usage']:.3f}（要求 <= {1.0 / safety['slip_safety_min']:.3f}）",
         ]
         self.metrics_text.setText("\n".join(metric_lines))
 
@@ -788,20 +811,20 @@ class InterferenceFitPage(BaseChapterPage):
             messages.append(f"[提示] {msg}")
         messages.extend(self._build_recommendations(result))
         messages.append(
-            "[说明] 当前模型为圆柱面过盈首版：线弹性、均匀接触压力、恒定摩擦。"
-            "粗糙度修正、温度分布与塑性修正将在后续版本扩展。"
+            "[说明] 当前模型为 DIN 7190 核心增强版：线弹性、均匀接触压力、恒定摩擦。"
+            "弯矩附加压强按 QW=0 的保守简化处理；阶梯轮毂、离心力与配合搜索未纳入本轮。"
         )
         self.message_box.setPlainText("\n".join(messages))
 
     def _build_recommendations(self, result: dict[str, Any]) -> list[str]:
         checks = result.get("checks", {})
         recs: list[str] = []
+        if not checks.get("gaping_ok", True):
+            recs.append("[建议] 存在张口缝风险：优先增大最小过盈、提高配合长度或降低径向力/弯矩。")
         if not checks.get("torque_ok", True):
-            recs.append("[建议] 扭矩能力不足：可增大最小过盈、提高摩擦系数或增大配合长度。")
+            recs.append("[建议] 扭矩能力不足：可增大最小过盈、提高 mu_T 或增大配合长度。")
         if not checks.get("axial_ok", True):
-            recs.append("[建议] 轴向能力不足：可增大最小过盈、提高摩擦系数或增加接触面积。")
-        if not checks.get("combined_ok", True):
-            recs.append("[建议] 联合载荷利用率超限：应同时提高扭矩和轴向能力裕量。")
+            recs.append("[建议] 轴向能力不足：可增大最小过盈、提高 mu_Ax 或增加接触面积。")
         if not checks.get("fit_range_ok", True):
             recs.append("[建议] 最大过盈不足以覆盖需求：请提升公差带或调整结构尺寸。")
         if not checks.get("shaft_stress_ok", True):
@@ -831,6 +854,13 @@ class InterferenceFitPage(BaseChapterPage):
                 section = inputs.get(sec)
                 if isinstance(section, dict) and key in section:
                     value = section[key]
+                elif (
+                    sec == "friction"
+                    and key in {"mu_torque", "mu_axial"}
+                    and isinstance(section, dict)
+                    and "mu_static" in section
+                ):
+                    value = section["mu_static"]
             if value is None:
                 continue
             widget = self._field_widgets[spec.field_id]
@@ -926,9 +956,10 @@ class InterferenceFitPage(BaseChapterPage):
         safety = result["safety"]
         req = result["required"]
         rough = result["roughness"]
+        add_p = result["additional_pressure_mpa"]
 
         lines = [
-            "过盈配合校核报告（圆柱面首版）",
+            "过盈配合校核报告（DIN 7190 核心增强版）",
             f"生成时间: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             "",
             f"总体结论: {'通过' if result['overall_pass'] else '不通过'}",
@@ -942,19 +973,21 @@ class InterferenceFitPage(BaseChapterPage):
             [
                 "",
                 "关键值:",
-                f"- p_min / p_max / p_req: {p['p_min']:.3f} / {p['p_max']:.3f} / {p['p_required']:.3f} MPa",
+                f"- p_min / p_mean / p_max / p_req: {p['p_min']:.3f} / {p['p_mean']:.3f} / {p['p_max']:.3f} / {p['p_required']:.3f} MPa",
+                f"- p_r / p_b / p_gap: {add_p['p_radial']:.3f} / {add_p['p_bending']:.3f} / {add_p['p_gap']:.3f} MPa",
                 f"- roughness subsidence s: {rough['subsidence_um']:.3f} um",
-                f"- delta_eff,min / delta_eff,max: {rough['delta_effective_min_um']:.3f} / {rough['delta_effective_max_um']:.3f} um",
-                f"- T_min / T_max: {cap['torque_min_nm']:.3f} / {cap['torque_max_nm']:.3f} N·m",
-                f"- F_min / F_max: {cap['axial_min_n']:.3f} / {cap['axial_max_n']:.3f} N",
-                f"- F_press,min / F_press,max: {asm['press_force_min_n']:.3f} / {asm['press_force_max_n']:.3f} N",
+                f"- delta_eff,min / mean / max: {rough['delta_effective_min_um']:.3f} / {rough['delta_effective_mean_um']:.3f} / {rough['delta_effective_max_um']:.3f} um",
+                f"- T_min / mean / max: {cap['torque_min_nm']:.3f} / {cap['torque_mean_nm']:.3f} / {cap['torque_max_nm']:.3f} N·m",
+                f"- F_min / mean / max: {cap['axial_min_n']:.3f} / {cap['axial_mean_n']:.3f} / {cap['axial_max_n']:.3f} N",
+                f"- F_press,min / mean / max: {asm['press_force_min_n']:.3f} / {asm['press_force_mean_n']:.3f} / {asm['press_force_max_n']:.3f} N",
                 f"- delta_required: {req['delta_required_um']:.3f} um",
                 f"- shaft_vm_max / hub_vm_max: {stress['shaft_vm_max']:.3f} / {stress['hub_vm_max']:.3f} MPa",
                 f"- S_torque / S_axial: {safety['torque_sf']:.3f} / {safety['axial_sf']:.3f}",
                 f"- S_shaft / S_hub: {safety['shaft_sf']:.3f} / {safety['hub_sf']:.3f}",
                 "",
                 "说明:",
-                "- 当前模型为圆柱面过盈首版：线弹性、均匀接触压力、恒定摩擦。",
+                "- 当前模型为 DIN 7190 核心增强版：线弹性、均匀接触压力、恒定摩擦。",
+                "- 弯矩附加压强按 QW=0 的保守简化处理。",
             ]
         )
         return lines

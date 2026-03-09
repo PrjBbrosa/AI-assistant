@@ -30,10 +30,14 @@
   },
   "loads": {
     "torque_required_nm": 350.0,
-    "axial_force_required_n": 0.0
+    "axial_force_required_n": 0.0,
+    "radial_force_required_n": 0.0,
+    "bending_moment_required_nm": 0.0,
+    "application_factor_ka": 1.2
   },
   "friction": {
-    "mu_static": 0.14,
+    "mu_torque": 0.14,
+    "mu_axial": 0.14,
     "mu_assembly": 0.12
   }
 }

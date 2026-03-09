@@ -105,11 +105,28 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     if delta_eff_max_um <= 0:
         raise InputError("粗糙度压平后有效过盈量 <= 0，请增大过盈量或降低 Rz。")
 
-    mu_static = _in_open_interval(
-        float(_require(friction, "mu_static", "friction")),
+    delta_mean_um = 0.5 * (delta_min_um + delta_max_um)
+    delta_eff_mean_um = max(0.0, delta_mean_um - subsidence_um)
+
+    legacy_mu_static = friction.get("mu_static")
+    mu_torque_source = friction.get("mu_torque", legacy_mu_static)
+    if mu_torque_source is None:
+        raise InputError("缺少必填字段: friction.mu_torque")
+    mu_axial_source = friction.get("mu_axial", legacy_mu_static)
+    if mu_axial_source is None:
+        raise InputError("缺少必填字段: friction.mu_axial")
+
+    mu_torque = _in_open_interval(
+        float(mu_torque_source),
         0.0,
         1.0,
-        "friction.mu_static",
+        "friction.mu_torque",
+    )
+    mu_axial = _in_open_interval(
+        float(mu_axial_source),
+        0.0,
+        1.0,
+        "friction.mu_axial",
     )
     mu_assembly = _in_open_interval(
         float(_require(friction, "mu_assembly", "friction")),
@@ -128,6 +145,25 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
         "loads.axial_force_required_n",
         allow_zero=True,
     )
+    radial_required_n = _positive(
+        float(loads.get("radial_force_required_n", 0.0)),
+        "loads.radial_force_required_n",
+        allow_zero=True,
+    )
+    bending_required_nm = _positive(
+        float(loads.get("bending_moment_required_nm", 0.0)),
+        "loads.bending_moment_required_nm",
+        allow_zero=True,
+    )
+    application_factor = _positive(
+        float(loads.get("application_factor_ka", 1.0)),
+        "loads.application_factor_ka",
+    )
+
+    torque_design_nm = application_factor * torque_required_nm
+    axial_design_n = application_factor * axial_required_n
+    radial_design_n = application_factor * radial_required_n
+    bending_design_nm = application_factor * bending_required_nm
 
     slip_safety_min = _positive(float(checks.get("slip_safety_min", 1.2)), "checks.slip_safety_min")
     stress_safety_min = _positive(float(checks.get("stress_safety_min", 1.2)), "checks.stress_safety_min")
@@ -157,60 +193,118 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     contact_area_mm2 = math.pi * d * l_fit
 
     def torque_capacity_nm(pressure_mpa: float) -> float:
-        return mu_static * pressure_mpa * contact_area_mm2 * radius / 1000.0
+        return mu_torque * pressure_mpa * contact_area_mm2 * radius / 1000.0
 
     def axial_capacity_n(pressure_mpa: float) -> float:
-        return mu_static * pressure_mpa * contact_area_mm2
+        return mu_axial * pressure_mpa * contact_area_mm2
 
     def press_force_n(pressure_mpa: float) -> float:
         return mu_assembly * pressure_mpa * contact_area_mm2
 
-    torque_min_nm = torque_capacity_nm(p_min)
-    torque_max_nm = torque_capacity_nm(p_max)
-    axial_min_n = axial_capacity_n(p_min)
-    axial_max_n = axial_capacity_n(p_max)
-    press_force_min_n = press_force_n(p_min)
-    press_force_max_n = press_force_n(p_max)
+    hub_vm_coeff = math.sqrt(1.0 + geometry_factor + geometry_factor * geometry_factor)
+
+    def build_state(delta_input_um: float) -> Dict[str, float]:
+        delta_eff_um = max(0.0, delta_input_um - subsidence_um)
+        pressure_mpa = pressure_from_effective_interference(delta_eff_um)
+        torque_cap_nm = torque_capacity_nm(pressure_mpa)
+        axial_cap_n = axial_capacity_n(pressure_mpa)
+        press_force_val_n = press_force_n(pressure_mpa)
+        shaft_vm_mpa = pressure_mpa
+        hub_vm_mpa = pressure_mpa * hub_vm_coeff
+        hub_hoop_inner_mpa = pressure_mpa * geometry_factor
+        shaft_sf = math.inf if shaft_vm_mpa == 0 else yield_shaft / shaft_vm_mpa
+        hub_sf = math.inf if hub_vm_mpa == 0 else yield_hub / hub_vm_mpa
+        return {
+            "delta_input_um": delta_input_um,
+            "delta_effective_um": delta_eff_um,
+            "pressure_mpa": pressure_mpa,
+            "torque_cap_nm": torque_cap_nm,
+            "axial_cap_n": axial_cap_n,
+            "press_force_n": press_force_val_n,
+            "shaft_vm_mpa": shaft_vm_mpa,
+            "hub_vm_mpa": hub_vm_mpa,
+            "hub_hoop_inner_mpa": hub_hoop_inner_mpa,
+            "shaft_sf": shaft_sf,
+            "hub_sf": hub_sf,
+        }
+
+    states = {
+        "min": build_state(delta_min_um),
+        "mean": build_state(delta_mean_um),
+        "max": build_state(delta_max_um),
+    }
+    min_state = states["min"]
+    mean_state = states["mean"]
+    max_state = states["max"]
+
+    p_min = min_state["pressure_mpa"]
+    p_mean = mean_state["pressure_mpa"]
+    p_max = max_state["pressure_mpa"]
+
+    torque_min_nm = min_state["torque_cap_nm"]
+    torque_mean_nm = mean_state["torque_cap_nm"]
+    torque_max_nm = max_state["torque_cap_nm"]
+    axial_min_n = min_state["axial_cap_n"]
+    axial_mean_n = mean_state["axial_cap_n"]
+    axial_max_n = max_state["axial_cap_n"]
+    press_force_min_n = min_state["press_force_n"]
+    press_force_mean_n = mean_state["press_force_n"]
+    press_force_max_n = max_state["press_force_n"]
+
+    shaft_vm_min = min_state["shaft_vm_mpa"]
+    shaft_vm_mean = mean_state["shaft_vm_mpa"]
+    shaft_vm_max = max_state["shaft_vm_mpa"]
+    hub_vm_min = min_state["hub_vm_mpa"]
+    hub_vm_mean = mean_state["hub_vm_mpa"]
+    hub_vm_max = max_state["hub_vm_mpa"]
+    hub_hoop_inner_min = min_state["hub_hoop_inner_mpa"]
+    hub_hoop_inner_mean = mean_state["hub_hoop_inner_mpa"]
+    hub_hoop_inner_max = max_state["hub_hoop_inner_mpa"]
 
     p_req_torque = 0.0
-    if torque_required_nm > 0:
-        p_req_torque = torque_required_nm * 1000.0 / (mu_static * contact_area_mm2 * radius)
+    if torque_design_nm > 0:
+        p_req_torque = torque_design_nm * 1000.0 / (mu_torque * contact_area_mm2 * radius)
     p_req_axial = 0.0
-    if axial_required_n > 0:
-        p_req_axial = axial_required_n / (mu_static * contact_area_mm2)
-    p_required = max(p_req_torque, p_req_axial)
-    delta_required_eff_um = 2.0 * c_total * p_required * 1000.0
-    delta_required_um = delta_required_eff_um + subsidence_um
+    if axial_design_n > 0:
+        p_req_axial = axial_design_n / (mu_axial * contact_area_mm2)
+    p_radial = radial_design_n / (d * l_fit) if radial_design_n > 0 else 0.0
+    # Conservative simplification of the handbook expression by taking QW = 0.
+    p_bending = 2.25 * bending_design_nm * 1000.0 / (d * l_fit * l_fit) if bending_design_nm > 0 else 0.0
+    p_gap = p_radial + p_bending
+    p_required = max(p_req_torque, p_req_axial, p_gap)
+    if p_required > 0:
+        delta_required_eff_um = 2.0 * c_total * p_required * 1000.0
+        delta_required_um = delta_required_eff_um + subsidence_um
+    else:
+        delta_required_eff_um = 0.0
+        delta_required_um = 0.0
 
-    shaft_vm_min = p_min
-    shaft_vm_max = p_max
-    hub_vm_coeff = math.sqrt(1.0 + geometry_factor + geometry_factor * geometry_factor)
-    hub_vm_min = p_min * hub_vm_coeff
-    hub_vm_max = p_max * hub_vm_coeff
-    hub_hoop_inner_min = p_min * geometry_factor
-    hub_hoop_inner_max = p_max * geometry_factor
-
-    shaft_sf_min = math.inf if shaft_vm_max == 0 else yield_shaft / shaft_vm_max
-    hub_sf_min = math.inf if hub_vm_max == 0 else yield_hub / hub_vm_max
+    shaft_sf_min = max_state["shaft_sf"]
+    hub_sf_min = max_state["hub_sf"]
     shaft_ok = shaft_sf_min >= stress_safety_min
     hub_ok = hub_sf_min >= stress_safety_min
 
-    torque_sf = math.inf if torque_required_nm == 0 else torque_min_nm / torque_required_nm
-    axial_sf = math.inf if axial_required_n == 0 else axial_min_n / axial_required_n
+    torque_sf = math.inf if torque_design_nm == 0 else torque_min_nm / torque_design_nm
+    axial_sf = math.inf if axial_design_n == 0 else axial_min_n / axial_design_n
     torque_ok = torque_sf >= slip_safety_min
     axial_ok = axial_sf >= slip_safety_min
-    pressure_ok = (p_min >= p_required) and (p_max >= p_required)
+    gaping_ok = p_min >= p_gap
+    pressure_ok = p_min >= p_required
     fit_range_ok = delta_max_um >= delta_required_um
 
     combined_usage = 0.0
-    if torque_required_nm > 0 and torque_min_nm > 0:
-        combined_usage += (torque_required_nm / torque_min_nm) ** 2
-    if axial_required_n > 0 and axial_min_n > 0:
-        combined_usage += (axial_required_n / axial_min_n) ** 2
+    if torque_design_nm > 0 and torque_min_nm > 0:
+        combined_usage += (torque_design_nm / torque_min_nm) ** 2
+    if axial_design_n > 0 and axial_min_n > 0:
+        combined_usage += (axial_design_n / axial_min_n) ** 2
     combined_usage = math.sqrt(combined_usage)
     combined_ok = combined_usage <= (1.0 / slip_safety_min if combined_usage > 0 else 1.0)
 
     warnings: list[str] = []
+    if not gaping_ok:
+        warnings.append(
+            f"最小接触压力 p_min={p_min:.2f} MPa 小于附加载荷要求 p_gap={p_gap:.2f} MPa，存在张口缝风险。"
+        )
     if fit_range_ok and delta_max_um - delta_required_um < 2.0:
         warnings.append("最大过盈量接近需求下限，建议增加加工裕量。")
     if subsidence_um > 0 and delta_min_um > 0:
@@ -236,18 +330,30 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     checks_out = {
         "torque_ok": torque_ok,
         "axial_ok": axial_ok,
+        "gaping_ok": gaping_ok,
         "pressure_ok": pressure_ok,
         "fit_range_ok": fit_range_ok,
         "combined_ok": combined_ok,
         "shaft_stress_ok": shaft_ok,
         "hub_stress_ok": hub_ok,
     }
+    overall_pass = all(
+        checks_out[key]
+        for key in (
+            "torque_ok",
+            "axial_ok",
+            "gaping_ok",
+            "fit_range_ok",
+            "shaft_stress_ok",
+            "hub_stress_ok",
+        )
+    )
 
     return {
         "inputs_echo": data,
         "model": {
             "type": "cylindrical_interference_solid_shaft",
-            "assumption": "线弹性、均匀接触压力、常摩擦系数",
+            "assumption": "线弹性、均匀接触压力、常摩擦系数、QW=0 保守简化",
         },
         "derived": {
             "geometry_factor": geometry_factor,
@@ -258,25 +364,37 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
         },
         "pressure_mpa": {
             "p_min": p_min,
+            "p_mean": p_mean,
             "p_max": p_max,
             "p_required": p_required,
         },
+        "additional_pressure_mpa": {
+            "p_radial": p_radial,
+            "p_bending": p_bending,
+            "p_gap": p_gap,
+        },
         "capacity": {
             "torque_min_nm": torque_min_nm,
+            "torque_mean_nm": torque_mean_nm,
             "torque_max_nm": torque_max_nm,
             "axial_min_n": axial_min_n,
+            "axial_mean_n": axial_mean_n,
             "axial_max_n": axial_max_n,
         },
         "assembly": {
             "press_force_min_n": press_force_min_n,
+            "press_force_mean_n": press_force_mean_n,
             "press_force_max_n": press_force_max_n,
         },
         "stress_mpa": {
             "shaft_vm_min": shaft_vm_min,
+            "shaft_vm_mean": shaft_vm_mean,
             "shaft_vm_max": shaft_vm_max,
             "hub_vm_min": hub_vm_min,
+            "hub_vm_mean": hub_vm_mean,
             "hub_vm_max": hub_vm_max,
             "hub_hoop_inner_min": hub_hoop_inner_min,
+            "hub_hoop_inner_mean": hub_hoop_inner_mean,
             "hub_hoop_inner_max": hub_hoop_inner_max,
         },
         "safety": {
@@ -287,10 +405,14 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
             "combined_usage": combined_usage,
             "slip_safety_min": slip_safety_min,
             "stress_safety_min": stress_safety_min,
+            "application_factor_ka": application_factor,
+            "gaping_margin_mpa": p_min - p_gap,
         },
         "required": {
             "p_required_torque_mpa": p_req_torque,
             "p_required_axial_mpa": p_req_axial,
+            "p_required_gap_mpa": p_gap,
+            "p_required_mpa": p_required,
             "delta_required_effective_um": delta_required_eff_um,
             "delta_required_um": delta_required_um,
         },
@@ -300,8 +422,10 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
             "smoothing_factor": smoothing_factor,
             "subsidence_um": subsidence_um,
             "delta_input_min_um": delta_min_um,
+            "delta_input_mean_um": delta_mean_um,
             "delta_input_max_um": delta_max_um,
             "delta_effective_min_um": delta_eff_min_um,
+            "delta_effective_mean_um": delta_eff_mean_um,
             "delta_effective_max_um": delta_eff_max_um,
         },
         "press_force_curve": {
@@ -313,6 +437,6 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
             "delta_max_um": delta_max_um,
         },
         "checks": checks_out,
-        "overall_pass": all(checks_out.values()),
+        "overall_pass": overall_pass,
         "messages": warnings,
     }
