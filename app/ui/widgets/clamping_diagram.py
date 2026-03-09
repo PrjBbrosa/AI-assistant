@@ -1,21 +1,23 @@
-"""Simple clamping force schematic for bolt joint."""
+"""Engineering cross-section joint diagram rendered via SVG."""
 
 from __future__ import annotations
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPolygonF
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QWidget
 
 
 class ClampingDiagramWidget(QWidget):
-    """Draw a lightweight bolt clamping schematic with key force labels."""
+    """Draw an engineering-style bolt joint cross-section using SVG."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._fm = 0.0
         self._fa = 0.0
         self._fk = 0.0
-        self.setMinimumHeight(260)
+        self._svg_renderer = QSvgRenderer(self)
+        self.setMinimumHeight(320)
 
     def set_forces(self, fm: float, fa: float, fk: float) -> None:
         self._fm = max(0.0, fm)
@@ -38,57 +40,150 @@ class ClampingDiagramWidget(QWidget):
         painter.setBrush(QColor("#F6F1EA"))
         painter.drawRoundedRect(panel, 12, 12)
 
-        cx = panel.left() + panel.width() * 0.33
-        top = panel.top() + 34
-        bottom = panel.bottom() - 34
-        mid = (top + bottom) / 2.0
+        # Regions: left legend / center diagram / right values
+        left_legend_rect = QRectF(panel.left() + 10, panel.top() + 16, panel.width() * 0.19, panel.height() - 32)
+        right_values_rect = QRectF(panel.left() + panel.width() * 0.74, panel.top() + 34, panel.width() * 0.23, panel.height() - 44)
 
-        # Clamped parts
-        part_w = panel.width() * 0.48
-        part_h = 36.0
-        part_x = cx - part_w / 2.0
-        upper_part = QRectF(part_x, mid - 54, part_w, part_h)
-        lower_part = QRectF(part_x, mid + 18, part_w, part_h)
-        painter.setBrush(QColor("#E8DFD3"))
-        painter.setPen(QPen(QColor("#BCAF9E"), 1.0))
-        painter.drawRoundedRect(upper_part, 8, 8)
-        painter.drawRoundedRect(lower_part, 8, 8)
+        # Center engineering cross-section drawing (SVG)
+        diagram = QRectF(
+            panel.left() + panel.width() * 0.24,
+            panel.top() + 8.0,
+            panel.width() * 0.40,
+            panel.height() - 16.0,
+        )
+        self._svg_renderer.load(self._build_svg().encode("utf-8"))
+        self._svg_renderer.render(painter, diagram)
 
-        # Bolt shank
-        painter.setPen(QPen(QColor("#8A7E6F"), 7.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-        painter.drawLine(QPointF(cx, top + 12), QPointF(cx, bottom - 12))
-
-        # Head and nut
-        painter.setPen(QPen(QColor("#7B6D5E"), 1.0))
-        painter.setBrush(QColor("#D8CCBD"))
-        painter.drawRoundedRect(QRectF(cx - 36, top - 2, 72, 18), 6, 6)
-        painter.drawRoundedRect(QRectF(cx - 36, bottom - 16, 72, 18), 6, 6)
+        cx = diagram.left() + diagram.width() * 0.44
+        top = diagram.top() + diagram.height() * 0.16
+        bottom = diagram.top() + diagram.height() * 0.86
+        mid = (top + bottom) * 0.5
 
         # Force arrows
+        x_right = diagram.right() + panel.width() * 0.025
+        x_left = diagram.left() - panel.width() * 0.055
+
         arrow_pen = QPen(QColor("#D97757"), 2.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
         painter.setPen(arrow_pen)
-        self._draw_arrow(painter, QPointF(cx + 76, mid - 10), QPointF(cx + 76, top + 6))
-        self._draw_arrow(painter, QPointF(cx + 76, mid + 10), QPointF(cx + 76, bottom - 6))
+        self._draw_arrow(painter, QPointF(x_right, mid - 12), QPointF(x_right, top + 10))
+        self._draw_arrow(painter, QPointF(x_right, mid + 12), QPointF(x_right, bottom - 10))
 
         ext_pen = QPen(QColor("#4C627A"), 2.1, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
         painter.setPen(ext_pen)
-        self._draw_arrow(painter, QPointF(cx - 84, top + 10), QPointF(cx - 84, top - 20))
-        self._draw_arrow(painter, QPointF(cx - 84, bottom - 10), QPointF(cx - 84, bottom + 20))
+        self._draw_arrow(painter, QPointF(x_left, top + 14), QPointF(x_left, top - 22))
+        self._draw_arrow(painter, QPointF(x_left, bottom - 14), QPointF(x_left, bottom + 22))
 
-        # Text
-        painter.setPen(QPen(QColor("#1F1D1A"), 1.0))
-        painter.setFont(QFont("Avenir Next", 10, 600))
-        painter.drawText(QRectF(cx + 88, mid - 26, 170, 26), "FM (预紧力)")
-        painter.drawText(QRectF(cx - 170, top - 40, 145, 24), "FA (外载)")
-        painter.drawText(QRectF(cx + 88, mid + 2, 170, 26), "FK (残余夹紧力)")
+        # Force labels in isolated boxes to avoid overlap
+        self._draw_label_box(painter, QRectF(x_right + 10, top + 18, 124, 28), "FM (预紧力)")
+        self._draw_label_box(painter, QRectF(x_right + 10, bottom - 54, 138, 28), "FK (残余夹紧力)")
+        self._draw_label_box(painter, QRectF(x_left - 56, top - 50, 98, 28), "FA (外载)")
 
-        painter.setFont(QFont("Avenir Next", 9))
+        # Left-side component legend (to avoid overlap with drawing callouts)
+        painter.setPen(QPen(QColor("#5A564F"), 1.0))
+        painter.setFont(QFont("Avenir Next", 10))
+        painter.drawText(
+            left_legend_rect,
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+            "零件说明:\n"
+            "1 螺栓头\n"
+            "2 上垫圈\n"
+            "3 被连接件1\n"
+            "4 被连接件2\n"
+            "5 下垫圈\n"
+            "6 螺母",
+        )
+
+        painter.setFont(QFont("Avenir Next", 11))
         painter.setPen(QPen(QColor("#6B665E"), 1.0))
         painter.drawText(
-            QRectF(panel.left() + panel.width() * 0.57, panel.top() + 48, panel.width() * 0.36, 140),
+            right_values_rect,
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
-            f"FM = {self._fm:,.0f} N\nFA = {self._fa:,.0f} N\nFK = {self._fk:,.0f} N",
+            f"FM = {self._fm:,.0f} N\n"
+            f"FA = {self._fa:,.0f} N\n"
+            f"FK = {self._fk:,.0f} N",
         )
+
+    def _build_svg(self) -> str:
+        """Return an engineering-style section view in SVG."""
+        return """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540">
+  <defs>
+    <linearGradient id="steel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f0eee9"/>
+      <stop offset="50%" stop-color="#d8d2c7"/>
+      <stop offset="100%" stop-color="#bdb3a5"/>
+    </linearGradient>
+    <linearGradient id="shank" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#c8bfb1"/>
+      <stop offset="50%" stop-color="#f3efe6"/>
+      <stop offset="100%" stop-color="#b5ab9d"/>
+    </linearGradient>
+    <pattern id="hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(30)">
+      <line x1="0" y1="0" x2="0" y2="10" stroke="#b9ad9b" stroke-width="2"/>
+    </pattern>
+  </defs>
+
+  <!-- Clamped members (continuous contact: no gaps) -->
+  <rect x="160" y="162" width="470" height="92" fill="#e8dfd3" stroke="#9e907d" stroke-width="2"/>
+  <rect x="160" y="254" width="470" height="92" fill="#e8dfd3" stroke="#9e907d" stroke-width="2"/>
+  <rect x="160" y="162" width="470" height="92" fill="url(#hatch)" opacity="0.28"/>
+  <rect x="160" y="254" width="470" height="92" fill="url(#hatch)" opacity="0.28"/>
+
+  <!-- Contact plane between clamped parts -->
+  <line x1="160" y1="254" x2="630" y2="254" stroke="#8f816d" stroke-width="1.6"/>
+
+  <!-- Bolt head -->
+  <polygon points="308,86 432,86 454,118 432,150 308,150 286,118"
+           fill="url(#steel)" stroke="#7f7260" stroke-width="2"/>
+
+  <!-- Washer (top, in contact with head and upper member) -->
+  <rect x="300" y="150" width="140" height="12" rx="2" fill="#d9cfbf" stroke="#7f7260" stroke-width="1.5"/>
+
+  <!-- Shank -->
+  <rect x="350" y="150" width="40" height="268" fill="url(#shank)" stroke="#7f7260" stroke-width="2"/>
+
+  <!-- Thread section -->
+  <rect x="350" y="294" width="40" height="124" fill="#c9bfae" opacity="0.55"/>
+  <g stroke="#6f6251" stroke-width="1.5">
+    <line x1="350" y1="300" x2="390" y2="314"/>
+    <line x1="350" y1="316" x2="390" y2="330"/>
+    <line x1="350" y1="332" x2="390" y2="346"/>
+    <line x1="350" y1="348" x2="390" y2="362"/>
+    <line x1="350" y1="364" x2="390" y2="378"/>
+    <line x1="350" y1="380" x2="390" y2="394"/>
+    <line x1="350" y1="396" x2="390" y2="410"/>
+  </g>
+
+  <!-- Washer (bottom, in contact with lower member and nut) -->
+  <rect x="300" y="346" width="140" height="12" rx="2" fill="#d9cfbf" stroke="#7f7260" stroke-width="1.5"/>
+
+  <!-- Nut -->
+  <polygon points="308,358 432,358 454,390 432,422 308,422 286,390"
+           fill="url(#steel)" stroke="#7f7260" stroke-width="2"/>
+
+  <!-- Sectioned internal thread in nut -->
+  <g stroke="#6f6251" stroke-width="1.3">
+    <line x1="350" y1="364" x2="390" y2="376"/>
+    <line x1="350" y1="378" x2="390" y2="390"/>
+    <line x1="350" y1="392" x2="390" y2="404"/>
+    <line x1="350" y1="406" x2="390" y2="418"/>
+  </g>
+
+  <!-- Center line -->
+  <line x1="370" y1="70" x2="370" y2="510" stroke="#9b8d7a" stroke-width="1.2" stroke-dasharray="8 8"/>
+
+  <!-- Component index markers -->
+  <g font-family="Arial, sans-serif" font-size="12" fill="#4b433a">
+    <circle cx="270" cy="118" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="266" y="123">1</text>
+    <circle cx="284" cy="156" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="280" y="161">2</text>
+    <circle cx="176" cy="206" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="172" y="211">3</text>
+    <circle cx="176" cy="300" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="172" y="305">4</text>
+    <circle cx="284" cy="352" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="280" y="357">5</text>
+    <circle cx="270" cy="390" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="266" y="395">6</text>
+  </g>
+
+</svg>
+""".strip()
 
     def _draw_arrow(self, painter: QPainter, p0: QPointF, p1: QPointF) -> None:
         painter.drawLine(p0, p1)
@@ -113,3 +208,91 @@ class ClampingDiagramWidget(QWidget):
         painter.drawLine(p1, left)
         painter.drawLine(p1, right)
 
+    def _draw_label_box(self, painter: QPainter, rect: QRectF, text: str) -> None:
+        painter.setPen(QPen(QColor("#CDBFAA"), 1.0))
+        painter.setBrush(QColor(251, 248, 243, 235))
+        painter.drawRoundedRect(rect, 5, 5)
+        painter.setPen(QPen(QColor("#1F1D1A"), 1.0))
+        painter.setFont(QFont("Avenir Next", 10, 700))
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
+
+
+class ThreadForceTriangleWidget(QWidget):
+    """Draw a thread force triangle for axial/tangential/normal force relation."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._fm_max = 0.0
+        self._lead_angle = 0.0
+        self._friction_angle = 0.0
+        self.setMinimumHeight(220)
+
+    def set_thread_forces(self, fm_max: float, lead_angle_deg: float, friction_angle_deg: float) -> None:
+        self._fm_max = max(0.0, fm_max)
+        self._lead_angle = max(0.0, lead_angle_deg)
+        self._friction_angle = max(0.0, friction_angle_deg)
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        w = float(self.width())
+        h = float(self.height())
+        margin = 14.0
+        panel = QRectF(margin, margin, w - 2 * margin, h - 2 * margin)
+        painter.setPen(QPen(QColor("#D9D3CA"), 1.0))
+        painter.setBrush(QColor("#FBF8F3"))
+        painter.drawRoundedRect(panel, 10, 10)
+
+        # Triangle area
+        base_y = panel.bottom() - 28
+        x0 = panel.left() + 54
+        x1 = panel.left() + panel.width() * 0.56
+        apex = QPointF(x1, panel.top() + 36)
+        p0 = QPointF(x0, base_y)
+        p1 = QPointF(x1, base_y)
+
+        painter.setPen(QPen(QColor("#7F7260"), 2.0))
+        painter.setBrush(QColor(234, 223, 209, 60))
+        painter.drawPolygon(QPolygonF([p0, p1, apex]))
+
+        # Axes/edges
+        self._draw_arrow(painter, p0, p1, QColor("#4C627A"), 2.2)  # Tangential
+        self._draw_arrow(painter, p0, apex, QColor("#D97757"), 2.2)  # Resultant/normal side
+        self._draw_arrow(painter, p1, apex, QColor("#5A8A5E"), 2.2)  # Axial side
+
+        painter.setPen(QPen(QColor("#2E2A25"), 1.0))
+        painter.setFont(QFont("Avenir Next", 10, 600))
+        painter.drawText(QRectF(p0.x() + 10, base_y - 30, 150, 24), "Ft 螺纹切向力")
+        painter.drawText(QRectF((p0.x() + apex.x()) / 2 - 20, (p0.y() + apex.y()) / 2 - 32, 150, 24), "Fn 法向力")
+        painter.drawText(QRectF(p1.x() + 8, (p1.y() + apex.y()) / 2 - 12, 150, 24), "Fa 轴向分力")
+
+        painter.setFont(QFont("Avenir Next", 10))
+        painter.setPen(QPen(QColor("#6B665E"), 1.0))
+        painter.drawText(
+            QRectF(panel.left() + panel.width() * 0.67, panel.top() + 24, panel.width() * 0.30, panel.height() - 32),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+            "螺纹受力三角\n"
+            f"FMmax = {self._fm_max:,.0f} N\n"
+            f"导程角 λ = {self._lead_angle:.2f}°\n"
+            f"摩擦角 ρ' = {self._friction_angle:.2f}°\n\n"
+            "用于理解螺纹传力与\n扭矩分解关系。",
+        )
+
+    def _draw_arrow(self, painter: QPainter, p0: QPointF, p1: QPointF, color: QColor, width: float) -> None:
+        painter.setPen(QPen(color, width, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(p0, p1)
+        dx = p1.x() - p0.x()
+        dy = p1.y() - p0.y()
+        length = (dx * dx + dy * dy) ** 0.5
+        if length < 1e-6:
+            return
+        ux = dx / length
+        uy = dy / length
+        size = 7.0
+        left = QPointF(p1.x() - ux * size - uy * size * 0.65, p1.y() - uy * size + ux * size * 0.65)
+        right = QPointF(p1.x() - ux * size + uy * size * 0.65, p1.y() - uy * size - ux * size * 0.65)
+        painter.drawLine(p1, left)
+        painter.drawLine(p1, right)

@@ -1,0 +1,24 @@
+{
+  "checks": {
+    "allowable_p0_mpa": 1700.0
+  },
+  "options": {
+    "curve_points": 61,
+    "curve_force_scale": 1.4
+  },
+  "geometry": {
+    "contact_mode": "point",
+    "r1_mm": 15.0,
+    "r2_mm": 0.0,
+    "length_mm": 10.0
+  },
+  "materials": {
+    "e1_mpa": 206000.0,
+    "nu1": 0.30,
+    "e2_mpa": 206000.0,
+    "nu2": 0.30
+  },
+  "loads": {
+    "normal_force_n": 2500.0
+  }
+}
