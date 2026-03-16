@@ -433,6 +433,42 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="100000",
             ),
             FieldSpec(
+                "operating.bolt_material",
+                "螺栓材料",
+                "-",
+                "选择螺栓材料以自动填入热膨胀系数。选「自定义」可手动输入。",
+                mapping=None,
+                widget_type="choice",
+                options=("钢", "不锈钢", "自定义"),
+                default="钢",
+            ),
+            FieldSpec(
+                "operating.alpha_bolt",
+                "螺栓热膨胀系数 α_bolt（自动计算）",
+                "1/K",
+                "由材料选择自动填入。自定义模式可手动输入。",
+                mapping=("operating", "alpha_bolt"),
+                default="11.5e-6",
+            ),
+            FieldSpec(
+                "operating.clamped_material",
+                "被夹件/基体材料",
+                "-",
+                "选择被夹件材料以自动填入热膨胀系数。选「自定义」可手动输入。",
+                mapping=None,
+                widget_type="choice",
+                options=("钢", "铝合金", "铸铁", "不锈钢", "自定义"),
+                default="钢",
+            ),
+            FieldSpec(
+                "operating.alpha_parts",
+                "被夹件热膨胀系数 α_parts（自动计算）",
+                "1/K",
+                "由材料选择自动填入。自定义模式可手动输入。",
+                mapping=("operating", "alpha_parts"),
+                default="11.5e-6",
+            ),
+            FieldSpec(
                 "operating.temp_bolt",
                 "螺栓温度",
                 "°C",
@@ -518,6 +554,10 @@ CHECK_LEVELS: tuple[tuple[str, str], ...] = (
 )
 
 THERMAL_FIELD_IDS: set[str] = {
+    "operating.bolt_material",
+    "operating.alpha_bolt",
+    "operating.clamped_material",
+    "operating.alpha_parts",
     "operating.temp_bolt",
     "operating.temp_parts",
     "loads.thermal_force_loss",
@@ -531,6 +571,13 @@ BEARING_MATERIAL_PRESETS: dict[str, str] = {"钢": "700", "铝合金": "300"}
 JOINT_TYPE_MAP: dict[str, str] = {
     "螺纹孔连接": "tapped",
     "通孔螺栓连接": "through",
+}
+
+THERMAL_EXPANSION_PRESETS: dict[str, str] = {
+    "钢": "11.5e-6",
+    "不锈钢": "16.0e-6",
+    "铝合金": "23.0e-6",
+    "铸铁": "10.5e-6",
 }
 
 CALC_MODES: tuple[tuple[str, str], ...] = (
@@ -718,6 +765,15 @@ class BoltPage(QWidget):
         if grade_widget and isinstance(grade_widget, QComboBox):
             grade_widget.currentTextChanged.connect(self._on_grade_changed)
             self._on_grade_changed(grade_widget.currentText())
+        # 材料热膨胀联动
+        bolt_mat_widget = self._field_widgets.get("operating.bolt_material")
+        if bolt_mat_widget and isinstance(bolt_mat_widget, QComboBox):
+            bolt_mat_widget.currentTextChanged.connect(self._on_bolt_material_changed)
+            self._on_bolt_material_changed(bolt_mat_widget.currentText())
+        clamped_mat_widget = self._field_widgets.get("operating.clamped_material")
+        if clamped_mat_widget and isinstance(clamped_mat_widget, QComboBox):
+            clamped_mat_widget.currentTextChanged.connect(self._on_clamped_material_changed)
+            self._on_clamped_material_changed(clamped_mat_widget.currentText())
         # 螺纹规格联动
         d_widget = self._field_widgets.get("fastener.d")
         if d_widget and isinstance(d_widget, QComboBox):
@@ -1017,6 +1073,34 @@ class BoltPage(QWidget):
             rp02_w.clear()
             rp02_w.setFocus()
 
+    def _on_bolt_material_changed(self, text: str) -> None:
+        """螺栓材料下拉变更时自动填入热膨胀系数。"""
+        alpha_w = self._field_widgets.get("operating.alpha_bolt")
+        if not (alpha_w and isinstance(alpha_w, QLineEdit)):
+            return
+        preset = THERMAL_EXPANSION_PRESETS.get(text)
+        if preset is not None:
+            alpha_w.setText(preset)
+            alpha_w.setReadOnly(True)
+        else:
+            alpha_w.setReadOnly(False)
+            alpha_w.clear()
+            alpha_w.setFocus()
+
+    def _on_clamped_material_changed(self, text: str) -> None:
+        """被夹件材料下拉变更时自动填入热膨胀系数。"""
+        alpha_w = self._field_widgets.get("operating.alpha_parts")
+        if not (alpha_w and isinstance(alpha_w, QLineEdit)):
+            return
+        preset = THERMAL_EXPANSION_PRESETS.get(text)
+        if preset is not None:
+            alpha_w.setText(preset)
+            alpha_w.setReadOnly(True)
+        else:
+            alpha_w.setReadOnly(False)
+            alpha_w.clear()
+            alpha_w.setFocus()
+
     def _on_thread_d_changed(self, text: str) -> None:
         """公称直径下拉变更时更新螺距选项和自定义字段可见性。"""
         is_custom = text == "自定义"
@@ -1243,7 +1327,10 @@ class BoltPage(QWidget):
         layout.addWidget(scroll)
         self.chapter_stack.addWidget(page)
 
-    _AUTO_FILLED_FIELDS: set[str] = {"fastener.d2", "fastener.d3", "fastener.As", "fastener.Rp02"}
+    _AUTO_FILLED_FIELDS: set[str] = {
+        "fastener.d2", "fastener.d3", "fastener.As", "fastener.Rp02",
+        "operating.alpha_bolt", "operating.alpha_parts",
+    }
 
     def _apply_defaults(self) -> None:
         for spec in self._field_specs.values():
@@ -1265,6 +1352,12 @@ class BoltPage(QWidget):
         g_w = self._field_widgets.get("fastener.grade")
         if g_w and isinstance(g_w, QComboBox):
             self._on_grade_changed(g_w.currentText())
+        bm_w = self._field_widgets.get("operating.bolt_material")
+        if bm_w and isinstance(bm_w, QComboBox):
+            self._on_bolt_material_changed(bm_w.currentText())
+        cm_w = self._field_widgets.get("operating.clamped_material")
+        if cm_w and isinstance(cm_w, QComboBox):
+            self._on_clamped_material_changed(cm_w.currentText())
 
     def _set_badge(self, label: QLabel, text: str, is_pass: bool) -> None:
         label.setText(text)
@@ -1560,9 +1653,12 @@ class BoltPage(QWidget):
             f"• 附加载荷参考: FA,max = {fa_max:.1f} N  /  参考上限 {force['FA_perm_N']:.1f} N  (⚠ 参考估算，非 VDI 标准项)",
         ]
         if level in ("thermal", "fatigue"):
-            metric_lines.append(
-                f"• 热损失占比: {thermal.get('thermal_loss_ratio', 0.0) * 100:.1f}%  /  限值 25.0%"
-            )
+            thermal_line = f"• 热损失占比: {thermal.get('thermal_loss_ratio', 0.0) * 100:.1f}%  /  限值 25.0%"
+            if thermal.get("thermal_auto_estimated"):
+                a_b = thermal.get("alpha_bolt", 0)
+                a_p = thermal.get("alpha_parts", 0)
+                thermal_line += f"\n  热膨胀系数: α_bolt={a_b:.1e} /K, α_parts={a_p:.1e} /K（自动估算）"
+            metric_lines.append(thermal_line)
         if level == "fatigue":
             metric_lines.append(
                 f"• 疲劳应力幅: {fatigue.get('sigma_a', 0.0):.1f} MPa  /  允许 {fatigue.get('sigma_a_allow', 0.0):.1f} MPa"

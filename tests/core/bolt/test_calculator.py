@@ -249,3 +249,51 @@ class TestThermalMaterial:
         assert "alpha_parts" in result["thermal"]
         assert result["thermal"]["alpha_bolt"] == 11.5e-6
         assert result["thermal"]["alpha_parts"] == 23.0e-6
+
+
+class TestJointTypeThermalIntegration:
+    def test_tapped_aluminum_thermal_full_chain(self):
+        """螺纹孔连接 + 铝壳体，thermal 层级完整链路。"""
+        data = _base_input()
+        data["options"] = {
+            "check_level": "thermal",
+            "joint_type": "tapped",
+        }
+        data["loads"]["thermal_force_loss"] = 0  # trigger auto estimation
+        data["operating"] = {
+            "temp_bolt": 80.0,
+            "temp_parts": 30.0,
+            "alpha_bolt": 11.5e-6,
+            "alpha_parts": 23.0e-6,
+            "load_cycles": 100000,
+        }
+        data["clamped"] = {"total_thickness": 20.0}
+        data["bearing"]["p_G_allow"] = 700.0
+        result = calculate_vdi2230_core(data)
+        # joint type
+        assert result["joint_type"] == "tapped"
+        assert "螺纹孔" in result["scope_note"]
+        assert "螺栓头端" in result["r7_note"]
+        # thermal auto estimation activated
+        assert result["thermal"]["thermal_auto_estimated"] is True
+        assert result["thermal"]["thermal_auto_value_N"] > 0
+        assert result["thermal"]["alpha_bolt"] == 11.5e-6
+        assert result["thermal"]["alpha_parts"] == 23.0e-6
+        # R7 still works
+        assert "bearing_pressure_ok" in result["checks"]
+        # all standard checks present
+        assert "assembly_von_mises_ok" in result["checks"]
+        assert "operating_axial_ok" in result["checks"]
+        assert "residual_clamp_ok" in result["checks"]
+        assert "thermal_loss_ok" in result["checks"]
+
+    def test_through_joint_steel_basic_level(self):
+        """通孔连接 + 钢，basic 层级。"""
+        data = _base_input()
+        data["options"] = {"joint_type": "through"}
+        data["bearing"]["p_G_allow"] = 700.0
+        result = calculate_vdi2230_core(data)
+        assert result["joint_type"] == "through"
+        assert "通孔" in result["scope_note"]
+        assert "螺母端" in result["r7_note"]
+        assert result["overall_pass"] in (True, False)  # just check it runs

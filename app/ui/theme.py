@@ -108,6 +108,72 @@ def apply_theme(app: QApplication) -> None:
             border: 2px solid #D97757;
             background-color: #FBF3EE;
         }
+        QFrame#AutoCalcCard {
+            background-color: #EDF1F5;
+            border: 1px solid #C4CDD6;
+            border-radius: 10px;
+        }
+        QFrame#AutoCalcCard QLabel#SubSectionTitle {
+            color: #5A6E82;
+        }
+        QFrame#AutoCalcCard QLineEdit#InputField {
+            background-color: #E5EBF2;
+            color: #3A4F63;
+            border: 1px solid #C4CDD6;
+        }
+        QFrame#AutoCalcCard QLabel#UnitLabel {
+            color: #6B7D8E;
+        }
+        QFrame#AutoCalcCard QLabel#SectionHint {
+            color: #6B7D8E;
+        }
+        QFrame#ProcessNode {
+            background-color: #EDF1F5;
+            border: 1px solid #C4CDD6;
+            border-left: 3px solid #7E9AB8;
+            border-radius: 8px;
+        }
+        QFrame#ProcessNode[selected="true"] {
+            border: 2px solid #7E9AB8;
+            border-left: 3px solid #5A7D9E;
+            background-color: #E5EBF2;
+        }
+        QFrame#CheckNode {
+            background-color: #FBF7F2;
+            border: 1px solid #D9D3CA;
+            border-left: 3px solid #D97757;
+            border-radius: 8px;
+        }
+        QFrame#CheckNode[selected="true"] {
+            border: 2px solid #D97757;
+            border-left: 3px solid #C56649;
+            background-color: #FBF3EE;
+        }
+        QFrame#VerdictNode {
+            background-color: #F6F1EA;
+            border: 2px dashed #B8B2A8;
+            border-radius: 8px;
+        }
+        QLabel#FlowSectionLabel {
+            color: #8A857D;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 0 2px 0;
+        }
+        QLabel#FlowArrow {
+            color: #B8B2A8;
+            font-size: 13px;
+        }
+        QLabel#FlowArrowPass {
+            color: #1E5A2F;
+            font-size: 13px;
+            font-weight: 700;
+        }
+        QLabel#FlowArrowFail {
+            color: #7F2D1A;
+            font-size: 13px;
+            font-weight: 700;
+        }
         QLabel#SectionTitle {
             font-size: 16px;
             font-weight: 700;

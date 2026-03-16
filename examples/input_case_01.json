@@ -31,6 +31,13 @@
     "bearing_d_outer": 18.0,
     "p_G_allow": 700.0
   },
+  "operating": {
+    "alpha_bolt": 11.5e-6,
+    "alpha_parts": 11.5e-6
+  },
+  "options": {
+    "joint_type": "tapped"
+  },
   "checks": {
     "yield_safety_operating": 1.1
   }
