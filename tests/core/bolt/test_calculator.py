@@ -537,3 +537,58 @@ class TestR5TorsionResidual:
         import math
         expected = math.sqrt(s["sigma_ax_work"]**2 + 3.0 * (0.5 * s["tau_assembly"])**2)
         assert abs(s["sigma_vm_work"] - expected) < 0.01
+
+
+class TestFatigueModelImproved:
+    def test_fatigue_uses_asv_table_not_018_rp02(self):
+        """M10 螺栓疲劳极限应使用 σ_ASV 查表值，而非 0.18×Rp02。"""
+        data = _base_input()
+        data.setdefault("options", {})["check_level"] = "fatigue"
+        result = calculate_vdi2230_core(data)
+        fatigue = result["fatigue"]
+        # M10, d=10, 轧制螺纹: σ_ASV ≈ 44 MPa
+        assert fatigue["sigma_ASV"] > 0
+        assert fatigue["sigma_ASV"] < 0.18 * 640  # 查表值远小于旧公式
+
+    def test_larger_bolt_lower_asv(self):
+        """M20 螺栓的 σ_ASV 应低于 M10。"""
+        data10 = _base_input()
+        data10.setdefault("options", {})["check_level"] = "fatigue"
+        data20 = _base_input()
+        data20["fastener"]["d"] = 20.0
+        data20["fastener"]["p"] = 2.5
+        data20.setdefault("options", {})["check_level"] = "fatigue"
+        r10 = calculate_vdi2230_core(data10)
+        r20 = calculate_vdi2230_core(data20)
+        assert r10["fatigue"]["sigma_ASV"] > r20["fatigue"]["sigma_ASV"]
+
+    def test_cut_thread_lower_asv(self):
+        """切削螺纹 σ_ASV 约为轧制的 65%。"""
+        data = _base_input()
+        data.setdefault("options", {})["check_level"] = "fatigue"
+        data["options"]["surface_treatment"] = "rolled"
+        r_rolled = calculate_vdi2230_core(data)
+        data["options"]["surface_treatment"] = "cut"
+        r_cut = calculate_vdi2230_core(data)
+        assert r_cut["fatigue"]["sigma_ASV"] < r_rolled["fatigue"]["sigma_ASV"]
+        ratio = r_cut["fatigue"]["sigma_ASV"] / r_rolled["fatigue"]["sigma_ASV"]
+        assert 0.55 < ratio < 0.75
+
+    def test_goodman_still_applies(self):
+        """Goodman 修正仍然应用于 σ_ASV 基础上。"""
+        data = _base_input()
+        data.setdefault("options", {})["check_level"] = "fatigue"
+        result = calculate_vdi2230_core(data)
+        fatigue = result["fatigue"]
+        assert fatigue["sigma_a_allow"] <= fatigue["sigma_ASV"] * 1.01
+
+    def test_asv_interpolation_non_standard_diameter(self):
+        """非标准直径使用线性插值。"""
+        data = _base_input()
+        data["fastener"]["d"] = 15.0
+        data["fastener"]["p"] = 2.0
+        data.setdefault("options", {})["check_level"] = "fatigue"
+        result = calculate_vdi2230_core(data)
+        fatigue = result["fatigue"]
+        # M14: 39, M16: 38 → M15 应介于之间
+        assert 37.5 < fatigue["sigma_ASV"] < 39.5

@@ -79,6 +79,34 @@ _ALPHA_A_RANGES: dict[str, tuple[float, float]] = {
     "thermal": (1.05, 1.15),
 }
 
+# VDI 2230 表 A1：轧制螺纹疲劳极限 σ_ASV (MPa)
+_ASV_TABLE_ROLLED: list[tuple[float, float]] = [
+    (6, 50), (8, 47), (10, 44), (12, 41), (14, 39),
+    (16, 38), (20, 36), (24, 34), (30, 32), (36, 30),
+]
+_CUT_THREAD_FACTOR = 0.65  # 切削螺纹约为轧制的 65%
+
+
+def _fatigue_limit_asv(d: float, surface_treatment: str = "rolled") -> float:
+    """VDI 2230 疲劳极限 σ_ASV，按螺纹公称直径线性插值。"""
+    table = _ASV_TABLE_ROLLED
+    if d <= table[0][0]:
+        asv = table[0][1]
+    elif d >= table[-1][0]:
+        asv = table[-1][1]
+    else:
+        asv = table[-1][1]
+        for i in range(len(table) - 1):
+            d0, v0 = table[i]
+            d1, v1 = table[i + 1]
+            if d0 <= d <= d1:
+                asv = v0 + (v1 - v0) * (d - d0) / (d1 - d0)
+                break
+    if surface_treatment == "cut":
+        asv *= _CUT_THREAD_FACTOR
+    return asv
+
+
 # VDI 2230 表 5.4/1 简化：典型单界面嵌入量 (μm)
 _EMBED_FZ_PER_INTERFACE: dict[str, float] = {
     "rough": 3.0,    # Ra ≈ 6.3 μm
@@ -330,12 +358,13 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     thermal_loss_ratio = 0.0 if fm_min <= 0 else thermal_effective / fm_min
     pass_thermal = thermal_loss_ratio <= 0.25
 
+    surface_treatment = str(options.get("surface_treatment", "rolled"))
     sigma_a = phi_n * fa_max / (2.0 * geometry["As"])
     sigma_m = (fm_max + 0.5 * phi_n * fa_max) / geometry["As"]
     cycle_factor = (2_000_000.0 / load_cycles) ** 0.08 if load_cycles < 2_000_000.0 else 1.0
-    sigma_a_base = 0.18 * rp02 * cycle_factor
+    sigma_asv = _fatigue_limit_asv(d, surface_treatment) * cycle_factor
     goodman_factor = max(0.1, 1.0 - sigma_m / (0.9 * rp02))
-    sigma_a_allow = sigma_a_base * goodman_factor
+    sigma_a_allow = sigma_asv * goodman_factor
     pass_fatigue = sigma_a <= sigma_a_allow
 
     # 附加载荷能力参考估算（非 VDI 2230 正式校核项）：
@@ -461,9 +490,11 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
             "sigma_a": sigma_a,
             "sigma_m": sigma_m,
             "sigma_a_allow": sigma_a_allow,
+            "sigma_ASV": sigma_asv,
             "load_cycles": load_cycles,
             "cycle_factor": cycle_factor,
             "goodman_factor": goodman_factor,
+            "surface_treatment": surface_treatment,
         },
         "overall_pass": all(checks_out.values()),
         "warnings": warnings,

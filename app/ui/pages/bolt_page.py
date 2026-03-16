@@ -444,6 +444,16 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="100000",
             ),
             FieldSpec(
+                "options.surface_treatment",
+                "螺纹表面处理",
+                "-",
+                "影响疲劳极限 σ_ASV。轧制螺纹强于切削螺纹。",
+                mapping=None,
+                widget_type="choice",
+                options=("轧制", "切削"),
+                default="轧制",
+            ),
+            FieldSpec(
                 "operating.bolt_material",
                 "螺栓材料",
                 "-",
@@ -575,6 +585,12 @@ THERMAL_FIELD_IDS: set[str] = {
 }
 FATIGUE_FIELD_IDS: set[str] = {
     "operating.load_cycles",
+    "options.surface_treatment",
+}
+
+SURFACE_TREATMENT_MAP: dict[str, str] = {
+    "轧制": "rolled",
+    "切削": "cut",
 }
 VERIFY_MODE_FIELD_IDS: set[str] = {"loads.FM_min_input"}
 CUSTOM_THREAD_FIELD_IDS: set[str] = {"fastener.d_custom", "fastener.p_custom"}
@@ -1618,6 +1634,10 @@ class BoltPage(QWidget):
         if method_w is not None and isinstance(method_w, QComboBox):
             method_en = TIGHTENING_METHOD_MAP.get(method_w.currentText(), "torque")
             payload.setdefault("options", {})["tightening_method"] = method_en
+        treatment_w = self._field_widgets.get("options.surface_treatment")
+        if treatment_w is not None and isinstance(treatment_w, QComboBox):
+            treatment_en = SURFACE_TREATMENT_MAP.get(treatment_w.currentText(), "rolled")
+            payload.setdefault("options", {})["surface_treatment"] = treatment_en
         return payload
 
     def _resolve_thread_d(self) -> str:

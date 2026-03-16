@@ -503,11 +503,13 @@ class RStepDetailPage(QFrame):
                 f"判据: {'σ_vm' if k_tau > 0 else 'σ_ax'} ≤ σ_allow"
             )
         if step_id == "r6":
+            surface_cn = "轧制" if fatigue.get("surface_treatment", "rolled") == "rolled" else "切削"
             return (
+                f"σ_ASV    = {fatigue.get('sigma_ASV', 0):.1f} MPa（VDI 2230 表 A1，{surface_cn}）\n"
                 f"σ_a      = φn×FA/(2×As) = {fatigue.get('sigma_a', 0):.2f} MPa\n"
                 f"σ_m      = (FM,max+0.5×φn×FA)/As = {fatigue.get('sigma_m', 0):.1f} MPa\n"
-                f"σ_a_allow = {fatigue.get('sigma_a_allow', 0):.2f} MPa\n"
-                f"判据: σ_a ≤ σ_a_allow（简化 Goodman）"
+                f"σ_a_allow = σ_ASV × Goodman = {fatigue.get('sigma_a_allow', 0):.2f} MPa\n"
+                f"判据: σ_a ≤ σ_a_allow"
             )
         if step_id == "r7":
             if "p_bearing" not in stresses:
