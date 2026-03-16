@@ -60,11 +60,321 @@ class FieldSpec:
     disabled: bool = False
 
 
+
+# GB/T 196 标准公制螺纹参数表
+# (d, [(p_coarse, d2, d3, As), (p_fine1, d2, d3, As), ...])
+# 粗牙排第一位，细牙在后。d2/d3/As 按 GB/T 196 / ISO 724 标准值。
+# 螺栓强度等级 → 屈服强度 Rp0.2 (MPa)，参考 GB/T 3098.1
+BOLT_GRADE_TABLE: dict[str, float] = {
+    "4.6":  240,
+    "4.8":  320,
+    "5.6":  300,
+    "5.8":  400,
+    "8.8":  640,
+    "9.8":  720,
+    "10.9": 900,
+    "12.9": 1080,
+}
+
+
+METRIC_THREAD_TABLE: dict[str, list[tuple[float, float, float, float]]] = {
+    "M3":   [(0.5,  2.675, 2.387, 5.03)],
+    "M4":   [(0.7,  3.545, 3.141, 8.78)],
+    "M5":   [(0.8,  4.480, 4.019, 14.2)],
+    "M6":   [(1.0,  5.350, 4.773, 20.1)],
+    "M8":   [(1.25, 7.188, 6.466, 36.6),  (1.0,  7.350, 6.773, 39.2)],
+    "M10":  [(1.5,  9.026, 8.160, 58.0),  (1.25, 9.188, 8.466, 61.2),
+             (1.0,  9.350, 8.773, 64.5)],
+    "M12":  [(1.75, 10.863, 9.853, 84.3), (1.5,  11.026, 10.160, 88.1),
+             (1.25, 11.188, 10.466, 92.1)],
+    "M14":  [(2.0,  12.701, 11.546, 115),  (1.5,  13.026, 12.160, 125)],
+    "M16":  [(2.0,  14.701, 13.546, 157),  (1.5,  15.026, 14.160, 167)],
+    "M18":  [(2.5,  16.376, 14.933, 192),  (1.5,  17.026, 16.160, 216)],
+    "M20":  [(2.5,  18.376, 16.933, 245),  (1.5,  19.026, 18.160, 272)],
+    "M22":  [(2.5,  20.376, 18.933, 303),  (1.5,  21.026, 20.160, 333)],
+    "M24":  [(3.0,  22.051, 20.319, 353),  (2.0,  22.701, 21.546, 384)],
+    "M27":  [(3.0,  25.051, 23.319, 459),  (2.0,  25.701, 24.546, 496)],
+    "M30":  [(3.5,  27.727, 25.706, 561),  (2.0,  28.701, 27.546, 621)],
+    "M33":  [(3.5,  30.727, 28.706, 694),  (2.0,  31.701, 30.546, 761)],
+    "M36":  [(4.0,  33.402, 31.093, 817),  (3.0,  34.051, 32.319, 865)],
+    "M39":  [(4.0,  36.402, 34.093, 976),  (3.0,  37.051, 35.319, 1030)],
+    "M42":  [(4.5,  39.077, 36.479, 1120), (3.0,  40.051, 38.319, 1210)],
+    "M48":  [(5.0,  44.752, 41.866, 1470), (3.0,  46.051, 44.319, 1600)],
+}
+
+
 CHAPTERS: list[dict[str, Any]] = [
+    {
+        "id": "elements",
+        "title": "连接件参数",
+        "subtitle": "螺栓规格、材料与摩擦系数",
+        "fields": [
+            FieldSpec(
+                "elements.joint_type",
+                "连接形式",
+                "-",
+                "螺纹孔连接：螺栓拧入基体，仅螺栓头端有支承面。"
+                "通孔连接：螺栓穿过被夹件，头端+螺母端均有支承面。",
+                widget_type="choice",
+                options=("螺纹孔连接", "通孔螺栓连接"),
+                default="螺纹孔连接",
+            ),
+            FieldSpec(
+                "fastener.d",
+                "公称直径 d",
+                "mm",
+                "选择标准公制螺纹规格，或选「自定义」手动输入。",
+                mapping=("fastener", "d"),
+                widget_type="choice",
+                options=tuple(METRIC_THREAD_TABLE.keys()) + ("自定义",),
+                default="M10",
+            ),
+            FieldSpec(
+                "fastener.d_custom",
+                "自定义公称直径",
+                "mm",
+                "手动输入非标螺纹公称直径。",
+                mapping=None,
+            ),
+            FieldSpec(
+                "fastener.p",
+                "螺距 p",
+                "mm",
+                "选择与公称直径匹配的螺距，或选「自定义」手动输入。",
+                mapping=("fastener", "p"),
+                widget_type="choice",
+                options=("1.5",),
+                default="1.5",
+            ),
+            FieldSpec(
+                "fastener.p_custom",
+                "自定义螺距",
+                "mm",
+                "手动输入非标螺距。",
+                mapping=None,
+            ),
+            FieldSpec(
+                "fastener.d2",
+                "中径 d2（自动计算）",
+                "mm",
+                "由所选规格自动填入。自定义模式可手动输入。",
+                mapping=("fastener", "d2"),
+            ),
+            FieldSpec(
+                "fastener.d3",
+                "小径 d3（自动计算）",
+                "mm",
+                "由所选规格自动填入。自定义模式可手动输入。",
+                mapping=("fastener", "d3"),
+            ),
+            FieldSpec(
+                "fastener.As",
+                "应力截面积 As（自动计算）",
+                "mm²",
+                "由所选规格自动填入。自定义模式可手动输入或留空（系统估算）。",
+                mapping=("fastener", "As"),
+            ),
+            FieldSpec(
+                "fastener.grade",
+                "强度等级",
+                "-",
+                "选择螺栓强度等级以自动填入屈服强度 Rp0.2。选「自定义」可手动输入。",
+                mapping=None,
+                widget_type="choice",
+                options=tuple(BOLT_GRADE_TABLE.keys()) + ("自定义",),
+                default="8.8",
+            ),
+            FieldSpec(
+                "fastener.Rp02",
+                "屈服强度 Rp0.2（自动计算）",
+                "MPa",
+                "由强度等级自动填入。自定义模式可手动输入。",
+                mapping=("fastener", "Rp02"),
+                default="640",
+            ),
+            FieldSpec(
+                "tightening.mu_thread",
+                "螺纹摩擦系数 μG",
+                "-",
+                "影响螺纹扭矩与扭转载荷。",
+                mapping=("tightening", "mu_thread"),
+                default="0.12",
+            ),
+            FieldSpec(
+                "tightening.mu_bearing",
+                "支承面摩擦系数 μK",
+                "-",
+                "影响支承面扭矩。",
+                mapping=("tightening", "mu_bearing"),
+                default="0.14",
+            ),
+            FieldSpec(
+                "tightening.thread_flank_angle_deg",
+                "牙型角",
+                "deg",
+                "公制螺纹常用 60°。",
+                mapping=("tightening", "thread_flank_angle_deg"),
+                default="60",
+            ),
+            FieldSpec(
+                "bearing.bearing_d_inner",
+                "支承内径 DKm,i",
+                "mm",
+                "螺栓头/螺母下支承面的内径，通常等于通孔直径。",
+                mapping=("bearing", "bearing_d_inner"),
+                default="11",
+            ),
+            FieldSpec(
+                "bearing.bearing_d_outer",
+                "支承外径 DKm,o",
+                "mm",
+                "螺栓头/螺母下支承面的外径，通常等于螺栓头对边宽度。",
+                mapping=("bearing", "bearing_d_outer"),
+                default="18",
+            ),
+            FieldSpec(
+                "bearing.bearing_material", "支承面材料", "-",
+                "选择支承面材料以自动填入许用压强。",
+                mapping=None, widget_type="choice",
+                options=("钢", "铝合金", "自定义"), default="钢",
+            ),
+            FieldSpec(
+                "bearing.p_G_allow", "许用支承面压强 p_G", "MPa",
+                "支承面许用面压强度。钢约 700 MPa，铝合金约 300 MPa。",
+                mapping=("bearing", "p_G_allow"), default="700",
+            ),
+        ],
+    },
+    {
+        "id": "clamped",
+        "title": "被夹紧件和实体",
+        "subtitle": "被夹件刚度与基础实体",
+        "fields": [
+            FieldSpec(
+                "clamped.basic_solid",
+                "基础实体类型",
+                "-",
+                "基础实体类型。首版用于记录，为将来自动刚度建模预留。",
+                mapping=("clamped", "basic_solid"),
+                widget_type="choice",
+                options=("圆柱体", "锥体", "套筒", "混合"),
+                default="圆柱体",
+            ),
+            FieldSpec(
+                "clamped.part_count",
+                "被夹件数量",
+                "个",
+                "参与夹紧的零件数量。螺纹孔连接常见 1 个，通孔连接常见 2 个。",
+                mapping=("clamped", "part_count"),
+                default="1",
+            ),
+            FieldSpec(
+                "clamped.total_thickness",
+                "总夹紧长度 lK",
+                "mm",
+                "被夹件厚度总和。用于热损失自动估算和将来的自动刚度建模。",
+                mapping=("clamped", "total_thickness"),
+                default="20",
+            ),
+            FieldSpec(
+                "stiffness.bolt_compliance",
+                "螺栓顺从度 δs",
+                "mm/N",
+                "与被夹件顺从度二选一输入；若填刚度可留空。",
+                mapping=("stiffness", "bolt_compliance"),
+                default="2.2e-06",
+            ),
+            FieldSpec(
+                "stiffness.clamped_compliance",
+                "被夹件顺从度 δp",
+                "mm/N",
+                "与螺栓顺从度配套输入。",
+                mapping=("stiffness", "clamped_compliance"),
+                default="3.1e-06",
+            ),
+            FieldSpec(
+                "stiffness.bolt_stiffness",
+                "螺栓刚度 cs",
+                "N/mm",
+                "若使用刚度输入，填 cs 与 cp，顺从度可留空。",
+                mapping=("stiffness", "bolt_stiffness"),
+            ),
+            FieldSpec(
+                "stiffness.clamped_stiffness",
+                "被夹件刚度 cp",
+                "N/mm",
+                "与 cs 配套输入。",
+                mapping=("stiffness", "clamped_stiffness"),
+            ),
+        ],
+    },
+    {
+        "id": "assembly",
+        "title": "装配属性",
+        "subtitle": "装配方式与预紧散差",
+        "fields": [
+            FieldSpec(
+                "assembly.tightening_method",
+                "拧紧方式",
+                "-",
+                "装配方式选项。首版用于记录，不参与算法分支。",
+                widget_type="choice",
+                options=("扭矩法", "转角法", "液压拉伸法", "热装法"),
+                default="扭矩法",
+            ),
+            FieldSpec(
+                "tightening.alpha_A",
+                "拧紧系数 αA",
+                "-",
+                "FMmax/FMmin，反映装配散差。扭矩法常见 1.4~1.8。",
+                mapping=("tightening", "alpha_A"),
+                default="1.6",
+            ),
+            FieldSpec(
+                "tightening.utilization",
+                "装配利用系数 ν",
+                "-",
+                "装配阶段允许屈服利用比例，常见 0.8~0.95。",
+                mapping=("tightening", "utilization"),
+                default="0.9",
+            ),
+            FieldSpec(
+                "tightening.prevailing_torque",
+                "附加防松扭矩 MA,prev",
+                "N·m",
+                "锁紧螺母等引入的附加扭矩。无则填 0。",
+                mapping=("tightening", "prevailing_torque"),
+                default="0",
+            ),
+            FieldSpec(
+                "loads.embed_loss",
+                "嵌入损失 FZ",
+                "N",
+                "接触表面压平导致的预紧力损失。",
+                mapping=("loads", "embed_loss"),
+                default="1000",
+            ),
+            FieldSpec(
+                "loads.thermal_force_loss",
+                "热损失 Fth",
+                "N",
+                "热膨胀差异折算的预紧力损失。",
+                mapping=("loads", "thermal_force_loss"),
+                default="0",
+            ),
+            FieldSpec(
+                "loads.FM_min_input",
+                "已知最小预紧力 FM,min",
+                "N",
+                "校核模式下使用：输入已知的最小预紧力值。",
+                mapping=("loads", "FM_min_input"),
+            ),
+        ],
+    },
     {
         "id": "operating",
         "title": "工况数据",
-        "subtitle": "工况与最小夹紧需求",
+        "subtitle": "工况载荷与工况条件",
         "fields": [
             FieldSpec(
                 "operating.setup_case",
@@ -141,244 +451,6 @@ CHAPTERS: list[dict[str, Any]] = [
         ],
     },
     {
-        "id": "assembly",
-        "title": "装配属性",
-        "subtitle": "装配方式与预紧散差",
-        "fields": [
-            FieldSpec(
-                "assembly.tightening_method",
-                "拧紧方式",
-                "-",
-                "装配方式选项。首版用于记录，不参与算法分支。",
-                widget_type="choice",
-                options=("扭矩法", "转角法", "液压拉伸法", "热装法"),
-                default="扭矩法",
-            ),
-            FieldSpec(
-                "tightening.alpha_A",
-                "拧紧系数 αA",
-                "-",
-                "FMmax/FMmin，反映装配散差。扭矩法常见 1.4~1.8。",
-                mapping=("tightening", "alpha_A"),
-                default="1.6",
-            ),
-            FieldSpec(
-                "tightening.utilization",
-                "装配利用系数 ν",
-                "-",
-                "装配阶段允许屈服利用比例，常见 0.8~0.95。",
-                mapping=("tightening", "utilization"),
-                default="0.9",
-            ),
-            FieldSpec(
-                "tightening.prevailing_torque",
-                "附加防松扭矩 MA,prev",
-                "N·m",
-                "锁紧螺母等引入的附加扭矩。无则填 0。",
-                mapping=("tightening", "prevailing_torque"),
-                default="0",
-            ),
-            FieldSpec(
-                "loads.embed_loss",
-                "嵌入损失 FZ",
-                "N",
-                "接触表面压平导致的预紧力损失。",
-                mapping=("loads", "embed_loss"),
-                default="1000",
-            ),
-            FieldSpec(
-                "loads.thermal_force_loss",
-                "热损失 Fth",
-                "N",
-                "热膨胀差异折算的预紧力损失。",
-                mapping=("loads", "thermal_force_loss"),
-                default="0",
-            ),
-            FieldSpec(
-                "loads.FM_min_input",
-                "已知最小预紧力 FM,min",
-                "N",
-                "校核模式下使用：输入已知的最小预紧力值。",
-                mapping=("loads", "FM_min_input"),
-            ),
-        ],
-    },
-    {
-        "id": "clamped",
-        "title": "被夹件与基础实体",
-        "subtitle": "被夹件与基础实体",
-        "fields": [
-            FieldSpec(
-                "clamped.basic_solid",
-                "基础实体类型",
-                "-",
-                "基础实体类型。首版用于记录，为将来自动刚度建模预留。",
-                mapping=("clamped", "basic_solid"),
-                widget_type="choice",
-                options=("Cylinder", "Cone", "Sleeve", "Mixed"),
-                default="Cylinder",
-            ),
-            FieldSpec(
-                "clamped.part_count",
-                "被夹件数量",
-                "个",
-                "参与夹紧的零件数量。为将来自动刚度建模预留。",
-                mapping=("clamped", "part_count"),
-                default="2",
-            ),
-            FieldSpec(
-                "clamped.total_thickness",
-                "总夹紧长度 lK",
-                "mm",
-                "被夹件厚度总和。用于热损失自动估算和将来的自动刚度建模。",
-                mapping=("clamped", "total_thickness"),
-                default="20",
-            ),
-            FieldSpec(
-                "stiffness.bolt_compliance",
-                "螺栓顺从度 δs",
-                "mm/N",
-                "与被夹件顺从度二选一输入；若填刚度可留空。",
-                mapping=("stiffness", "bolt_compliance"),
-                default="2.2e-06",
-            ),
-            FieldSpec(
-                "stiffness.clamped_compliance",
-                "被夹件顺从度 δp",
-                "mm/N",
-                "与螺栓顺从度配套输入。",
-                mapping=("stiffness", "clamped_compliance"),
-                default="3.1e-06",
-            ),
-            FieldSpec(
-                "stiffness.bolt_stiffness",
-                "螺栓刚度 cs",
-                "N/mm",
-                "若使用刚度输入，填 cs 与 cp，顺从度可留空。",
-                mapping=("stiffness", "bolt_stiffness"),
-            ),
-            FieldSpec(
-                "stiffness.clamped_stiffness",
-                "被夹件刚度 cp",
-                "N/mm",
-                "与 cs 配套输入。",
-                mapping=("stiffness", "clamped_stiffness"),
-            ),
-        ],
-    },
-    {
-        "id": "elements",
-        "title": "连接件参数",
-        "subtitle": "连接件参数与摩擦",
-        "fields": [
-            FieldSpec(
-                "elements.joint_type",
-                "连接形式",
-                "-",
-                "连接形式选项。当前算法按单螺栓轴向模型计算。",
-                widget_type="choice",
-                options=("Through-bolt joint", "Tapped thread joint"),
-                default="Through-bolt joint",
-            ),
-            FieldSpec(
-                "fastener.d",
-                "公称直径 d",
-                "mm",
-                "螺纹公称直径。",
-                mapping=("fastener", "d"),
-                default="10",
-            ),
-            FieldSpec(
-                "fastener.p",
-                "螺距 p",
-                "mm",
-                "公制螺纹螺距。",
-                mapping=("fastener", "p"),
-                default="1.5",
-            ),
-            FieldSpec(
-                "fastener.Rp02",
-                "屈服强度 Rp0.2",
-                "MPa",
-                "螺栓材料屈服强度。",
-                mapping=("fastener", "Rp02"),
-                default="640",
-            ),
-            FieldSpec(
-                "fastener.As",
-                "应力截面积 As",
-                "mm²",
-                "可不填，系统按 d/p 估算。",
-                mapping=("fastener", "As"),
-            ),
-            FieldSpec(
-                "fastener.d2",
-                "中径 d2",
-                "mm",
-                "可不填，系统按 d/p 估算。",
-                mapping=("fastener", "d2"),
-            ),
-            FieldSpec(
-                "fastener.d3",
-                "小径 d3",
-                "mm",
-                "可不填，系统按 d/p 估算。",
-                mapping=("fastener", "d3"),
-            ),
-            FieldSpec(
-                "tightening.mu_thread",
-                "螺纹摩擦系数 μG",
-                "-",
-                "影响螺纹扭矩与扭转载荷。",
-                mapping=("tightening", "mu_thread"),
-                default="0.12",
-            ),
-            FieldSpec(
-                "tightening.mu_bearing",
-                "支承面摩擦系数 μK",
-                "-",
-                "影响支承面扭矩。",
-                mapping=("tightening", "mu_bearing"),
-                default="0.14",
-            ),
-            FieldSpec(
-                "tightening.thread_flank_angle_deg",
-                "牙型角",
-                "deg",
-                "公制螺纹常用 60°。",
-                mapping=("tightening", "thread_flank_angle_deg"),
-                default="60",
-            ),
-            FieldSpec(
-                "bearing.bearing_d_inner",
-                "支承内径 DKm,i",
-                "mm",
-                "支承有效内径。",
-                mapping=("bearing", "bearing_d_inner"),
-                default="11",
-            ),
-            FieldSpec(
-                "bearing.bearing_d_outer",
-                "支承外径 DKm,o",
-                "mm",
-                "支承有效外径。",
-                mapping=("bearing", "bearing_d_outer"),
-                default="18",
-            ),
-            FieldSpec(
-                "bearing.bearing_material", "支承面材料", "-",
-                "选择支承面材料以自动填入许用压强。",
-                mapping=None, widget_type="choice",
-                options=("钢", "铝合金", "自定义"), default="钢",
-            ),
-            FieldSpec(
-                "bearing.p_G_allow", "许用支承面压强 p_G", "MPa",
-                "支承面许用面压强度。钢约 700 MPa，铝合金约 300 MPa。",
-                mapping=("bearing", "p_G_allow"), default="700",
-            ),
-        ],
-    },
-    {
         "id": "introduction",
         "title": "载荷导入",
         "subtitle": "载荷导入与安全系数",
@@ -397,8 +469,8 @@ CHAPTERS: list[dict[str, Any]] = [
                 "-",
                 "用于记录载荷导入方式。",
                 widget_type="choice",
-                options=("Head", "Nut", "Middle", "Distributed"),
-                default="Head",
+                options=("螺栓头端", "螺母端", "中间", "分布式"),
+                default="螺栓头端",
             ),
             FieldSpec(
                 "checks.yield_safety_operating",
@@ -454,7 +526,12 @@ FATIGUE_FIELD_IDS: set[str] = {
     "operating.load_cycles",
 }
 VERIFY_MODE_FIELD_IDS: set[str] = {"loads.FM_min_input"}
+CUSTOM_THREAD_FIELD_IDS: set[str] = {"fastener.d_custom", "fastener.p_custom"}
 BEARING_MATERIAL_PRESETS: dict[str, str] = {"钢": "700", "铝合金": "300"}
+JOINT_TYPE_MAP: dict[str, str] = {
+    "螺纹孔连接": "tapped",
+    "通孔螺栓连接": "through",
+}
 
 CALC_MODES: tuple[tuple[str, str], ...] = (
     ("设计模式（反推 FM_min）", "design"),
@@ -636,6 +713,19 @@ class BoltPage(QWidget):
         bearing_mat_widget = self._field_widgets.get("bearing.bearing_material")
         if bearing_mat_widget and isinstance(bearing_mat_widget, QComboBox):
             bearing_mat_widget.currentTextChanged.connect(self._on_bearing_material_changed)
+        # 强度等级联动
+        grade_widget = self._field_widgets.get("fastener.grade")
+        if grade_widget and isinstance(grade_widget, QComboBox):
+            grade_widget.currentTextChanged.connect(self._on_grade_changed)
+            self._on_grade_changed(grade_widget.currentText())
+        # 螺纹规格联动
+        d_widget = self._field_widgets.get("fastener.d")
+        if d_widget and isinstance(d_widget, QComboBox):
+            d_widget.currentTextChanged.connect(self._on_thread_d_changed)
+            self._on_thread_d_changed(d_widget.currentText())
+        p_widget = self._field_widgets.get("fastener.p")
+        if p_widget and isinstance(p_widget, QComboBox):
+            p_widget.currentTextChanged.connect(self._on_thread_p_changed)
 
     def eventFilter(self, watched, event):  # noqa: N802
         if watched in self._widget_hints and event.type() in (QEvent.Type.FocusIn, QEvent.Type.Enter):
@@ -743,6 +833,8 @@ class BoltPage(QWidget):
             field_card = QFrame(container)
             if spec.disabled:
                 field_card.setObjectName("DisabledSubCard")
+            elif spec.field_id in self._AUTO_FILLED_FIELDS:
+                field_card.setObjectName("AutoCalcCard")
             else:
                 field_card.setObjectName("SubCard")
             row = QGridLayout(field_card)
@@ -856,6 +948,8 @@ class BoltPage(QWidget):
                 card.setVisible(show_fatigue)
             elif field_id in VERIFY_MODE_FIELD_IDS:
                 pass  # controlled by _apply_calculation_mode_visibility
+            elif field_id in CUSTOM_THREAD_FIELD_IDS:
+                pass  # controlled by _on_thread_d_changed
             else:
                 card.setVisible(True)
 
@@ -908,6 +1002,95 @@ class BoltPage(QWidget):
             else:
                 editor.clear()
                 editor.setFocus()
+
+    def _on_grade_changed(self, text: str) -> None:
+        """强度等级下拉变更时自动填入 Rp0.2。"""
+        rp02_w = self._field_widgets.get("fastener.Rp02")
+        if not (rp02_w and isinstance(rp02_w, QLineEdit)):
+            return
+        preset = BOLT_GRADE_TABLE.get(text)
+        if preset is not None:
+            rp02_w.setText(str(int(preset)))
+            rp02_w.setReadOnly(True)
+        else:
+            rp02_w.setReadOnly(False)
+            rp02_w.clear()
+            rp02_w.setFocus()
+
+    def _on_thread_d_changed(self, text: str) -> None:
+        """公称直径下拉变更时更新螺距选项和自定义字段可见性。"""
+        is_custom = text == "自定义"
+        # 自定义输入字段可见性
+        for fid in CUSTOM_THREAD_FIELD_IDS:
+            card = self._field_cards.get(fid)
+            if card:
+                card.setVisible(is_custom)
+        # d2/d3/As 在标准模式下只读，自定义模式可编辑
+        for fid in ("fastener.d2", "fastener.d3", "fastener.As"):
+            w = self._field_widgets.get(fid)
+            if w and isinstance(w, QLineEdit):
+                w.setReadOnly(not is_custom)
+
+        p_widget = self._field_widgets.get("fastener.p")
+        if not (p_widget and isinstance(p_widget, QComboBox)):
+            return
+
+        p_widget.blockSignals(True)
+        p_widget.clear()
+        if is_custom:
+            p_widget.addItem("自定义")
+            # 清空自动填入值
+            for fid in ("fastener.d2", "fastener.d3", "fastener.As"):
+                w = self._field_widgets.get(fid)
+                if w and isinstance(w, QLineEdit):
+                    w.clear()
+        else:
+            entries = METRIC_THREAD_TABLE.get(text, [])
+            for i, (p_val, _d2, _d3, _as) in enumerate(entries):
+                label = f"{p_val}（粗牙）" if i == 0 else f"{p_val}（细牙）"
+                p_widget.addItem(label, p_val)
+            p_widget.addItem("自定义")
+            if entries:
+                p_widget.setCurrentIndex(0)
+        p_widget.blockSignals(False)
+        self._on_thread_p_changed(p_widget.currentText())
+
+    def _on_thread_p_changed(self, _text: str = "") -> None:
+        """螺距下拉变更时自动填入 d2/d3/As。"""
+        d_widget = self._field_widgets.get("fastener.d")
+        p_widget = self._field_widgets.get("fastener.p")
+        if not (d_widget and p_widget):
+            return
+        d_text = d_widget.currentText() if isinstance(d_widget, QComboBox) else ""
+        is_p_custom = p_widget.currentText() == "自定义" if isinstance(p_widget, QComboBox) else True
+        is_d_custom = d_text == "自定义"
+
+        # 自定义螺距模式：显示自定义螺距输入，d2/d3/As 可编辑
+        p_custom_card = self._field_cards.get("fastener.p_custom")
+        if p_custom_card:
+            p_custom_card.setVisible(is_p_custom and not is_d_custom)
+        for fid in ("fastener.d2", "fastener.d3", "fastener.As"):
+            w = self._field_widgets.get(fid)
+            if w and isinstance(w, QLineEdit):
+                w.setReadOnly(not (is_d_custom or is_p_custom))
+
+        if is_d_custom or is_p_custom:
+            return
+
+        # 标准模式：从表中查找并自动填入
+        p_val = p_widget.currentData() if isinstance(p_widget, QComboBox) else None
+        entries = METRIC_THREAD_TABLE.get(d_text, [])
+        for p_entry, d2, d3, as_val in entries:
+            if p_entry == p_val:
+                self._set_field("fastener.d2", f"{d2:.3f}")
+                self._set_field("fastener.d3", f"{d3:.3f}")
+                self._set_field("fastener.As", f"{as_val:.1f}")
+                return
+
+    def _set_field(self, field_id: str, value: str) -> None:
+        w = self._field_widgets.get(field_id)
+        if w and isinstance(w, QLineEdit):
+            w.setText(value)
 
     def _switch_nav_tab(self, tab_index: int) -> None:
         self.nav_stack.setCurrentIndex(tab_index)
@@ -1060,8 +1243,12 @@ class BoltPage(QWidget):
         layout.addWidget(scroll)
         self.chapter_stack.addWidget(page)
 
+    _AUTO_FILLED_FIELDS: set[str] = {"fastener.d2", "fastener.d3", "fastener.As", "fastener.Rp02"}
+
     def _apply_defaults(self) -> None:
         for spec in self._field_specs.values():
+            if spec.field_id in self._AUTO_FILLED_FIELDS:
+                continue  # auto-filled by thread linkage
             widget = self._field_widgets[spec.field_id]
             if spec.widget_type == "choice":
                 combo = widget  # type: ignore[assignment]
@@ -1071,6 +1258,13 @@ class BoltPage(QWidget):
                         combo.setCurrentIndex(idx)  # type: ignore[attr-defined]
             else:
                 widget.setText(spec.default)  # type: ignore[attr-defined]
+        # Re-trigger auto-fill after defaults are set
+        d_w = self._field_widgets.get("fastener.d")
+        if d_w and isinstance(d_w, QComboBox):
+            self._on_thread_d_changed(d_w.currentText())
+        g_w = self._field_widgets.get("fastener.grade")
+        if g_w and isinstance(g_w, QComboBox):
+            self._on_grade_changed(g_w.currentText())
 
     def _set_badge(self, label: QLabel, text: str, is_pass: bool) -> None:
         label.setText(text)
@@ -1105,6 +1299,32 @@ class BoltPage(QWidget):
                 continue
             widget = self._field_widgets[spec.field_id]
             text = str(value)
+            # 螺纹直径：JSON 中存的是数值 10，需转换为 "M10"
+            if spec.field_id == "fastener.d" and isinstance(widget, QComboBox):
+                d_key = f"M{int(float(text))}" if text.replace(".", "").isdigit() else text
+                idx = widget.findText(d_key)
+                if idx >= 0:
+                    widget.setCurrentIndex(idx)
+                else:
+                    widget.setCurrentText("自定义")
+                    cw = self._field_widgets.get("fastener.d_custom")
+                    if cw and isinstance(cw, QLineEdit):
+                        cw.setText(text)
+                continue
+            # 螺距：JSON 中存的是数值 1.5，需匹配下拉中含该数值的项
+            if spec.field_id == "fastener.p" and isinstance(widget, QComboBox):
+                matched = False
+                for i in range(widget.count()):
+                    if widget.itemData(i) is not None and float(widget.itemData(i)) == float(text):
+                        widget.setCurrentIndex(i)
+                        matched = True
+                        break
+                if not matched:
+                    widget.setCurrentText("自定义")
+                    cw = self._field_widgets.get("fastener.p_custom")
+                    if cw and isinstance(cw, QLineEdit):
+                        cw.setText(text)
+                continue
             if spec.widget_type == "choice":
                 idx = widget.findText(text)  # type: ignore[attr-defined]
                 if idx >= 0:
@@ -1215,9 +1435,14 @@ class BoltPage(QWidget):
             if spec.mapping is None:
                 continue
             raw = self._read_widget_value(spec)
+            # 螺纹规格特殊处理：从下拉选项提取数值
+            if spec.field_id == "fastener.d":
+                raw = self._resolve_thread_d()
+            elif spec.field_id == "fastener.p":
+                raw = self._resolve_thread_p()
             if not raw:
                 continue
-            if spec.widget_type == "choice":
+            if spec.widget_type == "choice" and spec.field_id not in ("fastener.d", "fastener.p"):
                 value: Any = raw
             else:
                 try:
@@ -1229,7 +1454,35 @@ class BoltPage(QWidget):
         payload.setdefault("options", {})["calculation_mode"] = (
             self.calc_mode_combo.currentData() or "design"
         )
+        jt_widget = self._field_widgets.get("elements.joint_type")
+        if jt_widget and isinstance(jt_widget, QComboBox):
+            jt_text = jt_widget.currentText()
+            payload.setdefault("options", {})["joint_type"] = JOINT_TYPE_MAP.get(jt_text, "tapped")
         return payload
+
+    def _resolve_thread_d(self) -> str:
+        """从直径下拉提取数值：M10 → '10', 自定义 → 读自定义输入。"""
+        w = self._field_widgets.get("fastener.d")
+        if not (w and isinstance(w, QComboBox)):
+            return ""
+        text = w.currentText()
+        if text == "自定义":
+            cw = self._field_widgets.get("fastener.d_custom")
+            return cw.text().strip() if cw and isinstance(cw, QLineEdit) else ""
+        # "M10" → "10"
+        return text.lstrip("Mm") if text.startswith(("M", "m")) else text
+
+    def _resolve_thread_p(self) -> str:
+        """从螺距下拉提取数值：'1.5（粗牙）' → '1.5', 自定义 → 读自定义输入。"""
+        w = self._field_widgets.get("fastener.p")
+        if not (w and isinstance(w, QComboBox)):
+            return ""
+        text = w.currentText()
+        if text == "自定义":
+            cw = self._field_widgets.get("fastener.p_custom")
+            return cw.text().strip() if cw and isinstance(cw, QLineEdit) else ""
+        data = w.currentData()
+        return str(data) if data is not None else text.split("（")[0].strip()
 
     def _calculate(self) -> None:
         try:
@@ -1321,6 +1574,12 @@ class BoltPage(QWidget):
         for warning in result.get("warnings", []):
             messages.append(f"[警告] {warning}")
         messages.extend(self._build_recommendations(result))
+        jt = result.get("joint_type", "tapped")
+        jt_label = "螺纹孔连接" if jt == "tapped" else "通孔螺栓连接"
+        messages.append(f"[连接形式] {jt_label}")
+        r7_note = result.get("r7_note", "")
+        if r7_note:
+            messages.append(f"[R7 说明] {r7_note}")
         messages.append(
             "[说明] 本版本支持分层校核：常规(R3/R4/R5)、温度影响、疲劳简化Goodman。"
             "螺纹脱扣与完整疲劳谱仍未覆盖。"

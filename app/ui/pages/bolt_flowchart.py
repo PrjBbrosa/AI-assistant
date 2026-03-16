@@ -32,7 +32,8 @@ R_STEPS: list[dict[str, Any]] = [
 
 
 R_STEP_FIELDS: dict[str, list[str]] = {
-    "r0": ["fastener.d", "fastener.p", "fastener.As", "fastener.d2",
+    "r0": ["elements.joint_type",
+            "fastener.d", "fastener.p", "fastener.As", "fastener.d2",
             "fastener.d3", "fastener.Rp02",
             "tightening.mu_thread", "tightening.mu_bearing",
             "stiffness.bolt_compliance", "stiffness.bolt_stiffness",
@@ -71,7 +72,7 @@ class FlowNodeWidget(QFrame):
         super().__init__(parent)
         self._index = index
         self._step = step
-        self.setObjectName("SubCard")
+        self.setObjectName("CheckNode" if step["has_check"] else "ProcessNode")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         layout = QVBoxLayout(self)
@@ -84,9 +85,10 @@ class FlowNodeWidget(QFrame):
         top_row.addWidget(self.title_label)
         top_row.addStretch(1)
 
-        self.badge = QLabel("—", self)
-        self.badge.setObjectName("WaitBadge")
+        self.badge: QLabel | None = None
         if step["has_check"]:
+            self.badge = QLabel("—", self)
+            self.badge.setObjectName("WaitBadge")
             top_row.addWidget(self.badge)
         layout.addLayout(top_row)
 
@@ -120,12 +122,26 @@ class FlowchartNavWidget(QWidget):
         container = QWidget(scroll)
         self._layout = QVBoxLayout(container)
         self._layout.setContentsMargins(6, 6, 6, 6)
-        self._layout.setSpacing(0)
+        self._layout.setSpacing(2)
+
+        # Section header: 计算步骤
+        sec1 = QLabel("── 计算步骤 ──", container)
+        sec1.setObjectName("FlowSectionLabel")
+        sec1.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._layout.addWidget(sec1)
 
         for i, step in enumerate(R_STEPS):
+            # Section divider before check steps
+            if i == 3:
+                sec2 = QLabel("── 校核判据 ──", container)
+                sec2.setObjectName("FlowSectionLabel")
+                sec2.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self._layout.addWidget(sec2)
+
+            # Arrow connector between nodes
             if i > 0:
                 arrow = QLabel("↓", container)
-                arrow.setObjectName("SectionHint")
+                arrow.setObjectName("FlowArrow")
                 arrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 self._layout.addWidget(arrow)
                 self._arrows_for_index[i] = arrow
@@ -134,6 +150,25 @@ class FlowchartNavWidget(QWidget):
             node.clicked.connect(self._on_node_clicked)
             self._layout.addWidget(node)
             self._nodes.append(node)
+
+        # Verdict node at bottom
+        verdict_arrow = QLabel("↓", container)
+        verdict_arrow.setObjectName("FlowArrow")
+        verdict_arrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._layout.addWidget(verdict_arrow)
+
+        self._verdict_node = QFrame(container)
+        self._verdict_node.setObjectName("VerdictNode")
+        verdict_layout = QHBoxLayout(self._verdict_node)
+        verdict_layout.setContentsMargins(10, 8, 10, 8)
+        verdict_title = QLabel("综合判定", self._verdict_node)
+        verdict_title.setObjectName("SubSectionTitle")
+        verdict_layout.addWidget(verdict_title)
+        verdict_layout.addStretch(1)
+        self._verdict_badge = QLabel("等待计算", self._verdict_node)
+        self._verdict_badge.setObjectName("WaitBadge")
+        verdict_layout.addWidget(self._verdict_badge)
+        self._layout.addWidget(self._verdict_node)
 
         self._layout.addStretch(1)
         scroll.setWidget(container)
@@ -191,6 +226,41 @@ class FlowchartNavWidget(QWidget):
                 node.badge.setObjectName("FailBadge")
                 node.badge.setText("不通过")
             node.badge.style().polish(node.badge)
+
+        # Update pass-flow arrows between check nodes
+        for i, step in enumerate(R_STEPS):
+            if i == 0 or not R_STEPS[i - 1]["has_check"]:
+                continue
+            arrow = self._arrows_for_index.get(i)
+            if not arrow:
+                continue
+            prev_key = R_STEPS[i - 1]["check_key"]
+            prev_ok = checks.get(prev_key)
+            if prev_key == "residual_clamp_ok" and calc_mode == "design":
+                prev_ok = True
+            if prev_ok is True:
+                arrow.setText("↓  ✓")
+                arrow.setObjectName("FlowArrowPass")
+            elif prev_ok is False:
+                arrow.setText("↓  ✗")
+                arrow.setObjectName("FlowArrowFail")
+            else:
+                arrow.setText("↓")
+                arrow.setObjectName("FlowArrow")
+            arrow.style().polish(arrow)
+
+        # Update verdict
+        overall = result.get("overall_pass")
+        if overall is True:
+            self._verdict_badge.setObjectName("PassBadge")
+            self._verdict_badge.setText("全部通过")
+        elif overall is False:
+            self._verdict_badge.setObjectName("FailBadge")
+            self._verdict_badge.setText("存在不通过")
+        else:
+            self._verdict_badge.setObjectName("WaitBadge")
+            self._verdict_badge.setText("等待计算")
+        self._verdict_badge.style().polish(self._verdict_badge)
 
     def set_r6_visible(self, visible: bool) -> None:
         """根据校核层级控制 R6 疲劳节点可见性。"""
@@ -423,11 +493,13 @@ class RStepDetailPage(QFrame):
         if step_id == "r7":
             if "p_bearing" not in stresses:
                 return "未设置许用压强 p_G_allow，R7 已跳过。"
+            r7_note = result.get("r7_note", "")
+            note_line = f"\n{r7_note}" if r7_note else ""
             return (
                 f"A_bearing = π/4×(DKo²-DKi²) = {stresses.get('A_bearing_mm2', 0):.1f} mm²\n"
                 f"p_B       = FM,max/A_bearing = {stresses.get('p_bearing', 0):.1f} MPa\n"
                 f"p_allow   = {stresses.get('p_G_allow', 0):.0f} MPa\n"
-                f"判据: p_B ≤ p_allow"
+                f"判据: p_B ≤ p_allow{note_line}"
             )
         return "—"
 
