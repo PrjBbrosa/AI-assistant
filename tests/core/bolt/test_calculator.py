@@ -297,3 +297,157 @@ class TestJointTypeThermalIntegration:
         assert "通孔" in result["scope_note"]
         assert "螺母端" in result["r7_note"]
         assert result["overall_pass"] in (True, False)  # just check it runs
+
+
+class TestEmbedEstimation:
+    def test_embed_auto_when_zero_and_surface_class_provided(self):
+        """embed_loss=0 + surface_class → 自动估算。"""
+        data = _base_input()
+        data["loads"]["embed_loss"] = 0
+        data["clamped"] = {"part_count": 1, "surface_class": "medium"}
+        result = calculate_vdi2230_core(data)
+        embed = result["embed_estimation"]
+        assert embed["embed_auto_estimated"] is True
+        assert embed["embed_auto_value_N"] > 0
+        assert embed["embed_interfaces"] == 2  # tapped, 1 part → 1+1=2
+
+    def test_embed_manual_value_preserved(self):
+        """embed_loss > 0 → 不自动估算，保持用户值。"""
+        data = _base_input()
+        data["loads"]["embed_loss"] = 800.0
+        data["clamped"] = {"part_count": 1, "surface_class": "medium"}
+        result = calculate_vdi2230_core(data)
+        embed = result["embed_estimation"]
+        assert embed["embed_auto_estimated"] is False
+        assert embed["embed_auto_value_N"] == 0.0
+
+    def test_embed_skipped_without_surface_class(self):
+        """无 surface_class → 不估算。"""
+        data = _base_input()
+        data["loads"]["embed_loss"] = 0
+        result = calculate_vdi2230_core(data)
+        embed = result["embed_estimation"]
+        assert embed["embed_auto_estimated"] is False
+
+    def test_embed_through_joint_more_interfaces(self):
+        """通孔连接比螺纹孔连接多 1 个界面。"""
+        data = _base_input()
+        data["loads"]["embed_loss"] = 0
+        data["clamped"] = {"part_count": 2, "surface_class": "medium"}
+        result_tapped = calculate_vdi2230_core(data)
+        data["options"] = {"joint_type": "through"}
+        result_through = calculate_vdi2230_core(data)
+        assert result_tapped["embed_estimation"]["embed_interfaces"] == 3
+        assert result_through["embed_estimation"]["embed_interfaces"] == 4
+        assert result_through["embed_estimation"]["embed_auto_value_N"] > \
+               result_tapped["embed_estimation"]["embed_auto_value_N"]
+
+    def test_embed_rougher_surface_higher_loss(self):
+        """粗糙表面嵌入损失更大。"""
+        data = _base_input()
+        data["loads"]["embed_loss"] = 0
+        data["clamped"] = {"part_count": 1, "surface_class": "rough"}
+        result_rough = calculate_vdi2230_core(data)
+        data["clamped"]["surface_class"] = "fine"
+        result_fine = calculate_vdi2230_core(data)
+        assert result_rough["embed_estimation"]["embed_auto_value_N"] > \
+               result_fine["embed_estimation"]["embed_auto_value_N"]
+
+    def test_embed_formula_correctness(self):
+        """验证公式: F_Z = f_z_per_if × n_if × 1e-3 / (δs + δp)。"""
+        data = _base_input()
+        data["loads"]["embed_loss"] = 0
+        data["clamped"] = {"part_count": 1, "surface_class": "medium"}
+        result = calculate_vdi2230_core(data)
+        embed = result["embed_estimation"]
+        delta_s = data["stiffness"]["bolt_compliance"]
+        delta_p = data["stiffness"]["clamped_compliance"]
+        expected = 2.5 * 2 * 1e-3 / (delta_s + delta_p)  # medium=2.5μm, 2 interfaces
+        assert abs(embed["embed_auto_value_N"] - expected) < 0.1
+
+
+class TestAdditionalLoadReference:
+    def test_additional_load_not_in_checks(self):
+        """additional_load_ok 不再出现在 checks 字典中。"""
+        data = _base_input()
+        result = calculate_vdi2230_core(data)
+        assert "additional_load_ok" not in result["checks"]
+
+    def test_additional_load_in_references(self):
+        """附加载荷信息出现在 references 字典中。"""
+        data = _base_input()
+        result = calculate_vdi2230_core(data)
+        ref = result["references"]
+        assert "additional_load_ok" in ref
+        assert "FA_perm_N" in ref
+        assert ref["is_reference"] is True
+
+    def test_overall_pass_ignores_additional_load(self):
+        """overall_pass 不受附加载荷估算影响 — 正式校核全过即 overall_pass=True。"""
+        data = _base_input()
+        result = calculate_vdi2230_core(data)
+        assert result["overall_pass"] is True
+        assert "additional_load_ok" not in result["checks"]
+        assert "additional_load_ok" in result["references"]
+
+    def test_fa_perm_value_unchanged(self):
+        """FA_perm 计算值不变。"""
+        data = _base_input()
+        result = calculate_vdi2230_core(data)
+        ref = result["references"]
+        phi_n = result["intermediate"]["phi_n"]
+        rp02 = data["fastener"]["Rp02"]
+        as_val = result["derived_geometry_mm"]["As"]
+        expected = 0.1 * rp02 * as_val / phi_n
+        assert abs(ref["FA_perm_N"] - expected) < 0.1
+
+
+class TestBatch2Integration:
+    def test_embed_estimation_with_thermal_full_chain(self):
+        """嵌入损失估算 + 热估算 + R7 全链路。"""
+        data = _base_input()
+        data["options"] = {
+            "check_level": "thermal",
+            "joint_type": "tapped",
+        }
+        data["loads"]["embed_loss"] = 0
+        data["loads"]["thermal_force_loss"] = 0
+        data["clamped"] = {
+            "part_count": 2,
+            "surface_class": "medium",
+            "total_thickness": 25.0,
+        }
+        data["operating"] = {
+            "temp_bolt": 80.0,
+            "temp_parts": 30.0,
+            "alpha_bolt": 11.5e-6,
+            "alpha_parts": 23.0e-6,
+        }
+        data["bearing"]["p_G_allow"] = 700.0
+        result = calculate_vdi2230_core(data)
+        # embed estimation activated
+        embed = result["embed_estimation"]
+        assert embed["embed_auto_estimated"] is True
+        assert embed["embed_interfaces"] == 3  # tapped, 2 parts
+        # thermal auto estimation activated
+        assert result["thermal"]["thermal_auto_estimated"] is True
+        # additional_load is reference, not in checks
+        assert "additional_load_ok" not in result["checks"]
+        assert "additional_load_ok" in result["references"]
+        # overall_pass based only on formal checks
+        assert isinstance(result["overall_pass"], bool)
+
+    def test_manual_embed_overrides_estimation(self):
+        """手动嵌入损失 > 0 时不使用自动估算。"""
+        data = _base_input()
+        data["loads"]["embed_loss"] = 1500.0
+        data["clamped"] = {"part_count": 1, "surface_class": "rough"}
+        result = calculate_vdi2230_core(data)
+        assert result["embed_estimation"]["embed_auto_estimated"] is False
+        # FM_min 中使用的是手动值 1500，而非估算值
+        inter = result["intermediate"]
+        phi_n = inter["phi_n"]
+        fa = data["loads"]["FA_max"]
+        # basic check_level (default) → thermal_effective = 0.0
+        expected_fmmin = inter["F_K_required_N"] + (1 - phi_n) * fa + 1500.0 + 0.0
+        assert abs(inter["FMmin_N"] - expected_fmmin) < 1.0

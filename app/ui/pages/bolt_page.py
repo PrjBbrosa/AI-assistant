@@ -269,6 +269,16 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="1",
             ),
             FieldSpec(
+                "clamped.surface_class",
+                "接触面粗糙度",
+                "-",
+                "用于嵌入损失自动估算。选择后当嵌入损失 FZ=0 时自动计算参考值。",
+                mapping=("clamped", "surface_class"),
+                widget_type="choice",
+                options=("粗糙 (Ra≈6.3μm)", "中等 (Ra≈3.2μm)", "精细 (Ra≈1.6μm)"),
+                default="中等 (Ra≈3.2μm)",
+            ),
+            FieldSpec(
                 "clamped.total_thickness",
                 "总夹紧长度 lK",
                 "mm",
@@ -350,7 +360,8 @@ CHAPTERS: list[dict[str, Any]] = [
                 "loads.embed_loss",
                 "嵌入损失 FZ",
                 "N",
-                "接触表面压平导致的预紧力损失。",
+                "接触表面压平导致的预紧力损失。填 0 时若已选择接触面粗糙度，"
+                "将按 VDI 2230 表 5.4/1 自动估算。",
                 mapping=("loads", "embed_loss"),
                 default="1000",
             ),
@@ -541,7 +552,7 @@ CHECK_LABELS = {
     "assembly_von_mises_ok": "装配等效应力校核（VDI R4）",
     "operating_axial_ok": "服役轴向应力校核（VDI R5）",
     "residual_clamp_ok": "残余夹紧力校核（VDI R3）",
-    "additional_load_ok": "附加载荷能力估算 ⚠",
+    "additional_load_ok": "附加载荷能力估算 ⚠ 参考",
     "thermal_loss_ok": "温度损失影响校核",
     "fatigue_ok": "疲劳校核（简化 Goodman）",
     "bearing_pressure_ok": "支承面压强校核（R7）",
@@ -578,6 +589,12 @@ THERMAL_EXPANSION_PRESETS: dict[str, str] = {
     "不锈钢": "16.0e-6",
     "铝合金": "23.0e-6",
     "铸铁": "10.5e-6",
+}
+
+SURFACE_CLASS_MAP: dict[str, str] = {
+    "粗糙 (Ra≈6.3μm)": "rough",
+    "中等 (Ra≈3.2μm)": "medium",
+    "精细 (Ra≈1.6μm)": "fine",
 }
 
 CALC_MODES: tuple[tuple[str, str], ...] = (
@@ -1551,6 +1568,10 @@ class BoltPage(QWidget):
         if jt_widget and isinstance(jt_widget, QComboBox):
             jt_text = jt_widget.currentText()
             payload.setdefault("options", {})["joint_type"] = JOINT_TYPE_MAP.get(jt_text, "tapped")
+        sc_widget = self._field_widgets.get("clamped.surface_class")
+        if sc_widget and isinstance(sc_widget, QComboBox):
+            sc_text = sc_widget.currentText()
+            payload.setdefault("clamped", {})["surface_class"] = SURFACE_CLASS_MAP.get(sc_text, "medium")
         return payload
 
     def _resolve_thread_d(self) -> str:
@@ -1627,6 +1648,12 @@ class BoltPage(QWidget):
                 badge.style().polish(badge)
             else:
                 self._set_badge(badge, "通过" if checks[key] else "不通过", checks[key])
+        # 附加载荷参考 badge（从 references 读取，不在 checks 中）
+        ref_badge = self._check_badges.get("additional_load_ok")
+        if ref_badge:
+            refs = result.get("references", {})
+            ref_pass = refs.get("additional_load_ok", True)
+            self._set_badge(ref_badge, "通过" if ref_pass else "超限（仅参考）", ref_pass)
         self._apply_check_level_visibility()
 
         inter = result["intermediate"]
@@ -1650,7 +1677,7 @@ class BoltPage(QWidget):
             f"  [{_ratio(stresses['sigma_vm_assembly'], stresses['sigma_allow_assembly'])}]",
             f"• 服役轴向应力: {stresses['sigma_ax_work']:.1f} MPa  /  允许 {stresses['sigma_allow_work']:.1f} MPa"
             f"  [{_ratio(stresses['sigma_ax_work'], stresses['sigma_allow_work'])}]",
-            f"• 附加载荷参考: FA,max = {fa_max:.1f} N  /  参考上限 {force['FA_perm_N']:.1f} N  (⚠ 参考估算，非 VDI 标准项)",
+            f"• 附加载荷参考: FA,max = {fa_max:.1f} N  /  参考上限 {result.get('references', {}).get('FA_perm_N', 0):.1f} N  (⚠ 参考估算，非 VDI 标准项)",
         ]
         if level in ("thermal", "fatigue"):
             thermal_line = f"• 热损失占比: {thermal.get('thermal_loss_ratio', 0.0) * 100:.1f}%  /  限值 25.0%"
@@ -1663,6 +1690,12 @@ class BoltPage(QWidget):
             metric_lines.append(
                 f"• 疲劳应力幅: {fatigue.get('sigma_a', 0.0):.1f} MPa  /  允许 {fatigue.get('sigma_a_allow', 0.0):.1f} MPa"
                 f"  [{_ratio(float(fatigue.get('sigma_a', 0.0)), float(fatigue.get('sigma_a_allow', 0.0)))}]"
+            )
+        embed_est = result.get("embed_estimation", {})
+        if embed_est.get("embed_auto_estimated"):
+            metric_lines.append(
+                f"• 嵌入损失估算: FZ = {embed_est['embed_auto_value_N']:.0f} N"
+                f"  ({embed_est['embed_interfaces']} 个界面 × {embed_est['embed_fz_per_if_um']:.1f} μm)"
             )
         self.metrics_text.setText("\n".join(metric_lines))
 
@@ -1700,8 +1733,9 @@ class BoltPage(QWidget):
             recs.append("[建议] 服役应力超限：可增大规格 d、提高强度等级、或降低外载 FA。")
         if not checks.get("residual_clamp_ok", True):
             recs.append("[建议] 残余夹紧力不足：可提高 FMmin、减小嵌入损失、或增加摩擦面能力。")
-        if not checks.get("additional_load_ok", True):
-            recs.append("[建议] 附加载荷超限：可提高 As、降低 n 或减少轴向外载。")
+        refs = result.get("references", {})
+        if not refs.get("additional_load_ok", True):
+            recs.append("[参考] 附加载荷超限（参考估算）：可提高 As、降低 n 或减少轴向外载。")
         if "thermal_loss_ok" in checks and not checks.get("thermal_loss_ok", True):
             recs.append("[建议] 热损失偏大：可补偿预紧力、优化材料热匹配或降低温差。")
         if "fatigue_ok" in checks and not checks.get("fatigue_ok", True):
@@ -1747,6 +1781,11 @@ class BoltPage(QWidget):
                     continue
                 if key == "fatigue_ok" and level != "fatigue":
                     continue
+            if key == "additional_load_ok":
+                refs = result.get("references", {})
+                passed = refs.get("additional_load_ok", True)
+                lines.append(f"- {title}: {'通过' if passed else '超限（仅参考）'}")
+                continue
             lines.append(f"- {title}: {'通过' if checks.get(key) else '不通过'}")
 
         lines.extend(
@@ -1759,7 +1798,7 @@ class BoltPage(QWidget):
                 f"- MAmax: {torque['MA_max_Nm']:.3f} N·m",
                 f"- FK_residual: {forces['F_K_residual_N']:.2f} N",
                 f"- FK_required: {inter['F_K_required_N']:.2f} N",
-                f"- FA_perm: {forces['FA_perm_N']:.2f} N",
+                f"- FA_perm: {result.get('references', {}).get('FA_perm_N', 0):.2f} N (参考估算)",
                 f"- sigma_vm_assembly: {stresses['sigma_vm_assembly']:.2f} MPa",
                 f"- sigma_ax_work: {stresses['sigma_ax_work']:.2f} MPa",
                 "",

@@ -31,6 +31,11 @@
     "bearing_d_outer": 22.0,
     "p_G_allow": 700.0
   },
+  "clamped": {
+    "surface_class": "medium",
+    "part_count": 1,
+    "total_thickness": 20
+  },
   "operating": {
     "alpha_bolt": 11.5e-6,
     "alpha_parts": 11.5e-6

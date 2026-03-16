@@ -447,12 +447,22 @@ class RStepDetailPage(QFrame):
                 f"φn = n × φ = {inter.get('phi_n', 0):.4f}"
             )
         if step_id == "r1":
+            embed_est = result.get("embed_estimation", {})
+            embed_line = ""
+            if embed_est.get("embed_auto_estimated"):
+                embed_line = (
+                    f"\n\n嵌入损失（自动估算 VDI 2230 §5.4.2）:\n"
+                    f"  界面数 = {embed_est.get('embed_interfaces', 0)}\n"
+                    f"  fz/界面 = {embed_est.get('embed_fz_per_if_um', 0):.1f} μm\n"
+                    f"  FZ = {embed_est.get('embed_auto_value_N', 0):,.0f} N"
+                )
             return (
                 f"FK,slip = FQ/(μT×qF) = {inter.get('F_slip_required_N', 0):,.0f} N\n"
                 f"FK,req  = max(FK,seal, FK,slip) = {inter.get('F_K_required_N', 0):,.0f} N\n"
                 f"FM,min  = FK,req + (1-φn)×FA + FZ + Fth\n"
                 f"        = {inter.get('FMmin_N', 0):,.0f} N\n"
                 f"FM,max  = αA × FM,min = {inter.get('FMmax_N', 0):,.0f} N"
+                f"{embed_line}"
             )
         if step_id == "r2":
             return (

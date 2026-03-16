@@ -71,6 +71,44 @@ def _resolve_compliance(stiffness: Dict[str, Any]) -> Dict[str, float]:
     return {"delta_s": delta_s, "delta_p": delta_p, "n": n}
 
 
+# VDI 2230 表 5.4/1 简化：典型单界面嵌入量 (μm)
+_EMBED_FZ_PER_INTERFACE: dict[str, float] = {
+    "rough": 3.0,    # Ra ≈ 6.3 μm
+    "medium": 2.5,   # Ra ≈ 3.2 μm
+    "fine": 1.0,     # Ra ≈ 1.6 μm
+}
+
+
+def _estimate_embed_loss(
+    joint_type: str,
+    part_count: int,
+    surface_class: str,
+    delta_s: float,
+    delta_p: float,
+) -> Dict[str, Any]:
+    """根据 VDI 2230 表 5.4/1 估算嵌入损失。"""
+    fz_per_if = _EMBED_FZ_PER_INTERFACE.get(surface_class)
+    if fz_per_if is None:
+        return {
+            "embed_auto_estimated": False,
+            "embed_auto_value_N": 0.0,
+            "embed_interfaces": 0,
+            "embed_fz_per_if_um": 0.0,
+        }
+    if joint_type == "through":
+        n_interfaces = part_count + 2
+    else:
+        n_interfaces = part_count + 1
+    fz_total_mm = fz_per_if * n_interfaces * 1e-3
+    f_z = fz_total_mm / (delta_s + delta_p)
+    return {
+        "embed_auto_estimated": True,
+        "embed_auto_value_N": f_z,
+        "embed_interfaces": n_interfaces,
+        "embed_fz_per_if_um": fz_per_if,
+    }
+
+
 def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     """Calculate VDI 2230 core-chain outputs for a single bolt joint."""
     fastener = data.get("fastener", {})
@@ -202,6 +240,26 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
                 # 参数不全或异常时静默跳过，保留 thermal_force_loss = 0
                 pass
 
+    # ------------------------------------------------------------------
+    # 嵌入损失自动估算 (VDI 2230 §5.4.2)
+    # ------------------------------------------------------------------
+    part_count = int(clamped.get("part_count", 1))
+    surface_class = clamped.get("surface_class")
+    embed_estimation: Dict[str, Any]
+    if embed_loss == 0.0 and surface_class is not None:
+        embed_estimation = _estimate_embed_loss(
+            joint_type, part_count, str(surface_class), delta_s, delta_p
+        )
+        if embed_estimation["embed_auto_estimated"]:
+            embed_loss = embed_estimation["embed_auto_value_N"]
+    else:
+        embed_estimation = {
+            "embed_auto_estimated": False,
+            "embed_auto_value_N": 0.0,
+            "embed_interfaces": 0,
+            "embed_fz_per_if_um": 0.0,
+        }
+
     f_slip_required = 0.0 if fq_max == 0 else fq_max / (slip_mu * interfaces)
     f_k_required = max(seal_force_required, f_slip_required)
 
@@ -300,7 +358,6 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         "assembly_von_mises_ok": pass_assembly,
         "operating_axial_ok": pass_work,
         "residual_clamp_ok": pass_residual,
-        "additional_load_ok": pass_additional,
     }
     if check_level in {"thermal", "fatigue"}:
         checks_out["thermal_loss_ok"] = pass_thermal
@@ -345,7 +402,12 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         "forces": {
             "F_bolt_work_max_N": f_bolt_work_max,
             "F_K_residual_N": f_k_residual,
+        },
+        "references": {
+            "additional_load_ok": pass_additional,
             "FA_perm_N": f_a_perm,
+            "is_reference": True,
+            "note": "附加载荷能力为参考估算（基于 10% Rp0.2 裕量），非 VDI 2230 正式校核项",
         },
         "checks": checks_out,
         "check_level": check_level,
@@ -362,6 +424,7 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
             "alpha_bolt": alpha_bolt,
             "alpha_parts": alpha_parts,
         },
+        "embed_estimation": embed_estimation,
         "clamped_info": {
             "basic_solid": clamped.get("basic_solid"),
             "part_count": clamped.get("part_count"),
