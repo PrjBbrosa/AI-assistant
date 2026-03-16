@@ -45,3 +45,45 @@ class TestPhiNHardBlock:
         result = calculate_vdi2230_core(data)
         for w in result.get("warnings", []):
             assert "phi_n" not in w.lower()
+
+
+class TestBearingPressureR7:
+    def test_r7_pass_when_pressure_below_limit(self):
+        data = _base_input()
+        data["bearing"]["p_G_allow"] = 700.0
+        result = calculate_vdi2230_core(data)
+        assert "bearing_pressure_ok" in result["checks"]
+        assert result["checks"]["bearing_pressure_ok"] is True
+        assert result["stresses_mpa"]["p_bearing"] > 0
+        assert result["stresses_mpa"]["A_bearing_mm2"] > 0
+
+    def test_r7_fail_when_pressure_above_limit(self):
+        data = _base_input()
+        data["bearing"]["p_G_allow"] = 1.0  # 极低许用值
+        result = calculate_vdi2230_core(data)
+        assert result["checks"]["bearing_pressure_ok"] is False
+        assert result["overall_pass"] is False
+
+    def test_r7_skipped_when_p_g_allow_missing(self):
+        data = _base_input()
+        # 不设置 p_G_allow
+        result = calculate_vdi2230_core(data)
+        assert "bearing_pressure_ok" not in result["checks"]
+
+    def test_r7_skipped_when_p_g_allow_zero(self):
+        data = _base_input()
+        data["bearing"]["p_G_allow"] = 0.0
+        result = calculate_vdi2230_core(data)
+        assert "bearing_pressure_ok" not in result["checks"]
+
+    def test_r7_formula_correctness(self):
+        data = _base_input()
+        data["bearing"]["p_G_allow"] = 700.0
+        result = calculate_vdi2230_core(data)
+        d_inner = data["bearing"]["bearing_d_inner"]
+        d_outer = data["bearing"]["bearing_d_outer"]
+        a_expected = math.pi / 4.0 * (d_outer**2 - d_inner**2)
+        fm_max = result["intermediate"]["FMmax_N"]
+        p_expected = fm_max / a_expected
+        assert abs(result["stresses_mpa"]["A_bearing_mm2"] - a_expected) < 0.1
+        assert abs(result["stresses_mpa"]["p_bearing"] - p_expected) < 0.1

@@ -256,6 +256,14 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         f_a_perm = 0.1 * rp02 * geometry["As"] / phi_n
         pass_additional = fa_max <= f_a_perm
 
+    # --- R7 支承面压强校核 ---
+    p_g_allow = float(bearing.get("p_G_allow", 0.0))
+    r7_active = p_g_allow > 0
+    if r7_active:
+        a_bearing = math.pi / 4.0 * (bearing_d_outer**2 - bearing_d_inner**2)
+        p_bearing = fm_max / a_bearing
+        pass_bearing = p_bearing <= p_g_allow
+
     warnings = []
     if utilization > 0.95:
         warnings.append("装配利用系数偏高（>0.95），建议核查摩擦散差与装配工艺能力。")
@@ -272,6 +280,21 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         checks_out["thermal_loss_ok"] = pass_thermal
     if check_level == "fatigue":
         checks_out["fatigue_ok"] = pass_fatigue
+    if r7_active:
+        checks_out["bearing_pressure_ok"] = pass_bearing
+
+    stresses_out = {
+        "sigma_ax_assembly": sigma_ax_assembly,
+        "tau_assembly": tau_assembly,
+        "sigma_vm_assembly": sigma_vm_assembly,
+        "sigma_allow_assembly": sigma_allow_assembly,
+        "sigma_ax_work": sigma_ax_work,
+        "sigma_allow_work": sigma_allow_work,
+    }
+    if r7_active:
+        stresses_out["p_bearing"] = p_bearing
+        stresses_out["p_G_allow"] = p_g_allow
+        stresses_out["A_bearing_mm2"] = a_bearing
 
     return {
         "inputs_echo": data,
@@ -292,14 +315,7 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
             "M_thread_Nmm_at_FMmax": m_thread,
         },
         "torque": {"MA_min_Nm": ma_min, "MA_max_Nm": ma_max},
-        "stresses_mpa": {
-            "sigma_ax_assembly": sigma_ax_assembly,
-            "tau_assembly": tau_assembly,
-            "sigma_vm_assembly": sigma_vm_assembly,
-            "sigma_allow_assembly": sigma_allow_assembly,
-            "sigma_ax_work": sigma_ax_work,
-            "sigma_allow_work": sigma_allow_work,
-        },
+        "stresses_mpa": stresses_out,
         "forces": {
             "F_bolt_work_max_N": f_bolt_work_max,
             "F_K_residual_N": f_k_residual,

@@ -28,7 +28,8 @@
   },
   "bearing": {
     "bearing_d_inner": 13.0,
-    "bearing_d_outer": 22.0
+    "bearing_d_outer": 22.0,
+    "p_G_allow": 700.0
   },
   "checks": {
     "yield_safety_operating": 1.15
