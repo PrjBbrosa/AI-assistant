@@ -159,15 +159,13 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     # ------------------------------------------------------------------
-    # 热预紧力损失自动估算（VDI 2230 差胀公式）
-    # F_th ≈ (α_bolt - α_parts) × T_bolt × (c_s × c_p) / (c_s + c_p) × l_K
-    # 其中 c_s = 1/δ_s, c_p = 1/δ_p 为螺栓和被夹件刚度，l_K 为夹紧长度。
-    # 模块约定：当 Δα=0 时热力为零（相同材料无差胀损失）；
-    #            温度差仅影响单独温度场下的估算场景。
+    # 热预紧力损失自动估算（VDI 2230 温差公式）
+    # F_th ≈ |Δα × ΔT| × (c_s × c_p) / (c_s + c_p) × l_K
+    # 其中 Δα = α_bolt - α_parts, ΔT = T_bolt - T_parts,
+    #      c_s = 1/δ_s, c_p = 1/δ_p 为螺栓和被夹件刚度，l_K 为夹紧长度。
     # 条件：用户手动输入的 thermal_force_loss 为 0 或空时才使用估算值；
-    #        需要温度信息、刚度和夹紧长度信息齐备才能估算。
+    #        需要温度差、刚度和夹紧长度信息齐备才能估算。
     # ------------------------------------------------------------------
-    # 默认热膨胀系数：钢 ≈ 11.5e-6 /K（提前提取，供输出回显使用）
     _ALPHA_STEEL_DEFAULT = 11.5e-6  # 1/K
     alpha_bolt = float(operating.get("alpha_bolt", _ALPHA_STEEL_DEFAULT))
     alpha_parts = float(operating.get("alpha_parts", _ALPHA_STEEL_DEFAULT))
@@ -188,14 +186,12 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
                 temp_bolt = float(temp_bolt)
                 temp_parts = float(temp_parts)
                 l_K = float(l_K)
-                if l_K > 0.0:
+                delta_T = temp_bolt - temp_parts
+                if delta_T != 0.0 and l_K > 0.0:
                     c_s = 1.0 / delta_s  # 螺栓刚度 N/mm
                     c_p = 1.0 / delta_p  # 被夹件刚度 N/mm
-                    # 差胀热损失公式：Δα × T_bolt × c_eff × l_K
-                    # 当 Δα=0（相同材料）时恒为零；T_bolt 为螺栓工作温度（模块约定参考温度）
                     thermal_auto_value = abs(
-                        (alpha_bolt - alpha_parts)
-                        * temp_bolt
+                        (alpha_bolt - alpha_parts) * delta_T
                         * (c_s * c_p) / (c_s + c_p)
                         * l_K
                     )

@@ -188,13 +188,13 @@ class TestJointType:
 
 class TestThermalMaterial:
     def test_steel_bolt_aluminum_clamped_thermal_loss(self):
-        """铝壳体+钢螺栓的热损失应显著大于钢+钢。"""
+        """铝壳体+钢螺栓、不同温度 → 有热损失。"""
         data = _base_input()
         data["options"] = {"check_level": "thermal"}
         data["loads"]["thermal_force_loss"] = 0
         data["operating"] = {
             "temp_bolt": 80.0,
-            "temp_parts": 80.0,
+            "temp_parts": 30.0,
             "alpha_bolt": 11.5e-6,
             "alpha_parts": 23.0e-6,
         }
