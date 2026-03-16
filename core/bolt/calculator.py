@@ -87,6 +87,10 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     if check_level not in {"basic", "thermal", "fatigue"}:
         raise InputError(f"options.check_level 无效：{check_level}")
 
+    calculation_mode = str(options.get("calculation_mode", "design"))
+    if calculation_mode not in {"design", "verify"}:
+        raise InputError(f"options.calculation_mode 无效：{calculation_mode}")
+
     d = _positive(float(_require(fastener, "d", "fastener")), "fastener.d")
     p = _positive(float(_require(fastener, "p", "fastener")), "fastener.p")
     rp02 = _positive(float(_require(fastener, "Rp02", "fastener")), "fastener.Rp02")
@@ -197,7 +201,16 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     f_k_required = max(seal_force_required, f_slip_required)
 
     thermal_effective = thermal_force_loss if check_level in {"thermal", "fatigue"} else 0.0
-    fm_min = f_k_required + (1.0 - phi_n) * fa_max + embed_loss + thermal_effective
+    if calculation_mode == "verify":
+        fm_min_input = _positive(
+            float(_require(loads, "FM_min_input", "loads")),
+            "loads.FM_min_input",
+        )
+        fm_min = fm_min_input
+        r3_note = "校核模式：独立验证已知预紧力是否满足残余夹紧需求"
+    else:
+        fm_min = f_k_required + (1.0 - phi_n) * fa_max + embed_loss + thermal_effective
+        r3_note = "设计模式下 FM_min 由 FK_req 反推，R3 自动满足"
     if fm_min <= 0:
         raise InputError("Calculated FMmin <= 0; check loads/stiffness inputs.")
     fm_max = alpha_a * fm_min
@@ -231,9 +244,12 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     sigma_allow_work = rp02 / yield_safety_operating
     pass_work = sigma_ax_work <= sigma_allow_work
 
-    f_k_residual = fm_min - embed_loss - thermal_effective - (1.0 - phi_n) * fa_max
-    residual_tol = max(1e-6, 1e-9 * max(abs(f_k_residual), abs(f_k_required), 1.0))
-    pass_residual = f_k_residual + residual_tol >= f_k_required
+    if calculation_mode == "verify":
+        f_k_residual = fm_min - embed_loss - thermal_effective - (1.0 - phi_n) * fa_max
+        pass_residual = f_k_residual >= f_k_required
+    else:
+        f_k_residual = f_k_required  # 设计模式下恒等
+        pass_residual = True
 
     thermal_loss_ratio = 0.0 if fm_min <= 0 else thermal_effective / fm_min
     pass_thermal = thermal_loss_ratio <= 0.25
@@ -323,6 +339,8 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         },
         "checks": checks_out,
         "check_level": check_level,
+        "calculation_mode": calculation_mode,
+        "r3_note": r3_note,
         "thermal": {
             "thermal_loss_effective_N": thermal_effective,
             "thermal_loss_ratio": thermal_loss_ratio,

@@ -87,3 +87,51 @@ class TestBearingPressureR7:
         p_expected = fm_max / a_expected
         assert abs(result["stresses_mpa"]["A_bearing_mm2"] - a_expected) < 0.1
         assert abs(result["stresses_mpa"]["p_bearing"] - p_expected) < 0.1
+
+
+class TestCalculationMode:
+    def test_default_mode_is_design(self):
+        data = _base_input()
+        result = calculate_vdi2230_core(data)
+        assert result["calculation_mode"] == "design"
+        assert result["r3_note"] is not None
+
+    def test_design_mode_r3_always_true(self):
+        data = _base_input()
+        result = calculate_vdi2230_core(data)
+        assert result["checks"]["residual_clamp_ok"] is True
+
+    def test_verify_mode_with_sufficient_preload(self):
+        data = _base_input()
+        data["options"] = {"calculation_mode": "verify"}
+        # 先用设计模式计算出 FM_min，然后用更大的值做校核
+        design_result = calculate_vdi2230_core(_base_input())
+        fm_min_design = design_result["intermediate"]["FMmin_N"]
+        data["loads"]["FM_min_input"] = fm_min_design * 1.2  # 120% 裕量
+        result = calculate_vdi2230_core(data)
+        assert result["calculation_mode"] == "verify"
+        assert result["checks"]["residual_clamp_ok"] is True
+
+    def test_verify_mode_with_insufficient_preload(self):
+        data = _base_input()
+        data["options"] = {"calculation_mode": "verify"}
+        data["loads"]["FM_min_input"] = 100.0  # 远低于需求
+        result = calculate_vdi2230_core(data)
+        assert result["checks"]["residual_clamp_ok"] is False
+        assert result["overall_pass"] is False
+
+    def test_verify_mode_requires_fm_min_input(self):
+        data = _base_input()
+        data["options"] = {"calculation_mode": "verify"}
+        # 不提供 FM_min_input
+        with pytest.raises(InputError, match="FM_min_input"):
+            calculate_vdi2230_core(data)
+
+    def test_verify_mode_fm_min_used_for_torque_and_stress(self):
+        data = _base_input()
+        data["options"] = {"calculation_mode": "verify"}
+        fm_input = 20000.0
+        data["loads"]["FM_min_input"] = fm_input
+        result = calculate_vdi2230_core(data)
+        assert abs(result["intermediate"]["FMmin_N"] - fm_input) < 1e-6
+        assert abs(result["intermediate"]["FMmax_N"] - fm_input * data["tightening"]["alpha_A"]) < 1.0
