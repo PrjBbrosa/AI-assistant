@@ -54,6 +54,7 @@ class FieldSpec:
     widget_type: str = "number"
     options: tuple[str, ...] = ()
     default: str = ""
+    disabled: bool = False
 
 
 CHAPTERS: list[dict[str, Any]] = [
@@ -123,6 +124,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "螺栓温度",
                 "°C",
                 "用于热损失估算。若已知等效热损失可直接在下方输入。",
+                mapping=("operating", "temp_bolt"),
                 default="20",
             ),
             FieldSpec(
@@ -130,6 +132,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "被夹件温度",
                 "°C",
                 "与螺栓温度共同影响热预紧力损失。",
+                mapping=("operating", "temp_parts"),
                 default="20",
             ),
         ],
@@ -188,6 +191,13 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("loads", "thermal_force_loss"),
                 default="0",
             ),
+            FieldSpec(
+                "loads.FM_min_input",
+                "已知最小预紧力 FM,min",
+                "N",
+                "校核模式下使用：输入已知的最小预紧力值。",
+                mapping=("loads", "FM_min_input"),
+            ),
         ],
     },
     {
@@ -199,7 +209,8 @@ CHAPTERS: list[dict[str, Any]] = [
                 "clamped.basic_solid",
                 "基础实体类型",
                 "-",
-                "基础实体类型。首版用于记录。",
+                "基础实体类型。首版用于记录，为将来自动刚度建模预留。",
+                mapping=("clamped", "basic_solid"),
                 widget_type="choice",
                 options=("Cylinder", "Cone", "Sleeve", "Mixed"),
                 default="Cylinder",
@@ -208,14 +219,16 @@ CHAPTERS: list[dict[str, Any]] = [
                 "clamped.part_count",
                 "被夹件数量",
                 "个",
-                "参与夹紧的零件数量。首版用于记录。",
+                "参与夹紧的零件数量。为将来自动刚度建模预留。",
+                mapping=("clamped", "part_count"),
                 default="2",
             ),
             FieldSpec(
                 "clamped.total_thickness",
                 "总夹紧长度 lK",
                 "mm",
-                "被夹件厚度总和。后续版本将用于自动刚度建模。",
+                "被夹件厚度总和。用于热损失自动估算和将来的自动刚度建模。",
+                mapping=("clamped", "total_thickness"),
                 default="20",
             ),
             FieldSpec(
@@ -349,6 +362,17 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("bearing", "bearing_d_outer"),
                 default="18",
             ),
+            FieldSpec(
+                "bearing.bearing_material", "支承面材料", "-",
+                "选择支承面材料以自动填入许用压强。",
+                mapping=None, widget_type="choice",
+                options=("钢", "铝合金", "自定义"), default="钢",
+            ),
+            FieldSpec(
+                "bearing.p_G_allow", "许用支承面压强 p_G", "MPa",
+                "支承面许用面压强度。钢约 700 MPa，铝合金约 300 MPa。",
+                mapping=("bearing", "p_G_allow"), default="700",
+            ),
         ],
     },
     {
@@ -385,15 +409,17 @@ CHAPTERS: list[dict[str, Any]] = [
                 "introduction.eccentric_clamp",
                 "夹紧偏心 e_clamp",
                 "mm",
-                "首版暂不参与偏心校核，仅记录。",
+                "偏心弯矩校核尚未启用，仅记录。",
                 default="0",
+                disabled=True,
             ),
             FieldSpec(
                 "introduction.eccentric_load",
                 "载荷偏心 e_load",
                 "mm",
-                "首版暂不参与偏心校核，仅记录。",
+                "偏心弯矩校核尚未启用，仅记录。",
                 default="0",
+                disabled=True,
             ),
         ],
     },
@@ -407,6 +433,7 @@ CHECK_LABELS = {
     "additional_load_ok": "附加载荷能力估算 ⚠",
     "thermal_loss_ok": "温度损失影响校核",
     "fatigue_ok": "疲劳校核（简化 Goodman）",
+    "bearing_pressure_ok": "支承面压强校核（R7）",
 }
 
 CHECK_LEVELS: tuple[tuple[str, str], ...] = (
@@ -423,6 +450,13 @@ THERMAL_FIELD_IDS: set[str] = {
 FATIGUE_FIELD_IDS: set[str] = {
     "operating.load_cycles",
 }
+VERIFY_MODE_FIELD_IDS: set[str] = {"loads.FM_min_input"}
+BEARING_MATERIAL_PRESETS: dict[str, str] = {"钢": "700", "铝合金": "300"}
+
+CALC_MODES: tuple[tuple[str, str], ...] = (
+    ("设计模式（反推 FM_min）", "design"),
+    ("校核模式（输入已知 FM_min）", "verify"),
+)
 
 BEGINNER_GUIDES: dict[str, str] = {
     "loads.FA_max": "工作时拉开连接的最大轴向力；未知时可先按名义载荷×1.2~1.5估算。",
@@ -565,10 +599,14 @@ class BoltPage(QWidget):
         self.btn_clear.clicked.connect(self._clear)
         self.btn_save.clicked.connect(self._save_report)
         self.check_level_combo.currentIndexChanged.connect(self._apply_check_level_visibility)
+        self.calc_mode_combo.currentIndexChanged.connect(self._apply_calculation_mode_visibility)
 
         self._apply_defaults()
         self._load_sample("input_case_01.json")
         self._apply_check_level_visibility()
+        bearing_mat_widget = self._field_widgets.get("bearing.bearing_material")
+        if bearing_mat_widget and isinstance(bearing_mat_widget, QComboBox):
+            bearing_mat_widget.currentTextChanged.connect(self._on_bearing_material_changed)
 
     def eventFilter(self, watched, event):  # noqa: N802
         if watched in self._widget_hints and event.type() in (QEvent.Type.FocusIn, QEvent.Type.Enter):
@@ -627,6 +665,24 @@ class BoltPage(QWidget):
         desc_layout.addWidget(desc_title)
         desc_layout.addWidget(self.level_desc_label)
         layout.addWidget(desc_card)
+
+        # ---- 计算模式 ----
+        mode_card = QFrame(page)
+        mode_card.setObjectName("SubCard")
+        mode_layout_inner = QVBoxLayout(mode_card)
+        mode_layout_inner.setContentsMargins(12, 10, 12, 10)
+        mode_title = QLabel("计算模式", mode_card)
+        mode_title.setObjectName("SubSectionTitle")
+        mode_layout_inner.addWidget(mode_title)
+        self.calc_mode_combo = QComboBox(mode_card)
+        self.calc_mode_combo.addItem("设计模式 — 由 FK_req 反推 FM_min", "design")
+        self.calc_mode_combo.addItem("校核模式 — 使用已知 FM_min", "verify")
+        mode_layout_inner.addWidget(self.calc_mode_combo)
+        self.mode_desc_label = QLabel("设计模式：由 FK_req 反推 FM_min，R3 自动满足。", mode_card)
+        self.mode_desc_label.setObjectName("SectionHint")
+        self.mode_desc_label.setWordWrap(True)
+        mode_layout_inner.addWidget(self.mode_desc_label)
+        layout.addWidget(mode_card)
         layout.addStretch(1)
         return page
 
@@ -656,7 +712,10 @@ class BoltPage(QWidget):
 
         for spec in fields:
             field_card = QFrame(container)
-            field_card.setObjectName("SubCard")
+            if spec.disabled:
+                field_card.setObjectName("DisabledSubCard")
+            else:
+                field_card.setObjectName("SubCard")
             row = QGridLayout(field_card)
             row.setContentsMargins(12, 10, 12, 10)
             row.setHorizontalSpacing(10)
@@ -671,10 +730,21 @@ class BoltPage(QWidget):
             hint.setObjectName("SectionHint")
             hint.setWordWrap(True)
 
-            row.addWidget(label, 0, 0)
-            row.addWidget(editor, 0, 1)
-            row.addWidget(unit, 0, 2)
-            row.addWidget(hint, 1, 0, 1, 3)
+            if spec.disabled:
+                badge = QLabel("暂未启用", field_card)
+                badge.setObjectName("WaitBadge")
+                row.addWidget(label, 0, 0)
+                row.addWidget(badge, 0, 1, Qt.AlignmentFlag.AlignLeft)
+                row.addWidget(editor, 0, 2)
+                row.addWidget(unit, 0, 3)
+                row.addWidget(hint, 1, 0, 1, 4)
+                if isinstance(editor, QLineEdit):
+                    editor.setReadOnly(True)
+            else:
+                row.addWidget(label, 0, 0)
+                row.addWidget(editor, 0, 1)
+                row.addWidget(unit, 0, 2)
+                row.addWidget(hint, 1, 0, 1, 3)
             form_layout.addWidget(field_card)
             self._field_cards[spec.field_id] = field_card
 
@@ -755,6 +825,8 @@ class BoltPage(QWidget):
                 card.setVisible(show_thermal)
             elif field_id in FATIGUE_FIELD_IDS:
                 card.setVisible(show_fatigue)
+            elif field_id in VERIFY_MODE_FIELD_IDS:
+                pass  # controlled by _apply_calculation_mode_visibility
             else:
                 card.setVisible(True)
 
@@ -778,6 +850,33 @@ class BoltPage(QWidget):
         self.info_label.setText(level_hint)
         if hasattr(self, "level_desc_label"):
             self.level_desc_label.setText(self._build_level_desc_text(level))
+        self._apply_calculation_mode_visibility()
+
+    def _apply_calculation_mode_visibility(self, *_args) -> None:
+        mode = self.calc_mode_combo.currentData() or "design"
+        show_verify = mode == "verify"
+        for field_id, card in self._field_cards.items():
+            if field_id in VERIFY_MODE_FIELD_IDS:
+                card.setVisible(show_verify)
+        if mode == "verify":
+            self.mode_desc_label.setText(
+                "校核模式：跳过 FM_min 反推，直接用已知预紧力做校核。\n"
+                "请在「步骤 3. 装配属性」中填写已知 FM,min 值。"
+            )
+        else:
+            self.mode_desc_label.setText(
+                "设计模式：由 FK_req 反推 FM_min，R3 自动满足。"
+            )
+
+    def _on_bearing_material_changed(self, text: str) -> None:
+        preset = BEARING_MATERIAL_PRESETS.get(text)
+        editor = self._field_widgets.get("bearing.p_G_allow")
+        if editor and isinstance(editor, QLineEdit):
+            if preset:
+                editor.setText(preset)
+            else:
+                editor.clear()
+                editor.setFocus()
 
     def _build_diagram_page(self) -> None:
         self._add_step_item("连接示意图")
@@ -1069,12 +1168,18 @@ class BoltPage(QWidget):
             raw = self._read_widget_value(spec)
             if not raw:
                 continue
-            try:
-                value = float(raw)
-            except ValueError as exc:
-                raise InputError(f"字段“{spec.label}”请输入数字，当前值: {raw}") from exc
+            if spec.widget_type == "choice":
+                value: Any = raw
+            else:
+                try:
+                    value = float(raw)
+                except ValueError as exc:
+                    raise InputError(f"字段 [{spec.label}] 请输入数字，当前值: {raw}") from exc
             sec, key = spec.mapping
             payload.setdefault(sec, {})[key] = value
+        payload.setdefault("options", {})["calculation_mode"] = (
+            self.calc_mode_combo.currentData() or "design"
+        )
         return payload
 
     def _calculate(self) -> None:
@@ -1111,8 +1216,14 @@ class BoltPage(QWidget):
         self._set_badge(self.overall_badge, "总体通过" if overall else "总体不通过", overall)
 
         for key, badge in self._check_badges.items():
-            is_pass = bool(checks.get(key, False))
-            self._set_badge(badge, "通过" if is_pass else "不通过", is_pass)
+            if key == "residual_clamp_ok" and result.get("calculation_mode") == "design":
+                self._set_badge(badge, "通过（设计模式自动满足）", True)
+            elif key not in checks:
+                badge.setObjectName("WaitBadge")
+                badge.setText("已跳过")
+                badge.style().polish(badge)
+            else:
+                self._set_badge(badge, "通过" if checks[key] else "不通过", checks[key])
         self._apply_check_level_visibility()
 
         inter = result["intermediate"]
@@ -1155,7 +1266,7 @@ class BoltPage(QWidget):
         messages.extend(self._build_recommendations(result))
         messages.append(
             "[说明] 本版本支持分层校核：常规(R3/R4/R5)、温度影响、疲劳简化Goodman。"
-            "支承面压强、螺纹脱扣与完整疲劳谱仍未覆盖。"
+            "螺纹脱扣与完整疲劳谱仍未覆盖。"
         )
         self.message_box.setPlainText("\n".join(messages))
 

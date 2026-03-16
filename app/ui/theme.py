@@ -85,6 +85,29 @@ def apply_theme(app: QApplication) -> None:
             border: 1px solid #D9D3CA;
             border-radius: 10px;
         }
+        QFrame#DisabledSubCard {
+            background-color: #F0EDE8;
+            border: 1px dashed #C5BFB5;
+            border-radius: 10px;
+        }
+        QFrame#DisabledSubCard QLabel#SubSectionTitle {
+            color: #9B9590;
+        }
+        QFrame#DisabledSubCard QLineEdit#InputField {
+            background-color: #F0EDE8;
+            color: #9B9590;
+            border: 1px solid #C5BFB5;
+        }
+        QFrame#DisabledSubCard QLabel#UnitLabel {
+            color: #9B9590;
+        }
+        QFrame#DisabledSubCard QLabel#SectionHint {
+            color: #9B9590;
+        }
+        QFrame#SubCard[selected="true"] {
+            border: 2px solid #D97757;
+            background-color: #FBF3EE;
+        }
         QLabel#SectionTitle {
             font-size: 16px;
             font-weight: 700;
