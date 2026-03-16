@@ -80,6 +80,7 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     bearing = data.get("bearing", {})
     checks = data.get("checks", {})
     operating = data.get("operating", {})
+    clamped = data.get("clamped", {})
     options = data.get("options", {})
 
     check_level = str(options.get("check_level", "basic"))
@@ -143,6 +144,54 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     n = compliance["n"]
     phi = delta_p / (delta_s + delta_p)
     phi_n = n * phi
+    if phi_n >= 1.0:
+        raise InputError(
+            f"载荷分配系数 phi_n = {phi_n:.3f} >= 1，外载全部进入螺栓，无物理意义。"
+            "请检查刚度模型（δs/δp）与载荷导入系数 n。"
+        )
+
+    # ------------------------------------------------------------------
+    # 热预紧力损失自动估算（VDI 2230 温差公式）
+    # F_th ≈ (α_bolt - α_parts) × ΔT × (c_s × c_p) / (c_s + c_p) × l_K
+    # 其中 c_s = 1/δ_s, c_p = 1/δ_p 为螺栓和被夹件刚度，l_K 为夹紧长度。
+    # 条件：用户手动输入的 thermal_force_loss 为 0 或空时才使用估算值；
+    #        需要温度差、刚度和夹紧长度信息齐备才能估算。
+    # ------------------------------------------------------------------
+    thermal_auto_estimated = False
+    thermal_auto_value = 0.0
+    if thermal_force_loss == 0.0:
+        # 默认热膨胀系数：钢 ≈ 11.5e-6 /K
+        _ALPHA_STEEL_DEFAULT = 11.5e-6  # 1/K
+        alpha_bolt = float(operating.get("alpha_bolt", _ALPHA_STEEL_DEFAULT))
+        alpha_parts = float(operating.get("alpha_parts", _ALPHA_STEEL_DEFAULT))
+        temp_bolt = operating.get("temp_bolt")
+        temp_parts = operating.get("temp_parts")
+        l_K = clamped.get("total_thickness")
+
+        if (
+            temp_bolt is not None
+            and temp_parts is not None
+            and l_K is not None
+        ):
+            try:
+                temp_bolt = float(temp_bolt)
+                temp_parts = float(temp_parts)
+                l_K = float(l_K)
+                delta_T = temp_bolt - temp_parts
+                if delta_T != 0.0 and l_K > 0.0:
+                    c_s = 1.0 / delta_s  # 螺栓刚度 N/mm
+                    c_p = 1.0 / delta_p  # 被夹件刚度 N/mm
+                    # VDI 2230 热损失公式
+                    thermal_auto_value = abs(
+                        (alpha_bolt - alpha_parts) * delta_T
+                        * (c_s * c_p) / (c_s + c_p)
+                        * l_K
+                    )
+                    thermal_force_loss = thermal_auto_value
+                    thermal_auto_estimated = True
+            except (ValueError, ZeroDivisionError):
+                # 参数不全或异常时静默跳过，保留 thermal_force_loss = 0
+                pass
 
     f_slip_required = 0.0 if fq_max == 0 else fq_max / (slip_mu * interfaces)
     f_k_required = max(seal_force_required, f_slip_required)
@@ -208,10 +257,6 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         pass_additional = fa_max <= f_a_perm
 
     warnings = []
-    if phi_n >= 1.0:
-        warnings.append(
-            "phi_n >= 1.0：外载几乎全部进入螺栓，请核查刚度模型与载荷导入系数 n。"
-        )
     if utilization > 0.95:
         warnings.append("装配利用系数偏高（>0.95），建议核查摩擦散差与装配工艺能力。")
     if check_level in {"thermal", "fatigue"} and thermal_loss_ratio > 0.15:
@@ -266,6 +311,13 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
             "thermal_loss_effective_N": thermal_effective,
             "thermal_loss_ratio": thermal_loss_ratio,
             "thermal_loss_ratio_limit": 0.25,
+            "thermal_auto_estimated": thermal_auto_estimated,
+            "thermal_auto_value_N": thermal_auto_value,
+        },
+        "clamped_info": {
+            "basic_solid": clamped.get("basic_solid"),
+            "part_count": clamped.get("part_count"),
+            "total_thickness_mm": clamped.get("total_thickness"),
         },
         "fatigue": {
             "sigma_a": sigma_a,
