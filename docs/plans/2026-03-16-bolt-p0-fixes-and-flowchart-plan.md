@@ -461,6 +461,28 @@ CHECK_LABELS 新增：
 2. 在 `_create_level_page()` 中，在校核层级下拉框下方添加计算模式卡片。
 3. 连接 `calc_mode_combo.currentIndexChanged` 到 `_apply_calculation_mode_visibility`。
 
+在 `_create_level_page()` 中，在校核层级下拉框下方添加计算模式卡片：
+```python
+# ---- 计算模式 ----
+mode_card = QFrame(level_page)
+mode_card.setObjectName("SubCard")
+mode_layout = QVBoxLayout(mode_card)
+mode_layout.setContentsMargins(12, 10, 12, 10)
+mode_title = QLabel("计算模式", mode_card)
+mode_title.setObjectName("SubSectionTitle")
+mode_layout.addWidget(mode_title)
+self.calc_mode_combo = QComboBox(mode_card)
+self.calc_mode_combo.addItem("设计模式 — 由 FK_req 反推 FM_min", "design")
+self.calc_mode_combo.addItem("校核模式 — 使用已知 FM_min", "verify")
+mode_layout.addWidget(self.calc_mode_combo)
+self.mode_desc_label = QLabel("设计模式：由 FK_req 反推 FM_min，R3 自动满足。", mode_card)
+self.mode_desc_label.setObjectName("SectionHint")
+self.mode_desc_label.setWordWrap(True)
+mode_layout.addWidget(self.mode_desc_label)
+# 将 mode_card 添加到 level_page 的布局中
+level_layout.addWidget(mode_card)
+```
+
 新增方法：
 ```python
 def _apply_calculation_mode_visibility(self, *_args) -> None:
@@ -480,6 +502,18 @@ def _apply_calculation_mode_visibility(self, *_args) -> None:
             "设计模式：由 FK_req 反推 FM_min，R3 自动满足。"
         )
 ```
+
+**重要**：在 `_apply_check_level_visibility` 方法中，`else` 分支（非 THERMAL/FATIGUE 字段）会将所有其他字段强制 `setVisible(True)`。这会覆盖计算模式对 `FM_min_input` 的隐藏。
+修复方式——在 `_apply_check_level_visibility` 的 `else` 分支中排除 VERIFY_MODE_FIELD_IDS：
+```python
+# 原逻辑 else 分支
+else:
+    if field_id in VERIFY_MODE_FIELD_IDS:
+        pass  # 由 _apply_calculation_mode_visibility 控制
+    else:
+        card.setVisible(True)
+```
+并在 `_apply_check_level_visibility` 末尾调用 `self._apply_calculation_mode_visibility()` 确保两者联动。
 
 新增材料联动方法：
 ```python
@@ -506,20 +540,24 @@ payload["options"]["calculation_mode"] = self.calc_mode_combo.currentData() or "
 
 - [ ] **Step 5: 修改 `_render_result` 处理 R3/R7 Badge 特殊逻辑**
 
-在 `_render_result()` 的 badge 渲染循环中：
+在 `_render_result()` 中，**替换**现有 badge 渲染循环为遍历 `self._check_badges`（而非 `checks.items()`），以正确处理 R7 跳过和 R3 设计模式：
 ```python
-for key, is_pass in checks.items():
-    badge = self._check_badges.get(key)
-    if not badge:
-        continue
+for key, badge in self._check_badges.items():
     if key == "residual_clamp_ok" and result.get("calculation_mode") == "design":
         self._set_badge(badge, "通过（设计模式自动满足）", True)
-    elif key == "bearing_pressure_ok" and key not in checks:
+    elif key not in checks:
+        # R7 未设置许用压强时 bearing_pressure_ok 不在 checks 中
         badge.setObjectName("WaitBadge")
         badge.setText("已跳过")
         badge.style().polish(badge)
     else:
-        self._set_badge(badge, "通过" if is_pass else "不通过", is_pass)
+        self._set_badge(badge, "通过" if checks[key] else "不通过", checks[key])
+```
+
+**注意**：此处还需更新 scope_note 文案——因为 R7 已实现，从 "支承面压强、螺纹脱扣与完整疲劳谱仍未覆盖" 中移除 "支承面压强"：
+```python
+# 原 bolt_page.py 约 1183 行的 scope_note
+scope_note = "注意：螺纹脱扣与完整疲劳谱仍未覆盖。"
 ```
 
 - [ ] **Step 6: 运行全量测试**
@@ -601,22 +639,34 @@ R_STEPS: list[dict[str, Any]] = [
 
 
 R_STEP_FIELDS: dict[str, list[str]] = {
-    "r0": ["fastener.d", "fastener.p", "fastener.Rp02",
+    "r0": ["fastener.d", "fastener.p", "fastener.As", "fastener.d2",
+            "fastener.d3", "fastener.Rp02",
             "tightening.mu_thread", "tightening.mu_bearing",
+            "stiffness.bolt_compliance", "stiffness.bolt_stiffness",
+            "stiffness.clamped_compliance", "stiffness.clamped_stiffness",
+            "stiffness.load_introduction_factor_n",
+            "loads.FA_max", "loads.FQ_max",
             "tightening.alpha_A", "tightening.utilization",
-            "loads.FA_max", "loads.FQ_max"],
+            "options.calculation_mode", "options.check_level"],
     "r1": ["loads.seal_force_required", "loads.FQ_max",
             "loads.slip_friction_coefficient", "loads.friction_interfaces",
-            "loads.FA_max", "loads.embed_loss", "loads.thermal_force_loss"],
-    "r2": ["tightening.mu_thread", "tightening.mu_bearing",
+            "loads.FA_max", "intermediate.phi_n",
+            "loads.embed_loss", "loads.thermal_force_loss"],
+    "r2": ["fastener.d2", "fastener.p",
+            "tightening.mu_thread", "tightening.mu_bearing",
             "bearing.bearing_d_inner", "bearing.bearing_d_outer",
             "tightening.prevailing_torque"],
-    "r3": ["loads.embed_loss", "loads.thermal_force_loss", "loads.FA_max"],
-    "r4": ["tightening.utilization", "fastener.Rp02"],
-    "r5": ["loads.FA_max", "fastener.Rp02", "checks.yield_safety_operating"],
-    "r6": ["loads.FA_max", "fastener.Rp02", "operating.load_cycles"],
-    "r7": ["bearing.bearing_d_inner", "bearing.bearing_d_outer",
-            "bearing.p_G_allow"],
+    "r3": ["intermediate.FM_min", "loads.embed_loss",
+            "loads.thermal_force_loss", "intermediate.phi_n",
+            "loads.FA_max", "intermediate.FK_req"],
+    "r4": ["intermediate.FM_max", "fastener.As", "fastener.d3",
+            "tightening.utilization", "fastener.Rp02"],
+    "r5": ["intermediate.FM_max", "intermediate.phi_n", "loads.FA_max",
+            "fastener.As", "fastener.Rp02", "checks.yield_safety_operating"],
+    "r6": ["intermediate.phi_n", "loads.FA_max", "fastener.As",
+            "intermediate.FM_max", "fastener.Rp02", "operating.load_cycles"],
+    "r7": ["intermediate.FM_max", "bearing.bearing_d_inner",
+            "bearing.bearing_d_outer", "bearing.p_G_allow"],
 }
 ```
 
@@ -673,6 +723,7 @@ class FlowchartNavWidget(QWidget):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._nodes: list[FlowNodeWidget] = []
+        self._arrows_for_index: dict[int, QLabel] = {}
         self._selected_index = 0
 
         scroll = QScrollArea(self)
@@ -690,7 +741,6 @@ class FlowchartNavWidget(QWidget):
                 arrow.setObjectName("SectionHint")
                 arrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 self._layout.addWidget(arrow)
-                self._arrows_for_index = getattr(self, '_arrows_for_index', {})
                 self._arrows_for_index[i] = arrow
 
             node = FlowNodeWidget(i, step, container)
@@ -724,7 +774,7 @@ class FlowchartNavWidget(QWidget):
         fatigue = result.get("fatigue", {})
 
         summaries = {
-            0: f"d={inter.get('phi', 0):.3f}  phi_n={inter.get('phi_n', 0):.3f}",
+            0: f"φ={inter.get('phi', 0):.4f}  φn={inter.get('phi_n', 0):.4f}",
             1: f"FM_min={inter.get('FMmin_N', 0):,.0f} N  FM_max={inter.get('FMmax_N', 0):,.0f} N",
             2: f"MA={torque.get('MA_min_Nm', 0):.1f}~{torque.get('MA_max_Nm', 0):.1f} N·m",
             3: f"FK_res={forces.get('F_K_residual_N', 0):,.0f} N  FK_req={inter.get('F_K_required_N', 0):,.0f} N",
@@ -759,9 +809,8 @@ class FlowchartNavWidget(QWidget):
         """根据校核层级控制 R6 疲劳节点可见性。"""
         r6_index = 6
         self._nodes[r6_index].setVisible(visible)
-        arrows = getattr(self, '_arrows_for_index', {})
-        if r6_index in arrows:
-            arrows[r6_index].setVisible(visible)
+        if r6_index in self._arrows_for_index:
+            self._arrows_for_index[r6_index].setVisible(visible)
 ```
 
 - [ ] **Step 4: 运行语法检查**
@@ -873,13 +922,48 @@ class RStepDetailPage(QFrame):
         scroll.setWidget(container)
         page_layout.addWidget(scroll, 1)
 
+    # 中间值字段的显示名称和单位映射
+    _INTERMEDIATE_LABELS: dict[str, tuple[str, str]] = {
+        "intermediate.phi_n": ("φn (载荷导入系数)", "-"),
+        "intermediate.FM_min": ("FM,min (最小预紧力)", "N"),
+        "intermediate.FM_max": ("FM,max (最大预紧力)", "N"),
+        "intermediate.FK_req": ("FK,req (所需夹紧力)", "N"),
+    }
+
     def build_input_echo(self, field_specs: dict[str, Any],
-                         field_widgets: dict[str, Any]) -> None:
-        """构建输入回显区，从 field_specs 和 field_widgets 读取当前值。"""
+                         field_widgets: dict[str, Any],
+                         result: dict[str, Any] | None = None) -> None:
+        """构建输入回显区。
+        对于 field_specs 中存在的字段从 widget 读取；
+        对于 intermediate.* 前缀的字段从 result 中读取。"""
         step_id = self._step["id"]
         field_ids = R_STEP_FIELDS.get(step_id, [])
         row = 0
+        inter = (result or {}).get("intermediate", {})
+        # 中间值 key 映射：intermediate.FM_min -> FMmin_N
+        _INTER_KEY_MAP = {
+            "intermediate.phi_n": "phi_n",
+            "intermediate.FM_min": "FMmin_N",
+            "intermediate.FM_max": "FMmax_N",
+            "intermediate.FK_req": "F_K_required_N",
+        }
         for fid in field_ids:
+            if fid.startswith("intermediate."):
+                label_text, unit = self._INTERMEDIATE_LABELS.get(fid, (fid, ""))
+                name_label = QLabel(label_text, self._input_card)
+                name_label.setObjectName("SubSectionTitle")
+                val = inter.get(_INTER_KEY_MAP.get(fid, ""), 0)
+                value_text = f"{val:,.2f}" if val else "—"
+                val_label = QLabel(value_text, self._input_card)
+                val_label.setObjectName("SectionHint")
+                unit_label = QLabel(unit, self._input_card)
+                unit_label.setObjectName("UnitLabel")
+                self._input_layout.addWidget(name_label, row, 0)
+                self._input_layout.addWidget(val_label, row, 1)
+                self._input_layout.addWidget(unit_label, row, 2)
+                self._input_labels[fid] = val_label
+                row += 1
+                continue
             spec = field_specs.get(fid)
             widget = field_widgets.get(fid)
             if not spec:
@@ -1122,7 +1206,7 @@ def _on_flow_node_clicked(self, r_index: int) -> None:
 self.flowchart_nav.update_from_result(result)
 # 更新 R 详情页
 for r_page in self._r_pages:
-    r_page.build_input_echo(self._field_specs, self._field_widgets)
+    r_page.build_input_echo(self._field_specs, self._field_widgets, result)
     r_page.update_from_result(result, self._field_widgets)
 ```
 
@@ -1175,9 +1259,9 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 **Files:**
 - Modify: `examples/input_case_01.json`, `examples/input_case_02.json`
 
-- [ ] **Step 1: 更新输入测试案例**
+- [ ] **Step 1: 确认输入测试案例已更新**
 
-在两个 input JSON 的 `bearing` section 中添加 `"p_G_allow": 700.0`。
+确认 Task 2 Step 5 已将 `"p_G_allow": 700.0` 添加到两个 input JSON。如未执行则补充。
 
 - [ ] **Step 2: 运行 CLI 生成新的输出**
 
