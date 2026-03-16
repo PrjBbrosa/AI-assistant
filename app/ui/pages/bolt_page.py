@@ -1709,6 +1709,58 @@ class BoltPage(QWidget):
             else:
                 widget.setText(text)  # type: ignore[attr-defined]
 
+        # ---------- 多层被夹件 fallback 恢复（用于加载原始 payload JSON）----------
+        # 正常 save/load 流程中，通用循环已通过 ui_state 恢复所有层字段。
+        # 此处仅处理 inputs 中有 clamped.layers 但 ui_state 中无层字段的情况。
+        clamped_data = inputs.get("clamped", {})
+        saved_layers = clamped_data.get("layers")
+        has_layer_ui_state = any(
+            k.startswith("clamped.layer_") for k in ui_state
+        )
+        if isinstance(saved_layers, list) and len(saved_layers) >= 2 and not has_layer_ui_state:
+            n = len(saved_layers)
+            pc_w = self._field_widgets.get("clamped.part_count")
+            if pc_w and isinstance(pc_w, QComboBox):
+                if n == 2:
+                    pc_w.setCurrentText("2")
+                else:
+                    pc_w.setCurrentText("自定义")
+                    cc_w = self._field_widgets.get("clamped.custom_count")
+                    if cc_w and isinstance(cc_w, QLineEdit):
+                        cc_w.setText(str(n))
+            # 填充各层参数
+            op_data = inputs.get("operating", {})
+            saved_thermals = op_data.get("layer_thermals", [])
+            for i, layer in enumerate(saved_layers[:5], start=1):
+                t_w = self._field_widgets.get(f"clamped.layer_{i}.thickness")
+                if t_w and isinstance(t_w, QLineEdit):
+                    t_w.setText(str(layer.get("l_K", "")))
+                da_w = self._field_widgets.get(f"clamped.layer_{i}.D_A")
+                if da_w and isinstance(da_w, QLineEdit):
+                    da_w.setText(str(layer.get("D_A", "")))
+                e_w = self._field_widgets.get(f"clamped.layer_{i}.E")
+                if e_w and isinstance(e_w, QLineEdit):
+                    e_w.setText(str(layer.get("E_clamped", "")))
+                # 恢复 alpha
+                if i - 1 < len(saved_thermals):
+                    alpha_val = saved_thermals[i - 1].get("alpha", "")
+                    alpha_w = self._field_widgets.get(f"clamped.layer_{i}.alpha")
+                    if alpha_w and isinstance(alpha_w, QLineEdit):
+                        alpha_w.setText(str(alpha_val))
+                        alpha_w.setReadOnly(False)
+                    # 尝试从 alpha 反推材料
+                    mat_w = self._field_widgets.get(f"clamped.layer_{i}.material")
+                    if mat_w and isinstance(mat_w, QComboBox):
+                        matched = False
+                        for mat_name, preset_val in THERMAL_EXPANSION_PRESETS.items():
+                            if str(alpha_val) == preset_val:
+                                mat_w.setCurrentText(mat_name)
+                                matched = True
+                                break
+                        if not matched:
+                            mat_w.setCurrentText("自定义")
+            self._on_part_count_changed()
+
         if "check_level" in ui_state:
             self._set_check_level(str(ui_state["check_level"]))
         else:
@@ -1861,6 +1913,43 @@ class BoltPage(QWidget):
         if treatment_w is not None and isinstance(treatment_w, QComboBox):
             treatment_en = SURFACE_TREATMENT_MAP.get(treatment_w.currentText(), "rolled")
             payload.setdefault("options", {})["surface_treatment"] = treatment_en
+
+        # ---------- 多层被夹件 payload 构建 ----------
+        part_count = self._get_effective_part_count()
+        payload.setdefault("clamped", {})["part_count"] = part_count
+
+        if part_count >= 2:
+            layers = []
+            layer_thermals = []
+            total_thickness = 0.0
+            d_h_val = payload.get("bearing", {}).get("bearing_d_inner", 13.0)
+
+            for i in range(1, part_count + 1):
+                t_w = self._field_widgets.get(f"clamped.layer_{i}.thickness")
+                da_w = self._field_widgets.get(f"clamped.layer_{i}.D_A")
+                e_w = self._field_widgets.get(f"clamped.layer_{i}.E")
+                alpha_w = self._field_widgets.get(f"clamped.layer_{i}.alpha")
+                t_val = float(t_w.text().strip()) if t_w else 15.0
+                da_val = float(da_w.text().strip()) if da_w else 24.0
+                e_val = float(e_w.text().strip()) if e_w else 210_000.0
+                alpha_val = float(alpha_w.text().strip()) if alpha_w else 11.5e-6
+                total_thickness += t_val
+                layers.append({
+                    "model": "cylinder",
+                    "d_h": float(d_h_val),
+                    "D_A": da_val,
+                    "l_K": t_val,
+                    "E_clamped": e_val,
+                })
+                layer_thermals.append({"alpha": alpha_val, "l_K": t_val})
+
+            payload["clamped"]["layers"] = layers
+            payload["clamped"]["total_thickness"] = total_thickness
+            payload.setdefault("operating", {})["layer_thermals"] = layer_thermals
+            # 多层模式移除单层参数
+            payload.get("stiffness", {}).pop("E_clamped", None)
+            payload.get("operating", {}).pop("alpha_parts", None)
+
         return payload
 
     def _resolve_thread_d(self) -> str:
