@@ -103,6 +103,60 @@ METRIC_THREAD_TABLE: dict[str, list[tuple[float, float, float, float]]] = {
 }
 
 
+def _make_layer_fields(n: int) -> list[FieldSpec]:
+    """生成第 n 层被夹件的 FieldSpec 列表。"""
+    return [
+        FieldSpec(
+            f"clamped.layer_{n}.thickness",
+            f"第{n}层厚度",
+            "mm",
+            f"第{n}层被夹件厚度。",
+            mapping=None,
+            default="15",
+        ),
+        FieldSpec(
+            f"clamped.layer_{n}.D_A",
+            f"第{n}层外径 DA",
+            "mm",
+            f"第{n}层被夹件外径。",
+            mapping=None,
+            default="24",
+        ),
+        FieldSpec(
+            f"clamped.layer_{n}.E",
+            f"第{n}层弹性模量",
+            "MPa",
+            f"第{n}层被夹件弹性模量。钢 210000 / 铝 70000。",
+            mapping=None,
+            default="210000",
+        ),
+        FieldSpec(
+            f"clamped.layer_{n}.material",
+            f"第{n}层材料",
+            "-",
+            f"第{n}层材料选择，用于自动填入热膨胀系数。",
+            mapping=None,
+            widget_type="choice",
+            options=("钢", "铝合金", "铸铁", "不锈钢", "自定义"),
+            default="钢",
+        ),
+        FieldSpec(
+            f"clamped.layer_{n}.alpha",
+            f"第{n}层热膨胀系数",
+            "1/K",
+            f"第{n}层热膨胀系数。由材料选择自动填入。",
+            mapping=None,
+            default="11.5e-6",
+        ),
+    ]
+
+
+LAYER_FIELD_IDS: list[list[str]] = [
+    [f"clamped.layer_{n}.{f}" for f in ("thickness", "D_A", "E", "material", "alpha")]
+    for n in range(1, 6)
+]
+
+
 CHAPTERS: list[dict[str, Any]] = [
     {
         "id": "elements",
@@ -263,11 +317,26 @@ CHAPTERS: list[dict[str, Any]] = [
             FieldSpec(
                 "clamped.part_count",
                 "被夹件数量",
-                "个",
-                "参与夹紧的零件数量。螺纹孔连接常见 1 个，通孔连接常见 2 个。",
-                mapping=("clamped", "part_count"),
+                "-",
+                "参与夹紧的零件数量。选 2 或自定义时可分层输入参数。",
+                mapping=None,
+                widget_type="choice",
+                options=("1", "2", "自定义"),
                 default="1",
             ),
+            FieldSpec(
+                "clamped.custom_count",
+                "自定义层数",
+                "个",
+                "输入被夹件层数（3~5）。",
+                mapping=None,
+                default="3",
+            ),
+            *_make_layer_fields(1),
+            *_make_layer_fields(2),
+            *_make_layer_fields(3),
+            *_make_layer_fields(4),
+            *_make_layer_fields(5),
             FieldSpec(
                 "clamped.surface_class",
                 "接触面粗糙度",
@@ -628,6 +697,11 @@ SURFACE_TREATMENT_MAP: dict[str, str] = {
 }
 VERIFY_MODE_FIELD_IDS: set[str] = {"loads.FM_min_input"}
 CUSTOM_THREAD_FIELD_IDS: set[str] = {"fastener.d_custom", "fastener.p_custom"}
+# 由 _on_part_count_changed 控制可见性的字段
+LAYER_CONTROLLED_FIELD_IDS: set[str] = {
+    "clamped.custom_count",
+    *(fid for layer in LAYER_FIELD_IDS for fid in layer),
+}
 BEARING_MATERIAL_PRESETS: dict[str, str] = {"钢": "700", "铝合金": "300"}
 JOINT_TYPE_MAP: dict[str, str] = {
     "螺纹孔连接": "tapped",
@@ -868,6 +942,23 @@ class BoltPage(QWidget):
         if clamped_mat_widget and isinstance(clamped_mat_widget, QComboBox):
             clamped_mat_widget.currentTextChanged.connect(self._on_clamped_material_changed)
             self._on_clamped_material_changed(clamped_mat_widget.currentText())
+        # 被夹件数量联动
+        pc_widget = self._field_widgets.get("clamped.part_count")
+        if pc_widget and isinstance(pc_widget, QComboBox):
+            pc_widget.currentTextChanged.connect(self._on_part_count_changed)
+        cc_widget = self._field_widgets.get("clamped.custom_count")
+        if cc_widget and isinstance(cc_widget, QLineEdit):
+            cc_widget.textChanged.connect(lambda _: self._on_part_count_changed())
+        # 各层材料联动
+        for ln in range(1, 6):
+            mat_w = self._field_widgets.get(f"clamped.layer_{ln}.material")
+            if mat_w and isinstance(mat_w, QComboBox):
+                mat_w.currentTextChanged.connect(
+                    lambda text, n=ln: self._on_layer_material_changed(n, text)
+                )
+                self._on_layer_material_changed(ln, mat_w.currentText())
+        # 初始化可见性
+        self._on_part_count_changed()
         # 拧紧方式联动 αA hint
         tmethod_w = self._field_widgets.get("assembly.tightening_method")
         if tmethod_w and isinstance(tmethod_w, QComboBox):
@@ -1109,6 +1200,8 @@ class BoltPage(QWidget):
                 pass  # controlled by _apply_calculation_mode_visibility
             elif field_id in CUSTOM_THREAD_FIELD_IDS:
                 pass  # controlled by _on_thread_d_changed
+            elif field_id in LAYER_CONTROLLED_FIELD_IDS:
+                pass  # controlled by _on_part_count_changed
             else:
                 card.setVisible(True)
 
@@ -1133,6 +1226,7 @@ class BoltPage(QWidget):
         if hasattr(self, "level_desc_label"):
             self.level_desc_label.setText(self._build_level_desc_text(level))
         self._apply_calculation_mode_visibility()
+        self._on_part_count_changed()
         if hasattr(self, "flowchart_nav"):
             self.flowchart_nav.set_r6_visible(show_fatigue)
 
@@ -1193,6 +1287,80 @@ class BoltPage(QWidget):
     def _on_clamped_material_changed(self, text: str) -> None:
         """被夹件材料下拉变更时自动填入热膨胀系数。"""
         alpha_w = self._field_widgets.get("operating.alpha_parts")
+        if not (alpha_w and isinstance(alpha_w, QLineEdit)):
+            return
+        preset = THERMAL_EXPANSION_PRESETS.get(text)
+        if preset is not None:
+            alpha_w.setText(preset)
+            alpha_w.setReadOnly(True)
+        else:
+            alpha_w.setReadOnly(False)
+            alpha_w.clear()
+            alpha_w.setFocus()
+
+    # -- 单层字段 ID（多层模式时隐藏）--
+    _SINGLE_LAYER_FIELDS: set[str] = {
+        "clamped.basic_solid", "clamped.total_thickness", "clamped.D_A",
+        "stiffness.E_clamped",
+    }
+    # -- 单层热材料字段 --
+    _SINGLE_THERMAL_FIELDS: set[str] = {
+        "operating.clamped_material", "operating.alpha_parts",
+    }
+
+    def _get_effective_part_count(self) -> int:
+        """从 UI 控件读取有效被夹件数量。"""
+        pc_w = self._field_widgets.get("clamped.part_count")
+        if not (pc_w and isinstance(pc_w, QComboBox)):
+            return 1
+        text = pc_w.currentText()
+        if text == "1":
+            return 1
+        if text == "2":
+            return 2
+        # "自定义"
+        cc_w = self._field_widgets.get("clamped.custom_count")
+        if cc_w and isinstance(cc_w, QLineEdit):
+            try:
+                v = int(float(cc_w.text().strip()))
+                return max(3, min(v, 5))
+            except (ValueError, TypeError):
+                return 3
+        return 3
+
+    def _on_part_count_changed(self, _text: str = "") -> None:
+        """被夹件数量变更时切换单层/多层字段可见性。
+
+        使用 self._field_cards[fid] 获取字段卡片控件（而非 w.parent()），
+        这是本代码库中控制字段可见性的标准模式，见 _on_thread_d_changed。
+        """
+        count = self._get_effective_part_count()
+        is_multi = count >= 2
+
+        # 单层字段
+        for fid in self._SINGLE_LAYER_FIELDS | self._SINGLE_THERMAL_FIELDS:
+            card = self._field_cards.get(fid)
+            if card is not None:
+                card.setVisible(not is_multi)
+
+        # custom_count 仅在"自定义"时显示
+        pc_w = self._field_widgets.get("clamped.part_count")
+        is_custom = pc_w and isinstance(pc_w, QComboBox) and pc_w.currentText() == "自定义"
+        cc_card = self._field_cards.get("clamped.custom_count")
+        if cc_card is not None:
+            cc_card.setVisible(bool(is_custom))
+
+        # 各层字段
+        for layer_idx in range(5):
+            visible = is_multi and layer_idx < count
+            for fid in LAYER_FIELD_IDS[layer_idx]:
+                card = self._field_cards.get(fid)
+                if card is not None:
+                    card.setVisible(visible)
+
+    def _on_layer_material_changed(self, layer_n: int, text: str) -> None:
+        """第 N 层材料变更时自动填入对应热膨胀系数。"""
+        alpha_w = self._field_widgets.get(f"clamped.layer_{layer_n}.alpha")
         if not (alpha_w and isinstance(alpha_w, QLineEdit)):
             return
         preset = THERMAL_EXPANSION_PRESETS.get(text)
@@ -1445,6 +1613,7 @@ class BoltPage(QWidget):
     _AUTO_FILLED_FIELDS: set[str] = {
         "fastener.d2", "fastener.d3", "fastener.As", "fastener.Rp02",
         "operating.alpha_bolt", "operating.alpha_parts",
+        *(f"clamped.layer_{n}.alpha" for n in range(1, 6)),
     }
 
     def _apply_defaults(self) -> None:
