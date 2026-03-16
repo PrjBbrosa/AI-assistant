@@ -592,3 +592,47 @@ class TestFatigueModelImproved:
         fatigue = result["fatigue"]
         # M14: 39, M16: 38 → M15 应介于之间
         assert 37.5 < fatigue["sigma_ASV"] < 39.5
+
+
+class TestAutoCompliance:
+    def test_auto_compliance_from_geometry(self):
+        """提供几何参数时自动计算刚度。"""
+        data = _base_input()
+        del data["stiffness"]["bolt_compliance"]
+        del data["stiffness"]["clamped_compliance"]
+        data["stiffness"]["auto_compliance"] = True
+        data["stiffness"]["E_bolt"] = 210_000.0
+        data["stiffness"]["E_clamped"] = 210_000.0
+        data["clamped"] = {
+            "basic_solid": "cylinder",
+            "total_thickness": 30.0,
+            "D_A": 24.0,
+        }
+        data["bearing"]["bearing_d_inner"] = 11.0
+        result = calculate_vdi2230_core(data)
+        assert result["stiffness_model"]["delta_s_mm_per_n"] > 0
+        assert result["stiffness_model"]["delta_p_mm_per_n"] > 0
+        assert result["stiffness_model"].get("auto_modeled") is True
+
+    def test_manual_compliance_still_works(self):
+        """手动输入柔度优先于自动计算。"""
+        data = _base_input()
+        result = calculate_vdi2230_core(data)
+        assert abs(result["stiffness_model"]["delta_s_mm_per_n"] - data["stiffness"]["bolt_compliance"]) < 1e-12
+
+    def test_auto_cone_model(self):
+        """锥台模型自动计算。"""
+        data = _base_input()
+        del data["stiffness"]["bolt_compliance"]
+        del data["stiffness"]["clamped_compliance"]
+        data["stiffness"]["auto_compliance"] = True
+        data["stiffness"]["E_bolt"] = 210_000.0
+        data["stiffness"]["E_clamped"] = 210_000.0
+        data["clamped"] = {
+            "basic_solid": "cone",
+            "total_thickness": 30.0,
+            "D_A": 24.0,
+        }
+        result = calculate_vdi2230_core(data)
+        assert result["stiffness_model"]["delta_p_mm_per_n"] > 0
+        assert result["stiffness_model"]["auto_modeled"] is True

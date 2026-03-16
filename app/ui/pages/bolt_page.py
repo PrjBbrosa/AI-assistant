@@ -254,10 +254,10 @@ CHAPTERS: list[dict[str, Any]] = [
                 "clamped.basic_solid",
                 "基础实体类型",
                 "-",
-                "基础实体类型。首版用于记录，为将来自动刚度建模预留。",
+                "用于自动柔度建模。选择几何模型后，勾选自动计算可替代手动输入顺从度。",
                 mapping=("clamped", "basic_solid"),
                 widget_type="choice",
-                options=("圆柱体", "锥体", "套筒", "混合"),
+                options=("圆柱体", "锥体", "套筒"),
                 default="圆柱体",
             ),
             FieldSpec(
@@ -285,6 +285,40 @@ CHAPTERS: list[dict[str, Any]] = [
                 "被夹件厚度总和。用于热损失自动估算和将来的自动刚度建模。",
                 mapping=("clamped", "total_thickness"),
                 default="20",
+            ),
+            FieldSpec(
+                "clamped.D_A",
+                "被夹件等效外径 DA",
+                "mm",
+                "锥台/圆柱模型的被夹件外径。自动柔度计算需要。",
+                mapping=("clamped", "D_A"),
+                default="24",
+            ),
+            FieldSpec(
+                "stiffness.E_bolt",
+                "螺栓弹性模量",
+                "MPa",
+                "钢约 210000 MPa。自动柔度计算需要。",
+                mapping=("stiffness", "E_bolt"),
+                default="210000",
+            ),
+            FieldSpec(
+                "stiffness.E_clamped",
+                "被夹件弹性模量",
+                "MPa",
+                "钢 210000 / 铝 70000 MPa。自动柔度计算需要。",
+                mapping=("stiffness", "E_clamped"),
+                default="210000",
+            ),
+            FieldSpec(
+                "stiffness.auto_compliance",
+                "自动计算柔度",
+                "-",
+                "勾选后根据几何参数自动计算螺栓和被夹件柔度，替代手动输入。",
+                mapping=("stiffness", "auto_compliance"),
+                widget_type="choice",
+                options=("手动输入", "自动计算"),
+                default="手动输入",
             ),
             FieldSpec(
                 "stiffness.bolt_compliance",
@@ -632,6 +666,12 @@ N_POSITION_HINTS: dict[str, str] = {
     "螺母端": "修正外载导入比例。螺母端导入通常取 n ≈ 0.5~0.7。",
     "中间": "修正外载导入比例。中间导入通常取 n ≈ 0.3~0.5。",
     "分布式": "修正外载导入比例。均匀分布近似取 n ≈ 0.5。",
+}
+
+BASIC_SOLID_MAP: dict[str, str] = {
+    "圆柱体": "cylinder",
+    "锥体": "cone",
+    "套筒": "sleeve",
 }
 
 CALC_MODES: tuple[tuple[str, str], ...] = (
@@ -1630,6 +1670,20 @@ class BoltPage(QWidget):
         if sc_widget and isinstance(sc_widget, QComboBox):
             sc_text = sc_widget.currentText()
             payload.setdefault("clamped", {})["surface_class"] = SURFACE_CLASS_MAP.get(sc_text, "medium")
+        # basic_solid 翻译
+        bs_widget = self._field_widgets.get("clamped.basic_solid")
+        if bs_widget and isinstance(bs_widget, QComboBox):
+            bs_text = bs_widget.currentText()
+            payload.setdefault("clamped", {})["basic_solid"] = BASIC_SOLID_MAP.get(bs_text, "cylinder")
+        # auto_compliance 布尔转换
+        ac_widget = self._field_widgets.get("stiffness.auto_compliance")
+        if ac_widget and isinstance(ac_widget, QComboBox):
+            is_auto = ac_widget.currentText() == "自动计算"
+            payload.setdefault("stiffness", {})["auto_compliance"] = is_auto
+            if is_auto:
+                # 自动模式下删除手动柔度值，让 calculator 走 auto 路径
+                payload.get("stiffness", {}).pop("bolt_compliance", None)
+                payload.get("stiffness", {}).pop("clamped_compliance", None)
         method_w = self._field_widgets.get("assembly.tightening_method")
         if method_w is not None and isinstance(method_w, QComboBox):
             method_en = TIGHTENING_METHOD_MAP.get(method_w.currentText(), "torque")

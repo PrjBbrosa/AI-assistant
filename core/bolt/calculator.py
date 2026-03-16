@@ -48,9 +48,15 @@ def _derive_thread_geometry(d: float, p: float, fastener: Dict[str, Any]) -> Dic
     }
 
 
-def _resolve_compliance(stiffness: Dict[str, Any]) -> Dict[str, float]:
+def _resolve_compliance(
+    stiffness: Dict[str, Any],
+    d: float = 0, p: float = 0,
+    bearing_d_inner: float = 0, bearing_d_outer: float = 0,
+    clamped: Dict[str, Any] | None = None,
+) -> Dict[str, float]:
     has_compliance = "bolt_compliance" in stiffness and "clamped_compliance" in stiffness
     has_stiffness = "bolt_stiffness" in stiffness and "clamped_stiffness" in stiffness
+    auto_modeled = False
 
     if has_compliance:
         delta_s = _positive(float(stiffness["bolt_compliance"]), "stiffness.bolt_compliance")
@@ -60,15 +66,36 @@ def _resolve_compliance(stiffness: Dict[str, Any]) -> Dict[str, float]:
         k_p = _positive(float(stiffness["clamped_stiffness"]), "stiffness.clamped_stiffness")
         delta_s = 1.0 / k_s
         delta_p = 1.0 / k_p
+    elif stiffness.get("auto_compliance"):
+        from core.bolt.compliance_model import (
+            calculate_bolt_compliance, calculate_clamped_compliance,
+        )
+        E_bolt = _positive(float(stiffness.get("E_bolt", 210_000)), "stiffness.E_bolt")
+        E_clamped = _positive(float(stiffness.get("E_clamped", 210_000)), "stiffness.E_clamped")
+        cl = clamped or {}
+        l_K = _positive(float(cl.get("total_thickness", 0)), "clamped.total_thickness")
+        bolt_r = calculate_bolt_compliance(d, p, l_K, E_bolt)
+        delta_s = bolt_r["delta_s"]
+        solid_type = str(cl.get("basic_solid", "cylinder"))
+        D_A = float(cl.get("D_A", bearing_d_outer))
+        d_h = bearing_d_inner
+        D_w = (bearing_d_inner + bearing_d_outer) / 2.0
+        clamp_r = calculate_clamped_compliance(
+            model=solid_type, d_h=d_h, D_w=D_w, D_A=D_A,
+            l_K=l_K, E_clamped=E_clamped,
+        )
+        delta_p = clamp_r["delta_p"]
+        auto_modeled = True
     else:
         raise InputError(
             "Provide either stiffness.{bolt_compliance,clamped_compliance} "
-            "or stiffness.{bolt_stiffness,clamped_stiffness}"
+            "or stiffness.{bolt_stiffness,clamped_stiffness} "
+            "or set stiffness.auto_compliance=true with geometry parameters"
         )
 
     n = float(stiffness.get("load_introduction_factor_n", 1.0))
     _positive(n, "stiffness.load_introduction_factor_n")
-    return {"delta_s": delta_s, "delta_p": delta_p, "n": n}
+    return {"delta_s": delta_s, "delta_p": delta_p, "n": n, "auto_modeled": auto_modeled}
 
 
 # VDI 2230：拧紧方式对应 αA 建议范围
@@ -221,11 +248,16 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         raise InputError("bearing.bearing_d_outer must be greater than bearing.bearing_d_inner")
 
     geometry = _derive_thread_geometry(d, p, fastener)
-    compliance = _resolve_compliance(stiffness)
+    compliance = _resolve_compliance(
+        stiffness, d=d, p=p,
+        bearing_d_inner=bearing_d_inner, bearing_d_outer=bearing_d_outer,
+        clamped=clamped,
+    )
 
     delta_s = compliance["delta_s"]
     delta_p = compliance["delta_p"]
     n = compliance["n"]
+    auto_modeled = compliance.get("auto_modeled", False)
     phi = delta_p / (delta_s + delta_p)
     phi_n = n * phi
     if phi_n >= 1.0:
@@ -437,7 +469,7 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "inputs_echo": data,
         "derived_geometry_mm": geometry,
-        "stiffness_model": {"delta_s_mm_per_n": delta_s, "delta_p_mm_per_n": delta_p, "n": n},
+        "stiffness_model": {"delta_s_mm_per_n": delta_s, "delta_p_mm_per_n": delta_p, "n": n, "auto_modeled": auto_modeled},
         "intermediate": {
             "phi": phi,
             "phi_n": phi_n,
