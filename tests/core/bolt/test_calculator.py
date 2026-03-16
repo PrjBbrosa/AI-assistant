@@ -636,3 +636,33 @@ class TestAutoCompliance:
         result = calculate_vdi2230_core(data)
         assert result["stiffness_model"]["delta_p_mm_per_n"] > 0
         assert result["stiffness_model"]["auto_modeled"] is True
+
+    def test_auto_compliance_multi_layer(self):
+        """多层被夹件：钢+铝双层，δp = δp_steel + δp_alu。"""
+        from core.bolt.compliance_model import calculate_clamped_compliance
+        data = _base_input()
+        del data["stiffness"]["bolt_compliance"]
+        del data["stiffness"]["clamped_compliance"]
+        data["stiffness"]["auto_compliance"] = True
+        data["stiffness"]["E_bolt"] = 210_000.0
+        data["bearing"]["bearing_d_inner"] = 11.0
+        data["clamped"] = {
+            "total_thickness": 30.0,
+            "layers": [
+                {"model": "cylinder", "d_h": 11.0, "D_A": 24.0,
+                 "l_K": 15.0, "E_clamped": 210_000.0},
+                {"model": "cylinder", "d_h": 11.0, "D_A": 24.0,
+                 "l_K": 15.0, "E_clamped": 70_000.0},
+            ],
+        }
+        result = calculate_vdi2230_core(data)
+        assert result["stiffness_model"]["auto_modeled"] is True
+        dp_steel = calculate_clamped_compliance(
+            model="cylinder", d_h=11.0, D_A=24.0,
+            l_K=15.0, E_clamped=210_000.0)["delta_p"]
+        dp_alu = calculate_clamped_compliance(
+            model="cylinder", d_h=11.0, D_A=24.0,
+            l_K=15.0, E_clamped=70_000.0)["delta_p"]
+        expected_dp = dp_steel + dp_alu
+        actual_dp = result["stiffness_model"]["delta_p_mm_per_n"]
+        assert abs(actual_dp - expected_dp) / expected_dp < 0.01

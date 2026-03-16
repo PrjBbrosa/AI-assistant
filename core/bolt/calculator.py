@@ -71,20 +71,37 @@ def _resolve_compliance(
             calculate_bolt_compliance, calculate_clamped_compliance,
         )
         E_bolt = _positive(float(stiffness.get("E_bolt", 210_000)), "stiffness.E_bolt")
-        E_clamped = _positive(float(stiffness.get("E_clamped", 210_000)), "stiffness.E_clamped")
         cl = clamped or {}
-        l_K = _positive(float(cl.get("total_thickness", 0)), "clamped.total_thickness")
-        bolt_r = calculate_bolt_compliance(d, p, l_K, E_bolt)
-        delta_s = bolt_r["delta_s"]
-        solid_type = str(cl.get("basic_solid", "cylinder"))
-        D_A = float(cl.get("D_A", bearing_d_outer))
-        d_h = bearing_d_inner
-        D_w = (bearing_d_inner + bearing_d_outer) / 2.0
-        clamp_r = calculate_clamped_compliance(
-            model=solid_type, d_h=d_h, D_w=D_w, D_A=D_A,
-            l_K=l_K, E_clamped=E_clamped,
-        )
-        delta_p = clamp_r["delta_p"]
+
+        if "layers" in cl:
+            # ---------- 多层模式 ----------
+            layers = cl["layers"]
+            if not isinstance(layers, list) or not (1 <= len(layers) <= 10):
+                raise InputError("被夹件层数须在 1~10 之间")
+            l_K = sum(float(layer["l_K"]) for layer in layers)
+            _positive(l_K, "clamped.total_thickness (各层求和)")
+            bolt_r = calculate_bolt_compliance(d, p, l_K, E_bolt)
+            delta_s = bolt_r["delta_s"]
+            d_h = bearing_d_inner
+            for layer in layers:
+                layer.setdefault("d_h", d_h)
+            clamp_r = calculate_clamped_compliance(layers=layers)
+            delta_p = clamp_r["delta_p"]
+        else:
+            # ---------- 单层模式（保持不变）----------
+            E_clamped = _positive(float(stiffness.get("E_clamped", 210_000)), "stiffness.E_clamped")
+            l_K = _positive(float(cl.get("total_thickness", 0)), "clamped.total_thickness")
+            bolt_r = calculate_bolt_compliance(d, p, l_K, E_bolt)
+            delta_s = bolt_r["delta_s"]
+            solid_type = str(cl.get("basic_solid", "cylinder"))
+            D_A = float(cl.get("D_A", bearing_d_outer))
+            d_h = bearing_d_inner
+            D_w = (bearing_d_inner + bearing_d_outer) / 2.0
+            clamp_r = calculate_clamped_compliance(
+                model=solid_type, d_h=d_h, D_w=D_w, D_A=D_A,
+                l_K=l_K, E_clamped=E_clamped,
+            )
+            delta_p = clamp_r["delta_p"]
         auto_modeled = True
     else:
         raise InputError(
