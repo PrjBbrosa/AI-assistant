@@ -184,3 +184,68 @@ class TestJointType:
         data = _base_input()
         result = calculate_vdi2230_core(data)
         assert "螺纹孔" in result["scope_note"]
+
+
+class TestThermalMaterial:
+    def test_steel_bolt_aluminum_clamped_thermal_loss(self):
+        """铝壳体+钢螺栓的热损失应显著大于钢+钢。"""
+        data = _base_input()
+        data["options"] = {"check_level": "thermal"}
+        data["loads"]["thermal_force_loss"] = 0
+        data["operating"] = {
+            "temp_bolt": 80.0,
+            "temp_parts": 80.0,
+            "alpha_bolt": 11.5e-6,
+            "alpha_parts": 23.0e-6,
+        }
+        data["clamped"] = {"total_thickness": 20.0}
+        result = calculate_vdi2230_core(data)
+        thermal = result["thermal"]
+        assert thermal["thermal_auto_estimated"] is True
+        assert thermal["thermal_auto_value_N"] > 0
+
+    def test_same_material_no_thermal_loss(self):
+        """相同材料、相同温度 → 无热损失。"""
+        data = _base_input()
+        data["options"] = {"check_level": "thermal"}
+        data["loads"]["thermal_force_loss"] = 0
+        data["operating"] = {
+            "temp_bolt": 80.0,
+            "temp_parts": 80.0,
+            "alpha_bolt": 11.5e-6,
+            "alpha_parts": 11.5e-6,
+        }
+        data["clamped"] = {"total_thickness": 20.0}
+        result = calculate_vdi2230_core(data)
+        assert result["thermal"]["thermal_auto_value_N"] == 0.0
+        assert result["thermal"]["thermal_auto_estimated"] is False
+
+    def test_different_temps_same_alpha_no_loss(self):
+        """相同材料但不同温度 → 无热损失（Δα=0 使热力为零）。"""
+        data = _base_input()
+        data["options"] = {"check_level": "thermal"}
+        data["loads"]["thermal_force_loss"] = 0
+        data["operating"] = {
+            "temp_bolt": 100.0,
+            "temp_parts": 20.0,
+            "alpha_bolt": 11.5e-6,
+            "alpha_parts": 11.5e-6,
+        }
+        data["clamped"] = {"total_thickness": 20.0}
+        result = calculate_vdi2230_core(data)
+        assert result["thermal"]["thermal_auto_value_N"] == 0.0
+
+    def test_alpha_values_echoed_in_thermal_output(self):
+        data = _base_input()
+        data["options"] = {"check_level": "thermal"}
+        data["loads"]["thermal_force_loss"] = 0
+        data["operating"] = {
+            "temp_bolt": 80.0, "temp_parts": 30.0,
+            "alpha_bolt": 11.5e-6, "alpha_parts": 23.0e-6,
+        }
+        data["clamped"] = {"total_thickness": 20.0}
+        result = calculate_vdi2230_core(data)
+        assert "alpha_bolt" in result["thermal"]
+        assert "alpha_parts" in result["thermal"]
+        assert result["thermal"]["alpha_bolt"] == 11.5e-6
+        assert result["thermal"]["alpha_parts"] == 23.0e-6
