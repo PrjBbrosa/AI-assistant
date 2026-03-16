@@ -666,3 +666,112 @@ class TestAutoCompliance:
         expected_dp = dp_steel + dp_alu
         actual_dp = result["stiffness_model"]["delta_p_mm_per_n"]
         assert abs(actual_dp - expected_dp) / expected_dp < 0.01
+
+
+class TestMultiLayerValidation:
+    def test_empty_layers_raises(self):
+        """空 layers 列表应报错。"""
+        data = _base_input()
+        del data["stiffness"]["bolt_compliance"]
+        del data["stiffness"]["clamped_compliance"]
+        data["stiffness"]["auto_compliance"] = True
+        data["stiffness"]["E_bolt"] = 210_000.0
+        data["clamped"] = {"total_thickness": 0, "layers": []}
+        with pytest.raises(InputError, match="层数"):
+            calculate_vdi2230_core(data)
+
+    def test_too_many_layers_raises(self):
+        """超过 10 层应报错。"""
+        data = _base_input()
+        del data["stiffness"]["bolt_compliance"]
+        del data["stiffness"]["clamped_compliance"]
+        data["stiffness"]["auto_compliance"] = True
+        data["stiffness"]["E_bolt"] = 210_000.0
+        layer = {"model": "cylinder", "d_h": 11.0, "D_A": 24.0,
+                 "l_K": 5.0, "E_clamped": 210_000.0}
+        data["clamped"] = {"total_thickness": 55, "layers": [layer] * 11}
+        with pytest.raises(InputError, match="层数"):
+            calculate_vdi2230_core(data)
+
+
+class TestMultiLayerThermal:
+    def test_multi_layer_thermal_loss(self):
+        """多层不同 alpha：Δl = Σ(alpha_i × l_K_i × ΔT)。"""
+        data = _base_input()
+        data["options"] = {"check_level": "thermal"}
+        data["loads"]["thermal_force_loss"] = 0
+        data["operating"] = {
+            "temp_bolt": 80.0,
+            "temp_parts": 20.0,
+            "alpha_bolt": 11.5e-6,
+            "layer_thermals": [
+                {"alpha": 11.5e-6, "l_K": 15.0},
+                {"alpha": 23.0e-6, "l_K": 15.0},
+            ],
+        }
+        data["clamped"] = {"total_thickness": 30.0}
+        result = calculate_vdi2230_core(data)
+        thermal = result["thermal"]
+        assert thermal["thermal_auto_estimated"] is True
+        delta_s = data["stiffness"]["bolt_compliance"]
+        delta_p = data["stiffness"]["clamped_compliance"]
+        delta_T = 60.0
+        delta_l_parts = 11.5e-6 * 15.0 * delta_T + 23.0e-6 * 15.0 * delta_T
+        delta_l_bolt = 11.5e-6 * 30.0 * delta_T
+        expected = abs(delta_l_parts - delta_l_bolt) / (delta_s + delta_p)
+        assert abs(thermal["thermal_auto_value_N"] - expected) / expected < 0.01
+
+    def test_single_layer_thermal_unchanged(self):
+        """单层热损失回归：不带 layer_thermals 时保持原公式。"""
+        data = _base_input()
+        data["options"] = {"check_level": "thermal"}
+        data["loads"]["thermal_force_loss"] = 0
+        data["operating"] = {
+            "temp_bolt": 80.0,
+            "temp_parts": 30.0,
+            "alpha_bolt": 11.5e-6,
+            "alpha_parts": 23.0e-6,
+        }
+        data["clamped"] = {"total_thickness": 20.0}
+        result = calculate_vdi2230_core(data)
+        thermal = result["thermal"]
+        assert thermal["thermal_auto_estimated"] is True
+        delta_s = data["stiffness"]["bolt_compliance"]
+        delta_p = data["stiffness"]["clamped_compliance"]
+        expected = abs(
+            (11.5e-6 - 23.0e-6) * 50.0 * 20.0 / (delta_s + delta_p)
+        )
+        assert abs(thermal["thermal_auto_value_N"] - expected) / expected < 0.01
+
+    def test_multi_layer_compliance_and_thermal_combined(self):
+        """集成测试：auto_compliance + layer_thermals 同时使用。"""
+        data = _base_input()
+        del data["stiffness"]["bolt_compliance"]
+        del data["stiffness"]["clamped_compliance"]
+        data["stiffness"]["auto_compliance"] = True
+        data["stiffness"]["E_bolt"] = 210_000.0
+        data["options"] = {"check_level": "thermal"}
+        data["loads"]["thermal_force_loss"] = 0
+        data["bearing"]["bearing_d_inner"] = 11.0
+        data["clamped"] = {
+            "total_thickness": 30.0,
+            "layers": [
+                {"model": "cylinder", "d_h": 11.0, "D_A": 24.0,
+                 "l_K": 15.0, "E_clamped": 210_000.0},
+                {"model": "cylinder", "d_h": 11.0, "D_A": 24.0,
+                 "l_K": 15.0, "E_clamped": 70_000.0},
+            ],
+        }
+        data["operating"] = {
+            "temp_bolt": 80.0,
+            "temp_parts": 20.0,
+            "alpha_bolt": 11.5e-6,
+            "layer_thermals": [
+                {"alpha": 11.5e-6, "l_K": 15.0},
+                {"alpha": 23.0e-6, "l_K": 15.0},
+            ],
+        }
+        result = calculate_vdi2230_core(data)
+        assert result["stiffness_model"]["auto_modeled"] is True
+        assert result["thermal"]["thermal_auto_estimated"] is True
+        assert result["thermal"]["thermal_auto_value_N"] > 0

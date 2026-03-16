@@ -297,6 +297,8 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
 
     thermal_auto_estimated = False
     thermal_auto_value = 0.0
+    layer_thermals = operating.get("layer_thermals")
+
     if thermal_force_loss == 0.0:
         temp_bolt = operating.get("temp_bolt")
         temp_parts = operating.get("temp_parts")
@@ -313,13 +315,23 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
                 l_K = float(l_K)
                 delta_T = temp_bolt - temp_parts
                 if delta_T != 0.0 and l_K > 0.0:
-                    c_s = 1.0 / delta_s  # 螺栓刚度 N/mm
-                    c_p = 1.0 / delta_p  # 被夹件刚度 N/mm
-                    thermal_auto_value = abs(
-                        (alpha_bolt - alpha_parts) * delta_T
-                        * (c_s * c_p) / (c_s + c_p)
-                        * l_K
-                    )
+                    if layer_thermals:
+                        # 多层热位移：逐层求和
+                        delta_l_parts = sum(
+                            float(lt["alpha"]) * float(lt["l_K"]) * delta_T
+                            for lt in layer_thermals
+                        )
+                        delta_l_bolt = alpha_bolt * l_K * delta_T
+                        thermal_auto_value = abs(delta_l_parts - delta_l_bolt) / (delta_s + delta_p)
+                    else:
+                        # 单层热损失：保持原公式
+                        c_s = 1.0 / delta_s  # 螺栓刚度 N/mm
+                        c_p = 1.0 / delta_p  # 被夹件刚度 N/mm
+                        thermal_auto_value = abs(
+                            (alpha_bolt - alpha_parts) * delta_T
+                            * (c_s * c_p) / (c_s + c_p)
+                            * l_K
+                        )
                     if thermal_auto_value > 0.0:
                         thermal_force_loss = thermal_auto_value
                         thermal_auto_estimated = True
@@ -528,6 +540,7 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
             "thermal_auto_value_N": thermal_auto_value,
             "alpha_bolt": alpha_bolt,
             "alpha_parts": alpha_parts,
+            **({"layer_thermals": layer_thermals} if layer_thermals else {}),
         },
         "embed_estimation": embed_estimation,
         "clamped_info": {
