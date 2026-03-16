@@ -37,6 +37,9 @@ from app.ui.input_condition_store import (
 )
 from app.ui.widgets.clamping_diagram import ClampingDiagramWidget, ThreadForceTriangleWidget
 from app.ui.report_export import export_report_lines
+from app.ui.pages.bolt_flowchart import (
+    FlowchartNavWidget, RStepDetailPage, R_STEPS,
+)
 from core.bolt.calculator import InputError, calculate_vdi2230_core
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -564,7 +567,23 @@ class BoltPage(QWidget):
         self.chapter_list = QListWidget(nav_card)
         self.chapter_list.setObjectName("ChapterList")
         nav_layout.addWidget(nav_title)
-        nav_layout.addWidget(self.chapter_list, 1)
+
+        # Tab buttons
+        tab_bar = QHBoxLayout()
+        self.btn_input_tab = QPushButton("输入步骤", nav_card)
+        self.btn_input_tab.setObjectName("PrimaryButton")
+        self.btn_flow_tab = QPushButton("校核链路", nav_card)
+        tab_bar.addWidget(self.btn_input_tab)
+        tab_bar.addWidget(self.btn_flow_tab)
+        nav_layout.addLayout(tab_bar)
+
+        # Navigation stack
+        self.nav_stack = QStackedWidget(nav_card)
+        self.nav_stack.addWidget(self.chapter_list)  # page 0
+        self.flowchart_nav = FlowchartNavWidget(nav_card)
+        self.nav_stack.addWidget(self.flowchart_nav)  # page 1
+        nav_layout.addWidget(self.nav_stack, 1)
+
         content.addWidget(nav_card, 0)
 
         self.chapter_stack = QStackedWidget(self)
@@ -573,6 +592,13 @@ class BoltPage(QWidget):
         self._build_chapter_pages()
         self._build_diagram_page()
         self._build_results_page()
+
+        self._r_pages: list[RStepDetailPage] = []
+        self._r_page_start_index = self.chapter_stack.count()
+        for step in R_STEPS:
+            r_page = RStepDetailPage(step, self)
+            self.chapter_stack.addWidget(r_page)
+            self._r_pages.append(r_page)
 
         footer = QFrame(self)
         footer.setObjectName("Card")
@@ -600,6 +626,9 @@ class BoltPage(QWidget):
         self.btn_save.clicked.connect(self._save_report)
         self.check_level_combo.currentIndexChanged.connect(self._apply_check_level_visibility)
         self.calc_mode_combo.currentIndexChanged.connect(self._apply_calculation_mode_visibility)
+        self.btn_input_tab.clicked.connect(lambda: self._switch_nav_tab(0))
+        self.btn_flow_tab.clicked.connect(lambda: self._switch_nav_tab(1))
+        self.flowchart_nav.node_clicked.connect(self._on_flow_node_clicked)
 
         self._apply_defaults()
         self._load_sample("input_case_01.json")
@@ -851,6 +880,8 @@ class BoltPage(QWidget):
         if hasattr(self, "level_desc_label"):
             self.level_desc_label.setText(self._build_level_desc_text(level))
         self._apply_calculation_mode_visibility()
+        if hasattr(self, "flowchart_nav"):
+            self.flowchart_nav.set_r6_visible(show_fatigue)
 
     def _apply_calculation_mode_visibility(self, *_args) -> None:
         mode = self.calc_mode_combo.currentData() or "design"
@@ -877,6 +908,24 @@ class BoltPage(QWidget):
             else:
                 editor.clear()
                 editor.setFocus()
+
+    def _switch_nav_tab(self, tab_index: int) -> None:
+        self.nav_stack.setCurrentIndex(tab_index)
+        if tab_index == 0:
+            self.btn_input_tab.setObjectName("PrimaryButton")
+            self.btn_flow_tab.setObjectName("")
+            row = self.chapter_list.currentRow()
+            if row >= 0:
+                self.chapter_stack.setCurrentIndex(row)
+        else:
+            self.btn_flow_tab.setObjectName("PrimaryButton")
+            self.btn_input_tab.setObjectName("")
+            self._on_flow_node_clicked(self.flowchart_nav._selected_index)
+        self.btn_input_tab.style().polish(self.btn_input_tab)
+        self.btn_flow_tab.style().polish(self.btn_flow_tab)
+
+    def _on_flow_node_clicked(self, r_index: int) -> None:
+        self.chapter_stack.setCurrentIndex(self._r_page_start_index + r_index)
 
     def _build_diagram_page(self) -> None:
         self._add_step_item("连接示意图")
@@ -1197,8 +1246,16 @@ class BoltPage(QWidget):
         self._last_payload = payload
         self._last_result = result
         self._render_result(payload, result)
+
+        # Update flowchart navigation nodes
+        self.flowchart_nav.update_from_result(result)
+        # Update R detail pages
+        for r_page in self._r_pages:
+            r_page.build_input_echo(self._field_specs, self._field_widgets, result)
+            r_page.update_from_result(result, self._field_widgets)
+
         # Jump to result chapter after run.
-        self.chapter_list.setCurrentRow(self.chapter_stack.count() - 1)
+        self.chapter_list.setCurrentRow(self.chapter_list.count() - 1)
 
     def _render_result(self, payload: dict[str, Any], result: dict[str, Any]) -> None:
         overall = bool(result.get("overall_pass"))
