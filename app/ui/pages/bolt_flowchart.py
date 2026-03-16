@@ -201,7 +201,7 @@ class FlowchartNavWidget(QWidget):
             2: f"MA={torque.get('MA_min_Nm', 0):.1f}~{torque.get('MA_max_Nm', 0):.1f} N·m",
             3: f"FK_res={forces.get('F_K_residual_N', 0):,.0f} N  FK_req={inter.get('F_K_required_N', 0):,.0f} N",
             4: f"σ_vm={stresses.get('sigma_vm_assembly', 0):.0f} ≤ {stresses.get('sigma_allow_assembly', 0):.0f} MPa",
-            5: f"σ_ax={stresses.get('sigma_ax_work', 0):.0f} ≤ {stresses.get('sigma_allow_work', 0):.0f} MPa",
+            5: f"σ_vm={stresses.get('sigma_vm_work', stresses.get('sigma_ax_work', 0)):.0f} ≤ {stresses.get('sigma_allow_work', 0):.0f} MPa",
             6: f"σ_a={fatigue.get('sigma_a', 0):.1f} ≤ {fatigue.get('sigma_a_allow', 0):.1f} MPa",
             7: f"p_B={stresses.get('p_bearing', 0):.0f} ≤ {stresses.get('p_G_allow', 0):.0f} MPa"
                if "p_bearing" in stresses else "未设置许用压强",
@@ -487,11 +487,20 @@ class RStepDetailPage(QFrame):
                 f"判据: σ_vm ≤ σ_allow"
             )
         if step_id == "r5":
+            k_tau = stresses.get("k_tau", 0)
+            vm_work = stresses.get("sigma_vm_work", stresses.get("sigma_ax_work", 0))
+            torsion_line = ""
+            if k_tau > 0:
+                torsion_line = (
+                    f"\nk_τ = {k_tau:.1f}（扭矩法残留）"
+                    f"\nσ_vm_work  = √(σ²+3(k_τ·τ)²) = {vm_work:.1f} MPa"
+                )
             return (
                 f"F_bolt_max = FM,max + φn×FA = {forces.get('F_bolt_work_max_N', 0):,.0f} N\n"
-                f"σ_ax_work  = F_bolt_max/As = {stresses.get('sigma_ax_work', 0):.1f} MPa\n"
+                f"σ_ax_work  = F_bolt_max/As = {stresses.get('sigma_ax_work', 0):.1f} MPa"
+                f"{torsion_line}\n"
                 f"σ_allow    = Rp0.2/SF = {stresses.get('sigma_allow_work', 0):.1f} MPa\n"
-                f"判据: σ_ax ≤ σ_allow"
+                f"判据: {'σ_vm' if k_tau > 0 else 'σ_ax'} ≤ σ_allow"
             )
         if step_id == "r6":
             return (

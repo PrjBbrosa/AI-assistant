@@ -451,3 +451,89 @@ class TestBatch2Integration:
         # basic check_level (default) → thermal_effective = 0.0
         expected_fmmin = inter["F_K_required_N"] + (1 - phi_n) * fa + 1500.0 + 0.0
         assert abs(inter["FMmin_N"] - expected_fmmin) < 1.0
+
+
+class TestTighteningMethodWarnings:
+    def test_torque_method_alpha_in_range_no_warning(self):
+        """扭矩法 αA=1.6 在建议范围 [1.4, 1.8] 内，无 warning。"""
+        data = _base_input()
+        data.setdefault("options", {})["tightening_method"] = "torque"
+        data["tightening"]["alpha_A"] = 1.6
+        result = calculate_vdi2230_core(data)
+        assert not any("αA" in w for w in result["warnings"])
+
+    def test_torque_method_alpha_out_of_range_warns(self):
+        """扭矩法 αA=1.2 低于建议下限 1.4，触发 warning。"""
+        data = _base_input()
+        data.setdefault("options", {})["tightening_method"] = "torque"
+        data["tightening"]["alpha_A"] = 1.2
+        result = calculate_vdi2230_core(data)
+        assert any("αA" in w for w in result["warnings"])
+
+    def test_angle_method_alpha_in_range(self):
+        """转角法 αA=1.2 在建议范围 [1.1, 1.3] 内，无 warning。"""
+        data = _base_input()
+        data.setdefault("options", {})["tightening_method"] = "angle"
+        data["tightening"]["alpha_A"] = 1.2
+        result = calculate_vdi2230_core(data)
+        assert not any("αA" in w for w in result["warnings"])
+
+    def test_hydraulic_method_alpha_out_of_range_warns(self):
+        """液压拉伸法 αA=1.3 超出建议上限 1.15，触发 warning。"""
+        data = _base_input()
+        data.setdefault("options", {})["tightening_method"] = "hydraulic"
+        data["tightening"]["alpha_A"] = 1.3
+        result = calculate_vdi2230_core(data)
+        assert any("αA" in w for w in result["warnings"])
+
+    def test_unknown_method_no_warning(self):
+        """默认 tightening_method=torque + αA=1.6 在范围内，无 warning。"""
+        data = _base_input()
+        result = calculate_vdi2230_core(data)
+        assert not any("αA" in w for w in result["warnings"])
+
+    def test_tightening_method_echoed_in_result(self):
+        """tightening_method 回显在结果中。"""
+        data = _base_input()
+        data.setdefault("options", {})["tightening_method"] = "angle"
+        result = calculate_vdi2230_core(data)
+        assert result["tightening_method"] == "angle"
+
+
+class TestR5TorsionResidual:
+    def test_torque_method_includes_torsion_residual(self):
+        """扭矩法 R5 使用 von Mises 含 k_tau=0.5 的扭转残余。"""
+        data = _base_input()
+        data.setdefault("options", {})["tightening_method"] = "torque"
+        result = calculate_vdi2230_core(data)
+        stresses = result["stresses_mpa"]
+        assert stresses["sigma_vm_work"] > stresses["sigma_ax_work"]
+        assert stresses["k_tau"] == 0.5
+
+    def test_angle_method_no_torsion_residual(self):
+        """转角法 R5 的 k_tau=0，σ_vm_work = σ_ax_work。"""
+        data = _base_input()
+        data.setdefault("options", {})["tightening_method"] = "angle"
+        result = calculate_vdi2230_core(data)
+        stresses = result["stresses_mpa"]
+        assert stresses["k_tau"] == 0.0
+        assert abs(stresses["sigma_vm_work"] - stresses["sigma_ax_work"]) < 0.01
+
+    def test_r5_check_uses_vm_work(self):
+        """R5 校核使用 σ_vm_work 而非 σ_ax_work。"""
+        data = _base_input()
+        data.setdefault("options", {})["tightening_method"] = "torque"
+        result = calculate_vdi2230_core(data)
+        stresses = result["stresses_mpa"]
+        expected_pass = stresses["sigma_vm_work"] <= stresses["sigma_allow_work"]
+        assert result["checks"]["operating_axial_ok"] == expected_pass
+
+    def test_torsion_residual_formula(self):
+        """验证公式: σ_vm_work = √(σ_ax² + 3·(k_τ·τ)²)。"""
+        data = _base_input()
+        data.setdefault("options", {})["tightening_method"] = "torque"
+        result = calculate_vdi2230_core(data)
+        s = result["stresses_mpa"]
+        import math
+        expected = math.sqrt(s["sigma_ax_work"]**2 + 3.0 * (0.5 * s["tau_assembly"])**2)
+        assert abs(s["sigma_vm_work"] - expected) < 0.01

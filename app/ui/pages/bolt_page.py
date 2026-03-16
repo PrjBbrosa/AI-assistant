@@ -597,6 +597,27 @@ SURFACE_CLASS_MAP: dict[str, str] = {
     "精细 (Ra≈1.6μm)": "fine",
 }
 
+TIGHTENING_METHOD_MAP: dict[str, str] = {
+    "扭矩法": "torque",
+    "转角法": "angle",
+    "液压拉伸法": "hydraulic",
+    "热装法": "thermal",
+}
+
+ALPHA_A_HINTS: dict[str, str] = {
+    "扭矩法": "FMmax/FMmin，扭矩法建议范围 1.4~1.8。",
+    "转角法": "FMmax/FMmin，转角法建议范围 1.1~1.3。",
+    "液压拉伸法": "FMmax/FMmin，液压拉伸法建议范围 1.05~1.15。",
+    "热装法": "FMmax/FMmin，热装法建议范围 1.05~1.15。",
+}
+
+N_POSITION_HINTS: dict[str, str] = {
+    "螺栓头端": "修正外载导入比例。头端导入通常取 n ≈ 1.0。",
+    "螺母端": "修正外载导入比例。螺母端导入通常取 n ≈ 0.5~0.7。",
+    "中间": "修正外载导入比例。中间导入通常取 n ≈ 0.3~0.5。",
+    "分布式": "修正外载导入比例。均匀分布近似取 n ≈ 0.5。",
+}
+
 CALC_MODES: tuple[tuple[str, str], ...] = (
     ("设计模式（反推 FM_min）", "design"),
     ("校核模式（输入已知 FM_min）", "verify"),
@@ -791,6 +812,15 @@ class BoltPage(QWidget):
         if clamped_mat_widget and isinstance(clamped_mat_widget, QComboBox):
             clamped_mat_widget.currentTextChanged.connect(self._on_clamped_material_changed)
             self._on_clamped_material_changed(clamped_mat_widget.currentText())
+        # 拧紧方式联动 αA hint
+        tmethod_w = self._field_widgets.get("assembly.tightening_method")
+        if tmethod_w and isinstance(tmethod_w, QComboBox):
+            tmethod_w.currentTextChanged.connect(self._on_tightening_method_changed)
+            self._on_tightening_method_changed(tmethod_w.currentText())
+        # 载荷导入位置联动 n hint
+        pos_w = self._field_widgets.get("introduction.position")
+        if pos_w and isinstance(pos_w, QComboBox):
+            pos_w.currentTextChanged.connect(self._on_position_changed)
         # 螺纹规格联动
         d_widget = self._field_widgets.get("fastener.d")
         if d_widget and isinstance(d_widget, QComboBox):
@@ -1117,6 +1147,18 @@ class BoltPage(QWidget):
             alpha_w.setReadOnly(False)
             alpha_w.clear()
             alpha_w.setFocus()
+
+    def _on_tightening_method_changed(self, text: str) -> None:
+        """拧紧方式变更时更新 αA 字段的 hint/tooltip。"""
+        alpha_w = self._field_widgets.get("tightening.alpha_A")
+        if alpha_w is not None and isinstance(alpha_w, QLineEdit):
+            alpha_w.setToolTip(ALPHA_A_HINTS.get(text, ""))
+
+    def _on_position_changed(self, text: str) -> None:
+        """载荷导入位置变更时更新 n 字段的 hint/tooltip。"""
+        n_w = self._field_widgets.get("stiffness.load_introduction_factor_n")
+        if n_w is not None and isinstance(n_w, QLineEdit):
+            n_w.setToolTip(N_POSITION_HINTS.get(text, ""))
 
     def _on_thread_d_changed(self, text: str) -> None:
         """公称直径下拉变更时更新螺距选项和自定义字段可见性。"""
@@ -1572,6 +1614,10 @@ class BoltPage(QWidget):
         if sc_widget and isinstance(sc_widget, QComboBox):
             sc_text = sc_widget.currentText()
             payload.setdefault("clamped", {})["surface_class"] = SURFACE_CLASS_MAP.get(sc_text, "medium")
+        method_w = self._field_widgets.get("assembly.tightening_method")
+        if method_w is not None and isinstance(method_w, QComboBox):
+            method_en = TIGHTENING_METHOD_MAP.get(method_w.currentText(), "torque")
+            payload.setdefault("options", {})["tightening_method"] = method_en
         return payload
 
     def _resolve_thread_d(self) -> str:

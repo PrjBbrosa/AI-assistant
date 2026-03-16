@@ -71,6 +71,14 @@ def _resolve_compliance(stiffness: Dict[str, Any]) -> Dict[str, float]:
     return {"delta_s": delta_s, "delta_p": delta_p, "n": n}
 
 
+# VDI 2230：拧紧方式对应 αA 建议范围
+_ALPHA_A_RANGES: dict[str, tuple[float, float]] = {
+    "torque": (1.4, 1.8),
+    "angle": (1.1, 1.3),
+    "hydraulic": (1.05, 1.15),
+    "thermal": (1.05, 1.15),
+}
+
 # VDI 2230 表 5.4/1 简化：典型单界面嵌入量 (μm)
 _EMBED_FZ_PER_INTERFACE: dict[str, float] = {
     "rough": 3.0,    # Ra ≈ 6.3 μm
@@ -132,6 +140,8 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     joint_type = str(options.get("joint_type", "tapped"))
     if joint_type not in {"tapped", "through"}:
         raise InputError(f"options.joint_type 无效：{joint_type}，应为 tapped 或 through")
+
+    tightening_method = str(options.get("tightening_method", "torque"))
 
     d = _positive(float(_require(fastener, "d", "fastener")), "fastener.d")
     p = _positive(float(_require(fastener, "p", "fastener")), "fastener.p")
@@ -300,12 +310,15 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
 
     f_bolt_work_max = fm_max + phi_n * fa_max
     sigma_ax_work = f_bolt_work_max / geometry["As"]
+    # R5 扭转残余：扭矩法保留约 50% 装配扭矩，其余方法扭矩基本释放
+    k_tau = 0.5 if tightening_method == "torque" else 0.0
+    sigma_vm_work = math.sqrt(sigma_ax_work**2 + 3.0 * (k_tau * tau_assembly)**2)
     yield_safety_operating = _positive(
         float(checks.get("yield_safety_operating", 1.1)),
         "checks.yield_safety_operating",
     )
     sigma_allow_work = rp02 / yield_safety_operating
-    pass_work = sigma_ax_work <= sigma_allow_work
+    pass_work = sigma_vm_work <= sigma_allow_work
 
     if calculation_mode == "verify":
         f_k_residual = fm_min - embed_loss - thermal_effective - (1.0 - phi_n) * fa_max
@@ -353,6 +366,17 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         warnings.append("装配利用系数偏高（>0.95），建议核查摩擦散差与装配工艺能力。")
     if check_level in {"thermal", "fatigue"} and thermal_loss_ratio > 0.15:
         warnings.append("热损失占比偏高（>15%），建议核查温差工况与材料热膨胀差。")
+    alpha_range = _ALPHA_A_RANGES.get(tightening_method)
+    if alpha_range is not None:
+        lo, hi = alpha_range
+        if alpha_a < lo or alpha_a > hi:
+            _method_names = {"torque": "扭矩法", "angle": "转角法",
+                             "hydraulic": "液压拉伸法", "thermal": "热装法"}
+            method_cn = _method_names.get(tightening_method, tightening_method)
+            warnings.append(
+                f"αA = {alpha_a:.2f} 超出{method_cn}建议范围 [{lo}–{hi}]，"
+                "请确认装配工艺能力。"
+            )
 
     checks_out = {
         "assembly_von_mises_ok": pass_assembly,
@@ -372,6 +396,8 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         "sigma_vm_assembly": sigma_vm_assembly,
         "sigma_allow_assembly": sigma_allow_assembly,
         "sigma_ax_work": sigma_ax_work,
+        "sigma_vm_work": sigma_vm_work,
+        "k_tau": k_tau,
         "sigma_allow_work": sigma_allow_work,
     }
     if r7_active:
@@ -413,6 +439,7 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         "check_level": check_level,
         "calculation_mode": calculation_mode,
         "joint_type": joint_type,
+        "tightening_method": tightening_method,
         "r3_note": r3_note,
         "r7_note": r7_note,
         "thermal": {
