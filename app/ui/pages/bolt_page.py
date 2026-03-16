@@ -1337,11 +1337,19 @@ class BoltPage(QWidget):
         count = self._get_effective_part_count()
         is_multi = count >= 2
 
-        # 单层字段
-        for fid in self._SINGLE_LAYER_FIELDS | self._SINGLE_THERMAL_FIELDS:
+        # 单层柔度字段
+        for fid in self._SINGLE_LAYER_FIELDS:
             card = self._field_cards.get(fid)
             if card is not None:
                 card.setVisible(not is_multi)
+
+        # 单层热材料字段：需同时尊重 check_level（basic 级别下始终隐藏）
+        level = self._current_check_level()
+        show_thermal = level in ("thermal", "fatigue")
+        for fid in self._SINGLE_THERMAL_FIELDS:
+            card = self._field_cards.get(fid)
+            if card is not None:
+                card.setVisible(show_thermal and not is_multi)
 
         # custom_count 仅在"自定义"时显示
         pc_w = self._field_widgets.get("clamped.part_count")
@@ -1741,17 +1749,13 @@ class BoltPage(QWidget):
                 e_w = self._field_widgets.get(f"clamped.layer_{i}.E")
                 if e_w and isinstance(e_w, QLineEdit):
                     e_w.setText(str(layer.get("E_clamped", "")))
-                # 恢复 alpha
+                # 恢复材料和 alpha（先设材料触发信号，再覆盖 alpha 值）
                 if i - 1 < len(saved_thermals):
                     alpha_val = saved_thermals[i - 1].get("alpha", "")
-                    alpha_w = self._field_widgets.get(f"clamped.layer_{i}.alpha")
-                    if alpha_w and isinstance(alpha_w, QLineEdit):
-                        alpha_w.setText(str(alpha_val))
-                        alpha_w.setReadOnly(False)
-                    # 尝试从 alpha 反推材料
+                    # 先从 alpha 反推材料（触发 _on_layer_material_changed 信号）
                     mat_w = self._field_widgets.get(f"clamped.layer_{i}.material")
+                    matched = False
                     if mat_w and isinstance(mat_w, QComboBox):
-                        matched = False
                         for mat_name, preset_val in THERMAL_EXPANSION_PRESETS.items():
                             if str(alpha_val) == preset_val:
                                 mat_w.setCurrentText(mat_name)
@@ -1759,6 +1763,11 @@ class BoltPage(QWidget):
                                 break
                         if not matched:
                             mat_w.setCurrentText("自定义")
+                    # 再设 alpha（覆盖信号可能清除的值）
+                    alpha_w = self._field_widgets.get(f"clamped.layer_{i}.alpha")
+                    if alpha_w and isinstance(alpha_w, QLineEdit):
+                        alpha_w.setText(str(alpha_val))
+                        alpha_w.setReadOnly(matched)
             self._on_part_count_changed()
 
         if "check_level" in ui_state:
