@@ -88,6 +88,25 @@ class TestBearingPressureR7:
         assert abs(result["stresses_mpa"]["A_bearing_mm2"] - a_expected) < 0.1
         assert abs(result["stresses_mpa"]["p_bearing"] - p_expected) < 0.1
 
+    def test_r7_tapped_note_says_head_side(self):
+        data = _base_input()
+        data["bearing"]["p_G_allow"] = 700.0
+        result = calculate_vdi2230_core(data)
+        assert "螺栓头端" in result["r7_note"]
+        assert "螺母端" not in result["r7_note"]
+
+    def test_r7_through_note_says_both_sides(self):
+        data = _base_input()
+        data["bearing"]["p_G_allow"] = 700.0
+        data.setdefault("options", {})["joint_type"] = "through"
+        result = calculate_vdi2230_core(data)
+        assert "螺母端" in result["r7_note"]
+
+    def test_r7_note_absent_when_r7_inactive(self):
+        data = _base_input()
+        result = calculate_vdi2230_core(data)
+        assert result["r7_note"] == ""
+
 
 class TestCalculationMode:
     def test_default_mode_is_design(self):
@@ -135,3 +154,33 @@ class TestCalculationMode:
         result = calculate_vdi2230_core(data)
         assert abs(result["intermediate"]["FMmin_N"] - fm_input) < 1e-6
         assert abs(result["intermediate"]["FMmax_N"] - fm_input * data["tightening"]["alpha_A"]) < 1.0
+
+
+class TestJointType:
+    def test_default_joint_type_is_tapped(self):
+        data = _base_input()
+        result = calculate_vdi2230_core(data)
+        assert result["joint_type"] == "tapped"
+
+    def test_through_joint_type_echoed(self):
+        data = _base_input()
+        data.setdefault("options", {})["joint_type"] = "through"
+        result = calculate_vdi2230_core(data)
+        assert result["joint_type"] == "through"
+
+    def test_invalid_joint_type_raises(self):
+        data = _base_input()
+        data.setdefault("options", {})["joint_type"] = "invalid"
+        with pytest.raises(InputError, match="joint_type"):
+            calculate_vdi2230_core(data)
+
+    def test_scope_note_mentions_joint_type(self):
+        data = _base_input()
+        data.setdefault("options", {})["joint_type"] = "through"
+        result = calculate_vdi2230_core(data)
+        assert "通孔" in result["scope_note"]
+
+    def test_scope_note_tapped(self):
+        data = _base_input()
+        result = calculate_vdi2230_core(data)
+        assert "螺纹孔" in result["scope_note"]

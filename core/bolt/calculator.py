@@ -91,6 +91,10 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     if calculation_mode not in {"design", "verify"}:
         raise InputError(f"options.calculation_mode 无效：{calculation_mode}")
 
+    joint_type = str(options.get("joint_type", "tapped"))
+    if joint_type not in {"tapped", "through"}:
+        raise InputError(f"options.joint_type 无效：{joint_type}，应为 tapped 或 through")
+
     d = _positive(float(_require(fastener, "d", "fastener")), "fastener.d")
     p = _positive(float(_require(fastener, "p", "fastener")), "fastener.p")
     rp02 = _positive(float(_require(fastener, "Rp02", "fastener")), "fastener.Rp02")
@@ -275,10 +279,15 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     # --- R7 支承面压强校核 ---
     p_g_allow = float(bearing.get("p_G_allow", 0.0))
     r7_active = p_g_allow > 0
+    r7_note = ""
     if r7_active:
         a_bearing = math.pi / 4.0 * (bearing_d_outer**2 - bearing_d_inner**2)
         p_bearing = fm_max / a_bearing
         pass_bearing = p_bearing <= p_g_allow
+        if joint_type == "through":
+            r7_note = "通孔连接：螺栓头端与螺母端均需满足支承面压强要求（当前使用同一组支承面参数校核）"
+        else:
+            r7_note = "螺纹孔连接：仅校核螺栓头端支承面压强"
 
     warnings = []
     if utilization > 0.95:
@@ -340,7 +349,9 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         "checks": checks_out,
         "check_level": check_level,
         "calculation_mode": calculation_mode,
+        "joint_type": joint_type,
         "r3_note": r3_note,
+        "r7_note": r7_note,
         "thermal": {
             "thermal_loss_effective_N": thermal_effective,
             "thermal_loss_ratio": thermal_loss_ratio,
@@ -364,6 +375,7 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         "overall_pass": all(checks_out.values()),
         "warnings": warnings,
         "scope_note": (
+            f"连接形式：{'通孔螺栓连接' if joint_type == 'through' else '螺纹孔连接'}。"
             "本工具覆盖 VDI 2230 核心链路（装配强度、服役强度、残余夹紧力），"
             "并提供温度与疲劳的工程化扩展校核。"
         ),
