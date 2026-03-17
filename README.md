@@ -2,7 +2,7 @@
 
 本项目提供一个本地桌面版机械计算框架（PySide6），当前已实现：
 - `螺栓连接`：VDI 2230 核心链路
-- `过盈配合`：圆柱面首版
+- `过盈配合`：DIN 7190 核心增强版，已支持联合作用、优选配合/偏差换算、装配流程与 repeated-load advanced block
 - `赫兹应力`：线接触/点接触首版
 - `蜗轮`：DIN 3975 几何与基础性能首版，已按蜗杆/蜗轮分组输入并提供两列自动计算尺寸，`DIN 3996` 负载能力校核仍未开始
 
@@ -30,6 +30,9 @@ python3 app/main.py
 - 加载测试案例参数到表单
 - 直接执行校核
 - 查看非程序员可读的分项结果与总体通过/不通过
+- 过盈配合支持 `manual / preferred fit / user-defined deviations` 三种过盈来源
+- 过盈配合支持 `manual_only / shrink_fit / force_fit` 三种装配模式，以及带 applicability gate 的 repeated-load / fretting advanced result
+- 导出报告时保留材料预设、粗糙度来源、fit source、assembly mode 等追溯信息
 - 查看模块图示与性能曲线（按各模块能力显示）
 - 蜗轮模块支持蜗杆/蜗轮两列尺寸预览和可滚动图形页
 - 导出可读报告（txt）

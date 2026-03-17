@@ -38,6 +38,8 @@ def _in_closed_interval(value: float, lo: float, hi: float, name: str) -> float:
 
 def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     """Calculate core checks for cylindrical press/shrink fits."""
+    from .assembly import calculate_assembly_detail
+
     geometry = data.get("geometry", {})
     materials = data.get("materials", {})
     fit = data.get("fit", {})
@@ -46,6 +48,7 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     loads = data.get("loads", {})
     checks = data.get("checks", {})
     options = data.get("options", {})
+    advanced = data.get("advanced", {})
 
     d = _positive(float(_require(geometry, "shaft_d_mm", "geometry")), "geometry.shaft_d_mm")
     d_outer = _positive(
@@ -169,6 +172,9 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     stress_safety_min = _positive(float(checks.get("stress_safety_min", 1.2)), "checks.stress_safety_min")
     curve_points = int(options.get("curve_points", 41))
     curve_points = int(_in_closed_interval(float(curve_points), 11, 201, "options.curve_points"))
+    repeated_load_mode = str(advanced.get("repeated_load_mode", "off")).strip() or "off"
+    if repeated_load_mode not in {"off", "on"}:
+        raise InputError("advanced.repeated_load_mode 必须是 off 或 on")
 
     radius = d / 2.0
     geometry_factor = (d_outer * d_outer + d * d) / (d_outer * d_outer - d * d)
@@ -261,17 +267,23 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     hub_hoop_inner_mean = mean_state["hub_hoop_inner_mpa"]
     hub_hoop_inner_max = max_state["hub_hoop_inner_mpa"]
 
-    p_req_torque = 0.0
+    torque_capacity_per_mpa_nm = torque_capacity_nm(1.0)
+    axial_capacity_per_mpa_n = axial_capacity_n(1.0)
+
+    p_req_torque_service = 0.0
     if torque_design_nm > 0:
-        p_req_torque = torque_design_nm * 1000.0 / (mu_torque * contact_area_mm2 * radius)
-    p_req_axial = 0.0
+        p_req_torque_service = torque_design_nm / torque_capacity_per_mpa_nm
+    p_req_axial_service = 0.0
     if axial_design_n > 0:
-        p_req_axial = axial_design_n / (mu_axial * contact_area_mm2)
+        p_req_axial_service = axial_design_n / axial_capacity_per_mpa_n
+    p_req_torque = slip_safety_min * p_req_torque_service
+    p_req_axial = slip_safety_min * p_req_axial_service
+    p_req_combined = slip_safety_min * math.hypot(p_req_torque_service, p_req_axial_service)
     p_radial = radial_design_n / (d * l_fit) if radial_design_n > 0 else 0.0
     # Conservative simplification of the handbook expression by taking QW = 0.
     p_bending = 2.25 * bending_design_nm * 1000.0 / (d * l_fit * l_fit) if bending_design_nm > 0 else 0.0
     p_gap = p_radial + p_bending
-    p_required = max(p_req_torque, p_req_axial, p_gap)
+    p_required = max(p_req_torque, p_req_axial, p_req_combined, p_gap)
     if p_required > 0:
         delta_required_eff_um = 2.0 * c_total * p_required * 1000.0
         delta_required_um = delta_required_eff_um + subsidence_um
@@ -293,18 +305,60 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     fit_range_ok = delta_max_um >= delta_required_um
 
     combined_usage = 0.0
-    if torque_design_nm > 0 and torque_min_nm > 0:
-        combined_usage += (torque_design_nm / torque_min_nm) ** 2
-    if axial_design_n > 0 and axial_min_n > 0:
-        combined_usage += (axial_design_n / axial_min_n) ** 2
-    combined_usage = math.sqrt(combined_usage)
+    if p_min > 0:
+        combined_usage = math.hypot(p_req_torque_service, p_req_axial_service) / p_min
     combined_ok = combined_usage <= (1.0 / slip_safety_min if combined_usage > 0 else 1.0)
+    combined_sf = math.inf if combined_usage == 0 else 1.0 / combined_usage
+
+    assembly_detail = calculate_assembly_detail(
+        data.get("assembly", {}),
+        {
+            "shaft_d_mm": d,
+            "fit_length_mm": l_fit,
+            "delta_min_um": delta_min_um,
+            "delta_mean_um": delta_mean_um,
+            "delta_max_um": delta_max_um,
+            "p_min_mpa": p_min,
+            "p_mean_mpa": p_mean,
+            "p_max_mpa": p_max,
+            "contact_area_mm2": contact_area_mm2,
+            "mu_assembly": mu_assembly,
+            "mu_torque": mu_torque,
+            "mu_axial": mu_axial,
+        },
+    )
+
+    repeated_notes: list[str] = []
+    repeated_enabled = repeated_load_mode == "on"
+    repeated_applicable = False
+    repeated_max_torque_nm: float | None = None
+    fretting_risk: bool | None = None
+    length_ratio = l_fit / d
+    modulus_ratio = abs(e_shaft - e_hub) / max(e_shaft, e_hub)
+    if repeated_enabled:
+        if length_ratio <= 0.25:
+            repeated_notes.append("not applicable: LF/DF must be greater than 0.25.")
+        elif modulus_ratio > 0.05:
+            repeated_notes.append("not applicable: repeated-load estimate assumes equal elastic modulus.")
+        elif bending_design_nm > 0.0:
+            repeated_notes.append("not applicable: rotating bending is excluded from the simplified estimate.")
+        else:
+            repeated_applicable = True
+            repeated_max_torque_nm = torque_min_nm * l_fit / (4.0 * d)
+            fretting_risk = torque_design_nm > repeated_max_torque_nm
+            repeated_notes.append(
+                "Applicable: simplified DIN 7190/Niemann estimate for solid shaft, disk-shaped hub, QA=0."
+            )
+    else:
+        repeated_notes.append("disabled")
 
     warnings: list[str] = []
     if not gaping_ok:
         warnings.append(
             f"最小接触压力 p_min={p_min:.2f} MPa 小于附加载荷要求 p_gap={p_gap:.2f} MPa，存在张口缝风险。"
         )
+    if not combined_ok:
+        warnings.append("扭矩与轴向力联合作用超出当前最小过盈能力，需同时提高接触压力储备。")
     if fit_range_ok and delta_max_um - delta_required_um < 2.0:
         warnings.append("最大过盈量接近需求下限，建议增加加工裕量。")
     if subsidence_um > 0 and delta_min_um > 0:
@@ -315,6 +369,11 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
         warnings.append("轮毂为薄弱侧，建议优先提高轮毂屈服强度或增大外径。")
     if press_force_max_n > 250_000:
         warnings.append("压入力较高，建议评估热装或液压装配工艺。")
+    warnings.extend(str(msg) for msg in assembly_detail.get("warnings", []))
+    if repeated_enabled and not repeated_applicable:
+        warnings.append("Repeated-load / fretting estimate is enabled but not applicable for the current assumptions.")
+    if fretting_risk:
+        warnings.append("Repeated-load estimate indicates fretting risk; increase slip reserve or reduce cyclic torque.")
 
     curve_max_um = max(delta_max_um * 1.25, delta_required_um * 1.15, 1.0)
     if curve_max_um <= 0:
@@ -342,6 +401,7 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
         for key in (
             "torque_ok",
             "axial_ok",
+            "combined_ok",
             "gaping_ok",
             "fit_range_ok",
             "shaft_stress_ok",
@@ -367,6 +427,7 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
             "p_mean": p_mean,
             "p_max": p_max,
             "p_required": p_required,
+            "p_required_total": p_required,
         },
         "additional_pressure_mpa": {
             "p_radial": p_radial,
@@ -386,6 +447,7 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
             "press_force_mean_n": press_force_mean_n,
             "press_force_max_n": press_force_max_n,
         },
+        "assembly_detail": assembly_detail,
         "stress_mpa": {
             "shaft_vm_min": shaft_vm_min,
             "shaft_vm_mean": shaft_vm_mean,
@@ -400,6 +462,7 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
         "safety": {
             "torque_sf": torque_sf,
             "axial_sf": axial_sf,
+            "combined_sf": combined_sf,
             "shaft_sf": shaft_sf_min,
             "hub_sf": hub_sf_min,
             "combined_usage": combined_usage,
@@ -409,10 +472,14 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
             "gaping_margin_mpa": p_min - p_gap,
         },
         "required": {
+            "p_service_torque_mpa": p_req_torque_service,
+            "p_service_axial_mpa": p_req_axial_service,
             "p_required_torque_mpa": p_req_torque,
             "p_required_axial_mpa": p_req_axial,
+            "p_required_combined_mpa": p_req_combined,
             "p_required_gap_mpa": p_gap,
             "p_required_mpa": p_required,
+            "p_required_total_mpa": p_required,
             "delta_required_effective_um": delta_required_eff_um,
             "delta_required_um": delta_required_um,
         },
@@ -435,6 +502,15 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
             "delta_required_effective_um": delta_required_eff_um,
             "delta_min_um": delta_min_um,
             "delta_max_um": delta_max_um,
+        },
+        "repeated_load": {
+            "enabled": repeated_enabled,
+            "applicable": repeated_applicable,
+            "max_transferable_torque_nm": repeated_max_torque_nm,
+            "fretting_risk": fretting_risk,
+            "length_ratio_l_over_d": length_ratio,
+            "modulus_ratio": modulus_ratio,
+            "notes": repeated_notes,
         },
         "checks": checks_out,
         "overall_pass": overall_pass,
