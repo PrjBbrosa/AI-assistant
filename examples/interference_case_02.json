@@ -1,43 +1,66 @@
 {
-  "checks": {
-    "slip_safety_min": 1.3,
-    "stress_safety_min": 1.2
+  "inputs": {
+    "checks": {
+      "slip_safety_min": "1.3",
+      "stress_safety_min": "1.2"
+    },
+    "options": {
+      "curve_points": "51"
+    },
+    "geometry": {
+      "shaft_d_mm": "35.0",
+      "hub_outer_d_mm": "60.0",
+      "fit_length_mm": "30.0"
+    },
+    "fit": {
+      "delta_min_um": "30.0",
+      "delta_max_um": "55.0"
+    },
+    "materials": {
+      "shaft_e_mpa": "210000",
+      "shaft_nu": "0.30",
+      "shaft_yield_mpa": "560",
+      "hub_e_mpa": "210000",
+      "hub_nu": "0.30",
+      "hub_yield_mpa": "320"
+    },
+    "loads": {
+      "torque_required_nm": "200",
+      "axial_force_required_n": "5000",
+      "radial_force_required_n": "10000",
+      "bending_moment_required_nm": "0",
+      "application_factor_ka": "1.3"
+    },
+    "friction": {
+      "mu_torque": "0.10",
+      "mu_axial": "0.10",
+      "mu_assembly": "0.08"
+    },
+    "roughness": {
+      "smoothing_factor": "0.80",
+      "shaft_rz_um": "10.0",
+      "hub_rz_um": "10.0"
+    },
+    "assembly": {
+      "room_temperature_c": "20",
+      "shaft_temperature_c": "-78.4",
+      "clearance_um": "25",
+      "alpha_hub_1e6_per_c": "11",
+      "alpha_shaft_1e6_per_c": "11",
+      "hub_temp_limit_c": "250"
+    }
   },
-  "options": {
-    "curve_points": 61
-  },
-  "geometry": {
-    "shaft_d_mm": 35.0,
-    "hub_outer_d_mm": 60.0,
-    "fit_length_mm": 30.0
-  },
-  "fit": {
-    "delta_min_um": 8.0,
-    "delta_max_um": 18.0
-  },
-  "roughness": {
-    "smoothing_factor": 0.8,
-    "shaft_rz_um": 10.0,
-    "hub_rz_um": 10.0
-  },
-  "materials": {
-    "shaft_e_mpa": 210000.0,
-    "shaft_nu": 0.30,
-    "shaft_yield_mpa": 500.0,
-    "hub_e_mpa": 205000.0,
-    "hub_nu": 0.29,
-    "hub_yield_mpa": 280.0
-  },
-  "loads": {
-    "torque_required_nm": 520.0,
-    "axial_force_required_n": 12000.0,
-    "radial_force_required_n": 32000.0,
-    "bending_moment_required_nm": 750.0,
-    "application_factor_ka": 1.3
-  },
-  "friction": {
-    "mu_torque": 0.10,
-    "mu_axial": 0.10,
-    "mu_assembly": 0.08
+  "ui_state": {
+    "materials.shaft_material": "45钢",
+    "materials.hub_material": "45钢",
+    "roughness.profile": "DIN 7190:2001（k=0.8）",
+    "fit.mode": "偏差换算",
+    "fit.shaft_upper_deviation_um": "35",
+    "fit.shaft_lower_deviation_um": "20",
+    "fit.hub_upper_deviation_um": "-10",
+    "fit.hub_lower_deviation_um": "-20",
+    "assembly.method": "shrink_fit",
+    "assembly.clearance_mode": "direct_value",
+    "advanced.repeated_load_mode": "off"
   }
 }

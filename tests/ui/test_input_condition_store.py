@@ -43,10 +43,22 @@ class InputConditionStoreTests(unittest.TestCase):
         specs = [
             DummyFieldSpec("geometry.shaft_d_mm", ("geometry", "shaft_d_mm")),
             DummyFieldSpec("materials.shaft_material"),
+            DummyFieldSpec("roughness.profile"),
+            DummyFieldSpec("fit.mode"),
+            DummyFieldSpec("fit.preferred_fit_name"),
+            DummyFieldSpec("assembly.method"),
+            DummyFieldSpec("assembly.clearance_mode"),
+            DummyFieldSpec("advanced.repeated_load_mode"),
         ]
         values = {
             "geometry.shaft_d_mm": "40.0",
             "materials.shaft_material": "45钢",
+            "roughness.profile": "DIN 7190-1:2017（k=0.4）",
+            "fit.mode": "优选配合",
+            "fit.preferred_fit_name": "H7/s6",
+            "assembly.method": "force_fit",
+            "assembly.clearance_mode": "diameter_rule",
+            "advanced.repeated_load_mode": "on",
         }
 
         snapshot = build_form_snapshot(
@@ -61,6 +73,12 @@ class InputConditionStoreTests(unittest.TestCase):
                 "inputs": {"geometry": {"shaft_d_mm": "40.0"}},
                 "ui_state": {
                     "materials.shaft_material": "45钢",
+                    "roughness.profile": "DIN 7190-1:2017（k=0.4）",
+                    "fit.mode": "优选配合",
+                    "fit.preferred_fit_name": "H7/s6",
+                    "assembly.method": "force_fit",
+                    "assembly.clearance_mode": "diameter_rule",
+                    "advanced.repeated_load_mode": "on",
                     "check_level": "fatigue",
                 },
             },

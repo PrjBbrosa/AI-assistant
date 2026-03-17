@@ -24,7 +24,7 @@ def build_form_snapshot(
     *,
     extra_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Split current form values into mapped inputs and UI-only state."""
+    """Split current form values into mapped inputs and UI-only trace state."""
     inputs: dict[str, dict[str, Any]] = {}
     ui_state: dict[str, Any] = {}
     for spec in field_specs:

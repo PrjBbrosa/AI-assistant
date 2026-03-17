@@ -34,6 +34,11 @@ from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import export_report_lines
 from app.ui.widgets.press_force_curve import PressForceCurveWidget
 from core.interference.calculator import InputError, calculate_interference_fit
+from core.interference.fit_selection import (
+    PREFERRED_FIT_OPTIONS,
+    derive_interference_from_deviations,
+    derive_interference_from_preferred_fit,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES_DIR = PROJECT_ROOT / "examples"
@@ -106,7 +111,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "options.curve_points",
                 "压入力曲线采样点数",
                 "点",
-                "曲线图离散点数量；越大越平滑，计算耗时略增。",
+                "曲线图离散点数量；越大越平滑，计算耗时略增，仅影响曲线显示。",
                 mapping=("options", "curve_points"),
                 default="41",
                 placeholder="11~201",
@@ -143,6 +148,56 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("geometry", "fit_length_mm"),
                 default="45.0",
                 placeholder="例如 45",
+            ),
+            FieldSpec(
+                "fit.mode",
+                "过盈来源模式",
+                "-",
+                "可直接输入过盈窗口，或通过优选配合/轴孔偏差自动换算。",
+                widget_type="choice",
+                options=("直接输入过盈量", "优选配合", "偏差换算"),
+                default="直接输入过盈量",
+            ),
+            FieldSpec(
+                "fit.preferred_fit_name",
+                "优选配合代号",
+                "-",
+                "优选配合模式下使用；当前仅内置常见孔基制干涉配合的有限预设。",
+                widget_type="choice",
+                options=PREFERRED_FIT_OPTIONS,
+                default="H7/s6",
+            ),
+            FieldSpec(
+                "fit.shaft_upper_deviation_um",
+                "轴上偏差 es",
+                "um",
+                "偏差换算模式下使用；以名义尺寸为基准，正值表示大于名义尺寸。",
+                default="",
+                placeholder="例如 35",
+            ),
+            FieldSpec(
+                "fit.shaft_lower_deviation_um",
+                "轴下偏差 ei",
+                "um",
+                "偏差换算模式下使用；必须 <= 轴上偏差。",
+                default="",
+                placeholder="例如 20",
+            ),
+            FieldSpec(
+                "fit.hub_upper_deviation_um",
+                "孔上偏差 ES",
+                "um",
+                "偏差换算模式下使用；负值表示孔尺寸小于名义尺寸。",
+                default="",
+                placeholder="例如 -10",
+            ),
+            FieldSpec(
+                "fit.hub_lower_deviation_um",
+                "孔下偏差 EI",
+                "um",
+                "偏差换算模式下使用；必须 <= 孔上偏差。",
+                default="",
+                placeholder="例如 -20",
             ),
             FieldSpec(
                 "fit.delta_min_um",
@@ -353,21 +408,140 @@ CHAPTERS: list[dict[str, Any]] = [
             ),
         ],
     },
+    {
+        "title": "装配流程",
+        "subtitle": "区分 manual_only、shrink_fit、force_fit，并追溯服役摩擦与装配摩擦的角色。",
+        "fields": [
+            FieldSpec(
+                "assembly.method",
+                "装配模式",
+                "-",
+                "只做通用压入力估算时选 manual_only；热装选 shrink_fit；压装选 force_fit。",
+                widget_type="choice",
+                options=("manual_only", "shrink_fit", "force_fit"),
+                default="manual_only",
+            ),
+            FieldSpec(
+                "assembly.clearance_mode",
+                "热装配合间隙模式",
+                "-",
+                "shrink_fit 下可按直径经验值自动估算，或直接指定装配间隙。",
+                widget_type="choice",
+                options=("diameter_rule", "direct_value"),
+                default="diameter_rule",
+            ),
+            FieldSpec(
+                "assembly.room_temperature_c",
+                "环境温度",
+                "°C",
+                "shrink_fit 下用于求解轮毂所需加热温度。",
+                mapping=("assembly", "room_temperature_c"),
+                default="20",
+                placeholder="例如 20",
+            ),
+            FieldSpec(
+                "assembly.shaft_temperature_c",
+                "轴装配温度",
+                "°C",
+                "若轴已预冷，可填低于环境温度的数值。",
+                mapping=("assembly", "shaft_temperature_c"),
+                default="20",
+                placeholder="例如 20 或 -78.4",
+            ),
+            FieldSpec(
+                "assembly.clearance_um",
+                "装配间隙",
+                "um",
+                "direct_value 模式下直接输入；diameter_rule 模式按 0.001*d 自动估算。",
+                mapping=("assembly", "clearance_um"),
+                default="0",
+                placeholder="例如 25",
+            ),
+            FieldSpec(
+                "assembly.alpha_hub_1e6_per_c",
+                "轮毂线膨胀系数 alpha_h",
+                "10^-6/°C",
+                "用于 shrink_fit 轮毂加热量估算。",
+                mapping=("assembly", "alpha_hub_1e6_per_c"),
+                default="11",
+                placeholder="例如 11",
+            ),
+            FieldSpec(
+                "assembly.alpha_shaft_1e6_per_c",
+                "轴线膨胀系数 alpha_s",
+                "10^-6/°C",
+                "用于考虑轴预冷或非钢材时的热装修正。",
+                mapping=("assembly", "alpha_shaft_1e6_per_c"),
+                default="11",
+                placeholder="例如 11",
+            ),
+            FieldSpec(
+                "assembly.hub_temp_limit_c",
+                "轮毂允许最高装配温度",
+                "°C",
+                "若已知热处理限制，建议填入以判断热装温度是否越界。",
+                mapping=("assembly", "hub_temp_limit_c"),
+                default="250",
+                placeholder="例如 250 或 300",
+            ),
+            FieldSpec(
+                "assembly.mu_press_in",
+                "压入摩擦系数 mu_in",
+                "-",
+                "force_fit 下用于估算 press-in 力；与服役摩擦不同。",
+                mapping=("assembly", "mu_press_in"),
+                default="0.08",
+                placeholder="例如 0.08",
+            ),
+            FieldSpec(
+                "assembly.mu_press_out",
+                "压出摩擦系数 mu_out",
+                "-",
+                "force_fit 下用于估算 extraction force 与建议设备能力。",
+                mapping=("assembly", "mu_press_out"),
+                default="0.06",
+                placeholder="例如 0.06",
+            ),
+        ],
+    },
+    {
+        "title": "高级校核",
+        "subtitle": "显式开启 repeated-load / fretting 高级评估；不参与基础 DIN verdict。",
+        "fields": [
+            FieldSpec(
+                "advanced.repeated_load_mode",
+                "Repeated-load / fretting 评估",
+                "-",
+                "off 时不计算；on 时仅在满足简化假设时给出 advanced result。",
+                widget_type="choice",
+                options=("off", "on"),
+                default="off",
+            ),
+        ],
+    },
 ]
 
 CHECK_LABELS = {
     "torque_ok": "扭矩能力校核（按最小过盈）",
     "axial_ok": "轴向力能力校核（按最小过盈）",
+    "combined_ok": "联合作用校核（扭矩 + 轴向）",
     "gaping_ok": "张口缝校核（p_min >= p_r + p_b）",
-    "fit_range_ok": "过盈量范围覆盖校核",
+    "fit_range_ok": "最大过盈端覆盖需求校核",
     "shaft_stress_ok": "轴侧应力安全系数校核",
     "hub_stress_ok": "轮毂应力安全系数校核",
 }
 
 BEGINNER_GUIDES: dict[str, str] = {
     "loads.application_factor_ka": "工况越冲击，KA 越大，需求过盈也会随之提高。",
+    "options.curve_points": "仅影响曲线显示精细度，不改变任何通过/不通过结论。",
     "geometry.shaft_d_mm": "决定接触面积与接触半径，直接影响扭矩能力。",
     "geometry.hub_outer_d_mm": "外径越大，轮毂刚度越高、同等过盈下接触压力越低。",
+    "fit.mode": "如果只知道标准配合代号，优先用“优选配合”；如果已有轴/孔偏差，改用“偏差换算”。",
+    "fit.preferred_fit_name": "当前只提供受限的常用孔基制优选配合，用于快速得到可追溯的过盈窗口。",
+    "fit.shaft_upper_deviation_um": "偏差换算时，系统会自动把轴/孔偏差转换为 delta_min / delta_max。",
+    "fit.shaft_lower_deviation_um": "若算出的最小过盈 < 0，则说明该组合包含间隙或过渡，不适用于当前模块。",
+    "fit.hub_upper_deviation_um": "孔偏差通常与轴偏差符号相反，输入时请保持工程图纸的原始符号。",
+    "fit.hub_lower_deviation_um": "推荐优先核对偏差上下限顺序，再观察自动换算出的过盈窗口是否合理。",
     "fit.delta_min_um": "校核安全时应优先关注最小过盈工况。",
     "fit.delta_max_um": "校核应力时应优先关注最大过盈工况。",
     "loads.radial_force_required_n": "径向力会抬高附加接触压强，过大时可能导致张口缝。",
@@ -382,6 +556,17 @@ BEGINNER_GUIDES: dict[str, str] = {
     "roughness.smoothing_factor": "压平量 s 越大，有效过盈越小，压力与压入力都会下降。",
     "roughness.shaft_rz_um": "若只有 Ra，可先按标准对照关系近似换算至 Rz。",
     "roughness.hub_rz_um": "推荐输入制造图纸或检测报告中的 Rz 值。",
+    "assembly.method": "装配模式不会改变 DIN 7190 的通过/不通过逻辑，但会改变装配工艺建议与报告追溯。",
+    "assembly.clearance_mode": "diameter_rule 会按 0.001*d 自动估算装配间隙；direct_value 适合已有工艺标准时使用。",
+    "assembly.room_temperature_c": "热装默认以环境温度为基准，预冷轴会降低所需轮毂加热温度。",
+    "assembly.shaft_temperature_c": "若采用液氮或干冰冷装，请把轴装配温度填成冷却后的温度。",
+    "assembly.clearance_um": "这不是服役过盈，而是装配瞬间为了避免咬死所预留的最小间隙。",
+    "assembly.alpha_hub_1e6_per_c": "钢材常见约 11，铝合金更高；直接影响所需加热温度。",
+    "assembly.alpha_shaft_1e6_per_c": "若轴和轮毂材料不同，建议不要偷懒沿用同一数值。",
+    "assembly.hub_temp_limit_c": "用于检查热装温度是否超过热处理允许范围；未知时可保留默认估算值。",
+    "assembly.mu_press_in": "压入摩擦通常低于干摩擦；推荐结合润滑状态单独输入。",
+    "assembly.mu_press_out": "压出摩擦用于估算 extraction force，与 press-in 不一定相同。",
+    "advanced.repeated_load_mode": "这是高级结果块，不会自动并入基础通过/不通过结论；只在满足简化适用条件时给出结果。",
 }
 
 
@@ -407,6 +592,31 @@ class InterferenceFitPage(BaseChapterPage):
         }
         self._roughness_profile_field = "roughness.profile"
         self._roughness_factor_field = "roughness.smoothing_factor"
+        self._fit_mode_field = "fit.mode"
+        self._fit_preferred_field = "fit.preferred_fit_name"
+        self._fit_nominal_field = "geometry.shaft_d_mm"
+        self._fit_delta_fields = ("fit.delta_min_um", "fit.delta_max_um")
+        self._fit_deviation_fields = (
+            "fit.shaft_upper_deviation_um",
+            "fit.shaft_lower_deviation_um",
+            "fit.hub_upper_deviation_um",
+            "fit.hub_lower_deviation_um",
+        )
+        self._assembly_method_field = "assembly.method"
+        self._assembly_clearance_mode_field = "assembly.clearance_mode"
+        self._repeated_load_mode_field = "advanced.repeated_load_mode"
+        self._assembly_shrink_fields = (
+            "assembly.room_temperature_c",
+            "assembly.shaft_temperature_c",
+            "assembly.clearance_um",
+            "assembly.alpha_hub_1e6_per_c",
+            "assembly.alpha_shaft_1e6_per_c",
+            "assembly.hub_temp_limit_c",
+        )
+        self._assembly_force_fields = (
+            "assembly.mu_press_in",
+            "assembly.mu_press_out",
+        )
 
         self.btn_save_inputs = self.add_action_button("保存输入条件")
         self.btn_load_inputs = self.add_action_button("加载输入条件")
@@ -431,10 +641,14 @@ class InterferenceFitPage(BaseChapterPage):
 
         self._register_material_bindings()
         self._register_roughness_binding()
+        self._register_fit_bindings()
+        self._register_assembly_bindings()
         self._apply_defaults()
         self._load_sample("interference_case_01.json")
         self._sync_material_inputs()
         self._sync_roughness_factor()
+        self._sync_fit_mode_fields()
+        self._sync_assembly_fields()
 
     def eventFilter(self, watched, event):  # noqa: N802
         if watched in self._widget_hints and event.type() in (QEvent.Type.FocusIn, QEvent.Type.Enter):
@@ -566,7 +780,7 @@ class InterferenceFitPage(BaseChapterPage):
 
         title = QLabel("校核结果与消息", container)
         title.setObjectName("SectionTitle")
-        hint = QLabel("按最小/最大过盈分别计算能力与应力。", container)
+        hint = QLabel("按最小过盈校核承载能力，按最大过盈校核应力，并单独显示最大过盈端是否覆盖需求。", container)
         hint.setObjectName("SectionHint")
         hint.setWordWrap(True)
         content.addWidget(title)
@@ -653,6 +867,8 @@ class InterferenceFitPage(BaseChapterPage):
                 widget.setText(spec.default)  # type: ignore[attr-defined]
         self._sync_material_inputs()
         self._sync_roughness_factor()
+        self._sync_fit_mode_fields()
+        self._sync_assembly_fields()
 
     def _register_material_bindings(self) -> None:
         for selector_id in self._material_links:
@@ -708,6 +924,137 @@ class InterferenceFitPage(BaseChapterPage):
         if factor is not None:
             factor_widget.setText(f"{factor:.2f}")
 
+    def _register_fit_bindings(self) -> None:
+        selector = self._field_widgets.get(self._fit_mode_field)
+        if isinstance(selector, QComboBox):
+            selector.currentTextChanged.connect(lambda _text: self._sync_fit_mode_fields())
+        preferred = self._field_widgets.get(self._fit_preferred_field)
+        if isinstance(preferred, QComboBox):
+            preferred.currentTextChanged.connect(lambda _text: self._sync_fit_mode_fields())
+        nominal = self._field_widgets.get(self._fit_nominal_field)
+        if isinstance(nominal, QLineEdit):
+            nominal.textChanged.connect(lambda _text: self._sync_fit_mode_fields())
+        for field_id in self._fit_deviation_fields:
+            widget = self._field_widgets.get(field_id)
+            if isinstance(widget, QLineEdit):
+                widget.textChanged.connect(lambda _text, _fid=field_id: self._sync_fit_mode_fields())
+
+    def _register_assembly_bindings(self) -> None:
+        selector = self._field_widgets.get(self._assembly_method_field)
+        if isinstance(selector, QComboBox):
+            selector.currentTextChanged.connect(lambda _text: self._sync_assembly_fields())
+        clearance_mode = self._field_widgets.get(self._assembly_clearance_mode_field)
+        if isinstance(clearance_mode, QComboBox):
+            clearance_mode.currentTextChanged.connect(lambda _text: self._sync_assembly_fields())
+        nominal = self._field_widgets.get(self._fit_nominal_field)
+        if isinstance(nominal, QLineEdit):
+            nominal.textChanged.connect(lambda _text: self._sync_assembly_fields())
+
+    def _sync_assembly_fields(self) -> None:
+        selector = self._field_widgets.get(self._assembly_method_field)
+        if not isinstance(selector, QComboBox):
+            return
+        method = selector.currentText().strip()
+        use_shrink = method == "shrink_fit"
+        use_force = method == "force_fit"
+
+        clearance_mode = self._field_widgets.get(self._assembly_clearance_mode_field)
+        if isinstance(clearance_mode, QComboBox):
+            clearance_mode.setEnabled(use_shrink)
+        clearance_direct = (
+            isinstance(clearance_mode, QComboBox)
+            and clearance_mode.currentText().strip() == "direct_value"
+        )
+
+        for field_id in self._assembly_shrink_fields:
+            widget = self._field_widgets.get(field_id)
+            if not isinstance(widget, QLineEdit):
+                continue
+            if field_id == "assembly.clearance_um":
+                widget.setReadOnly(not use_shrink or not clearance_direct)
+                if use_shrink and not clearance_direct:
+                    nominal_widget = self._field_widgets.get(self._fit_nominal_field)
+                    if isinstance(nominal_widget, QLineEdit):
+                        raw_nominal = nominal_widget.text().strip()
+                        try:
+                            widget.setText(f"{float(raw_nominal):.3f}".rstrip("0").rstrip("."))
+                        except ValueError:
+                            pass
+            else:
+                widget.setReadOnly(not use_shrink)
+
+        for field_id in self._assembly_force_fields:
+            widget = self._field_widgets.get(field_id)
+            if isinstance(widget, QLineEdit):
+                widget.setReadOnly(not use_force)
+
+    def _sync_fit_mode_fields(self) -> None:
+        selector = self._field_widgets.get(self._fit_mode_field)
+        if not isinstance(selector, QComboBox):
+            return
+        mode = selector.currentText().strip()
+        use_deviations = mode == "偏差换算"
+        use_preferred = mode == "优选配合"
+
+        for field_id in self._fit_delta_fields:
+            widget = self._field_widgets.get(field_id)
+            if isinstance(widget, QLineEdit):
+                widget.setReadOnly(use_deviations or use_preferred)
+
+        for field_id in self._fit_deviation_fields:
+            widget = self._field_widgets.get(field_id)
+            if isinstance(widget, QLineEdit):
+                widget.setReadOnly(not use_deviations)
+
+        preferred = self._field_widgets.get(self._fit_preferred_field)
+        if isinstance(preferred, QComboBox):
+            preferred.setEnabled(use_preferred)
+
+        if not use_deviations and not use_preferred:
+            return
+
+        try:
+            if use_deviations:
+                raw_values: dict[str, float] = {}
+                for field_id in self._fit_deviation_fields:
+                    widget = self._field_widgets.get(field_id)
+                    if not isinstance(widget, QLineEdit):
+                        return
+                    raw = widget.text().strip()
+                    if raw == "":
+                        return
+                    raw_values[field_id] = float(raw)
+
+                derived = derive_interference_from_deviations(
+                    shaft_upper_um=raw_values["fit.shaft_upper_deviation_um"],
+                    shaft_lower_um=raw_values["fit.shaft_lower_deviation_um"],
+                    hub_upper_um=raw_values["fit.hub_upper_deviation_um"],
+                    hub_lower_um=raw_values["fit.hub_lower_deviation_um"],
+                )
+            else:
+                if not isinstance(preferred, QComboBox):
+                    return
+                nominal_widget = self._field_widgets.get(self._fit_nominal_field)
+                if not isinstance(nominal_widget, QLineEdit):
+                    return
+                raw_nominal = nominal_widget.text().strip()
+                if raw_nominal == "":
+                    return
+                derived = derive_interference_from_preferred_fit(
+                    fit_name=preferred.currentText().strip(),
+                    nominal_diameter_mm=float(raw_nominal),
+                )
+        except (InputError, ValueError):
+            return
+
+        for field_id, key in (
+            ("fit.delta_min_um", "delta_min_um"),
+            ("fit.delta_max_um", "delta_max_um"),
+        ):
+            widget = self._field_widgets.get(field_id)
+            if isinstance(widget, QLineEdit):
+                widget.setText(f"{float(derived[key]):.3f}".rstrip("0").rstrip("."))
+
     def _set_badge(self, label: QLabel, text: str, state: str) -> None:
         if state == "pass":
             obj = "PassBadge"
@@ -740,6 +1087,62 @@ class InterferenceFitPage(BaseChapterPage):
                 raise InputError(f"字段“{spec.label}”请输入数字，当前值: {raw}") from exc
             sec, key = spec.mapping
             payload.setdefault(sec, {})[key] = value
+
+        fit_mode = self._read_widget_value(self._field_specs[self._fit_mode_field])
+        if fit_mode == "偏差换算":
+            derived = derive_interference_from_deviations(
+                shaft_upper_um=float(self._read_widget_value(self._field_specs["fit.shaft_upper_deviation_um"])),
+                shaft_lower_um=float(self._read_widget_value(self._field_specs["fit.shaft_lower_deviation_um"])),
+                hub_upper_um=float(self._read_widget_value(self._field_specs["fit.hub_upper_deviation_um"])),
+                hub_lower_um=float(self._read_widget_value(self._field_specs["fit.hub_lower_deviation_um"])),
+            )
+            payload.setdefault("fit", {})["delta_min_um"] = float(derived["delta_min_um"])
+            payload.setdefault("fit", {})["delta_max_um"] = float(derived["delta_max_um"])
+            payload["fit_selection"] = derived
+        elif fit_mode == "优选配合":
+            derived = derive_interference_from_preferred_fit(
+                fit_name=self._read_widget_value(self._field_specs[self._fit_preferred_field]),
+                nominal_diameter_mm=float(self._read_widget_value(self._field_specs[self._fit_nominal_field])),
+            )
+            payload.setdefault("fit", {})["delta_min_um"] = float(derived["delta_min_um"])
+            payload.setdefault("fit", {})["delta_max_um"] = float(derived["delta_max_um"])
+            payload["fit_selection"] = derived
+        else:
+            fit_data = payload.setdefault("fit", {})
+            payload["fit_selection"] = {
+                "mode": "manual_interference",
+                "delta_min_um": float(fit_data.get("delta_min_um", 0.0)),
+                "delta_max_um": float(fit_data.get("delta_max_um", 0.0)),
+            }
+
+        assembly_mode = self._read_widget_value(self._field_specs[self._assembly_method_field]) or "manual_only"
+        assembly_payload = payload.get("assembly", {}).copy()
+        if assembly_mode == "manual_only":
+            payload["assembly"] = {"method": "manual_only"}
+        elif assembly_mode == "shrink_fit":
+            assembly_payload["method"] = "shrink_fit"
+            assembly_payload["clearance_mode"] = self._read_widget_value(
+                self._field_specs[self._assembly_clearance_mode_field]
+            )
+            assembly_payload.pop("mu_press_in", None)
+            assembly_payload.pop("mu_press_out", None)
+            payload["assembly"] = assembly_payload
+        else:
+            assembly_payload["method"] = "force_fit"
+            for key in (
+                "room_temperature_c",
+                "shaft_temperature_c",
+                "clearance_um",
+                "alpha_hub_1e6_per_c",
+                "alpha_shaft_1e6_per_c",
+                "hub_temp_limit_c",
+            ):
+                assembly_payload.pop(key, None)
+            assembly_payload.pop("clearance_mode", None)
+            payload["assembly"] = assembly_payload
+        payload["advanced"] = {
+            "repeated_load_mode": self._read_widget_value(self._field_specs[self._repeated_load_mode_field]) or "off"
+        }
         return payload
 
     def _calculate(self) -> None:
@@ -761,14 +1164,15 @@ class InterferenceFitPage(BaseChapterPage):
     def _render_result(self, result: dict[str, Any]) -> None:
         overall = bool(result.get("overall_pass"))
         checks = result["checks"]
+        fit_trace_lines = self._build_fit_trace_lines()
 
         if overall:
             self.result_title.setText("校核通过")
-            self.result_summary.setText("该工况在当前输入范围内满足 DIN 7190 核心能力、张口缝与应力要求。")
+            self.result_summary.setText("该工况在当前输入范围内满足 DIN 7190 核心能力、联合作用、张口缝与应力要求。")
             self.set_overall_status("总体通过", "pass")
         else:
             self.result_title.setText("校核不通过")
-            self.result_summary.setText("存在未满足项，请优先查看张口缝、需求过盈和应力侧提示。")
+            self.result_summary.setText("存在未满足项，请优先查看联合作用、张口缝、需求过盈和应力侧提示。")
             self.set_overall_status("总体不通过", "fail")
 
         for key, badge in self._check_badges.items():
@@ -778,22 +1182,32 @@ class InterferenceFitPage(BaseChapterPage):
         p = result["pressure_mpa"]
         cap = result["capacity"]
         asm = result["assembly"]
+        asm_detail = result.get("assembly_detail", {})
         req = result["required"]
         rough = result["roughness"]
         stress = result["stress_mpa"]
         safety = result["safety"]
         add_p = result["additional_pressure_mpa"]
+        assembly_lines = self._build_assembly_trace_lines()
+        repeated_lines = self._build_repeated_load_trace_lines()
 
         metric_lines = [
-            f"• 设计载荷: KA={safety['application_factor_ka']:.2f}, p_req={p['p_required']:.2f} MPa, delta_req={req['delta_required_um']:.2f} um",
+            f"• 设计需求压强: p_req,T={req['p_required_torque_mpa']:.2f} MPa, p_req,Ax={req['p_required_axial_mpa']:.2f} MPa, "
+            f"p_req,comb={req['p_required_combined_mpa']:.2f} MPa, p_gap={req['p_required_gap_mpa']:.2f} MPa, "
+            f"p_req,total={req['p_required_mpa']:.2f} MPa",
+            *[f"• {line}" for line in fit_trace_lines],
+            f"• 设计载荷与需求过盈: KA={safety['application_factor_ka']:.2f}, delta_req={req['delta_required_um']:.2f} um",
             f"• 接触压力 min/mean/max: {p['p_min']:.2f} / {p['p_mean']:.2f} / {p['p_max']:.2f} MPa",
             f"• 扭矩能力 min/mean/max: {cap['torque_min_nm']:.1f} / {cap['torque_mean_nm']:.1f} / {cap['torque_max_nm']:.1f} N·m",
             f"• 轴向能力 min/mean/max: {cap['axial_min_n']:.0f} / {cap['axial_mean_n']:.0f} / {cap['axial_max_n']:.0f} N",
             f"• 压入力 min/mean/max: {asm['press_force_min_n']:.0f} / {asm['press_force_mean_n']:.0f} / {asm['press_force_max_n']:.0f} N",
+            *[f"• {line}" for line in assembly_lines],
+            *[f"• {line}" for line in repeated_lines],
             f"• 附加载荷压强: p_r={add_p['p_radial']:.2f} MPa, p_b={add_p['p_bending']:.2f} MPa, p_gap={add_p['p_gap']:.2f} MPa",
             f"• 粗糙度修正: s={rough['subsidence_um']:.2f} um, delta_eff,min/mean/max={rough['delta_effective_min_um']:.2f} / {rough['delta_effective_mean_um']:.2f} / {rough['delta_effective_max_um']:.2f} um",
             f"• 应力 max: shaft_vm={stress['shaft_vm_max']:.1f} MPa, hub_vm={stress['hub_vm_max']:.1f} MPa, hub_sigma_theta={stress['hub_hoop_inner_max']:.1f} MPa",
-            f"• 安全系数: S_torque={safety['torque_sf']:.2f}, S_axial={safety['axial_sf']:.2f}, S_shaft={safety['shaft_sf']:.2f}, S_hub={safety['hub_sf']:.2f}",
+            f"• 安全系数: S_torque={safety['torque_sf']:.2f}, S_axial={safety['axial_sf']:.2f}, "
+                f"S_comb={safety['combined_sf']:.2f}, S_shaft={safety['shaft_sf']:.2f}, S_hub={safety['hub_sf']:.2f}",
         ]
         self.metrics_text.setText("\n".join(metric_lines))
 
@@ -812,7 +1226,8 @@ class InterferenceFitPage(BaseChapterPage):
         messages.extend(self._build_recommendations(result))
         messages.append(
             "[说明] 当前模型为 DIN 7190 核心增强版：线弹性、均匀接触压力、恒定摩擦。"
-            "弯矩附加压强按 QW=0 的保守简化处理；阶梯轮毂、离心力与配合搜索未纳入本轮。"
+            "弯矩附加压强按 QW=0 的保守简化处理；当前仅内置有限范围的优选配合预设，"
+            "阶梯轮毂与离心力未纳入本轮。"
         )
         self.message_box.setPlainText("\n".join(messages))
 
@@ -825,8 +1240,10 @@ class InterferenceFitPage(BaseChapterPage):
             recs.append("[建议] 扭矩能力不足：可增大最小过盈、提高 mu_T 或增大配合长度。")
         if not checks.get("axial_ok", True):
             recs.append("[建议] 轴向能力不足：可增大最小过盈、提高 mu_Ax 或增加接触面积。")
+        if not checks.get("combined_ok", True):
+            recs.append("[建议] 联合作用不足：需同时提高扭矩与轴向共同承载能力，不能只看单项通过。")
         if not checks.get("fit_range_ok", True):
-            recs.append("[建议] 最大过盈不足以覆盖需求：请提升公差带或调整结构尺寸。")
+            recs.append("[建议] 最大过盈端仍不足以覆盖需求：请提升公差带或调整结构尺寸。")
         if not checks.get("shaft_stress_ok", True):
             recs.append("[建议] 轴侧应力安全系数不足：降低最大过盈或提高轴材料屈服强度。")
         if not checks.get("hub_stress_ok", True):
@@ -834,6 +1251,130 @@ class InterferenceFitPage(BaseChapterPage):
         if not recs:
             recs.append("[建议] 当前工况满足全部校核，建议至少保留 10% 工程裕量。")
         return recs
+
+    def _build_fit_trace_lines(self) -> list[str]:
+        fit_selection = {}
+        if isinstance(self._last_payload, dict):
+            fit_selection = self._last_payload.get("fit_selection", {})
+        if not isinstance(fit_selection, dict):
+            fit_selection = {}
+
+        mode = str(fit_selection.get("mode", "manual_interference"))
+        lines = [f"fit source: {mode}"]
+
+        if mode == "user_defined_deviations":
+            deviations = fit_selection.get("deviations_um", {})
+            if isinstance(deviations, dict):
+                lines.append(
+                    "fit deviations um: "
+                    f"shaft_es={float(deviations.get('shaft_upper_um', 0.0)):.3f}, "
+                    f"shaft_ei={float(deviations.get('shaft_lower_um', 0.0)):.3f}, "
+                    f"hub_ES={float(deviations.get('hub_upper_um', 0.0)):.3f}, "
+                    f"hub_EI={float(deviations.get('hub_lower_um', 0.0)):.3f}"
+                )
+        elif mode == "preferred_fit":
+            lines.append(f"fit name: {fit_selection.get('fit_name', '-')}")
+            lines.append(
+                "fit standard: "
+                f"{fit_selection.get('standard', 'ISO 286 curated preferred-fit subset')}"
+            )
+            band = fit_selection.get("diameter_band_mm", {})
+            if isinstance(band, dict):
+                lines.append(
+                    "fit nominal/band mm: "
+                    f"{float(fit_selection.get('nominal_diameter_mm', 0.0)):.3f} / "
+                    f"{float(band.get('lower_mm', 0.0)):.0f}~{float(band.get('upper_mm', 0.0)):.0f}"
+                )
+            warnings = fit_selection.get("warnings", [])
+            if isinstance(warnings, list):
+                for warning in warnings:
+                    lines.append(f"fit warning: {warning}")
+
+        delta_min_um = fit_selection.get("delta_min_um")
+        delta_max_um = fit_selection.get("delta_max_um")
+        if delta_min_um is not None and delta_max_um is not None:
+            lines.append(
+                f"fit delta window: {float(delta_min_um):.3f} / {float(delta_max_um):.3f} um"
+            )
+        return lines
+
+    def _build_assembly_trace_lines(self) -> list[str]:
+        if not isinstance(self._last_result, dict):
+            return []
+        assembly_detail = self._last_result.get("assembly_detail", {})
+        if not isinstance(assembly_detail, dict):
+            return []
+
+        method = str(assembly_detail.get("method", "manual_only"))
+        lines = [f"assembly method: {method}"]
+        service = assembly_detail.get("service_friction", {})
+        assembly_friction = assembly_detail.get("assembly_friction", {})
+        if isinstance(service, dict) and isinstance(assembly_friction, dict):
+            lines.append(
+                "assembly friction trace: "
+                f"mu_T={float(service.get('mu_torque', 0.0)):.3f}, "
+                f"mu_Ax={float(service.get('mu_axial', 0.0)):.3f}, "
+                f"mu_Assy={float(assembly_friction.get('mu_generic', 0.0)):.3f}"
+            )
+
+        if method == "shrink_fit":
+            shrink = assembly_detail.get("shrink_fit", {})
+            if isinstance(shrink, dict):
+                lines.append(
+                    "required_hub_temperature / clearance: "
+                    f"{float(shrink.get('required_hub_temperature_c', 0.0)):.3f} °C / "
+                    f"{float(shrink.get('clearance_um', 0.0)):.3f} um"
+                )
+        elif method == "force_fit":
+            force_fit = assembly_detail.get("force_fit", {})
+            if isinstance(force_fit, dict):
+                lines.append(
+                    "press_in_force / press_out_force: "
+                    f"{float(force_fit.get('press_in_force_n', 0.0)):.3f} / "
+                    f"{float(force_fit.get('press_out_force_n', 0.0)):.3f} N"
+                )
+        return lines
+
+    def _build_repeated_load_trace_lines(self) -> list[str]:
+        if not isinstance(self._last_result, dict):
+            return []
+        repeated = self._last_result.get("repeated_load", {})
+        if not isinstance(repeated, dict):
+            return []
+
+        lines = [
+            "repeated load: "
+            f"enabled={repeated.get('enabled', False)}, applicable={repeated.get('applicable', False)}"
+        ]
+        max_torque = repeated.get("max_transferable_torque_nm")
+        if max_torque is not None:
+            lines.append(f"max_transferable_torque: {float(max_torque):.3f} N·m")
+        notes = repeated.get("notes", [])
+        if isinstance(notes, list):
+            for note in notes:
+                lines.append(f"repeated load note: {note}")
+        return lines
+
+    def _build_input_source_trace_lines(self) -> list[str]:
+        def read(field_id: str, fallback: str = "-") -> str:
+            spec = self._field_specs.get(field_id)
+            if spec is None:
+                return fallback
+            value = self._read_widget_value(spec)
+            return value or fallback
+
+        lines = [
+            f"shaft material preset: {read('materials.shaft_material')}",
+            f"hub material preset: {read('materials.hub_material')}",
+            f"roughness profile source: {read('roughness.profile')}",
+            f"fit ui mode: {read('fit.mode')}",
+            f"assembly ui mode: {read('assembly.method')}",
+            f"repeated load mode: {read('advanced.repeated_load_mode')}",
+        ]
+        preferred_fit = read("fit.preferred_fit_name", "")
+        if preferred_fit:
+            lines.append(f"preferred fit selector: {preferred_fit}")
+        return lines
 
     def _capture_input_snapshot(self) -> dict[str, Any]:
         return build_form_snapshot(self._field_specs.values(), self._read_widget_value)
@@ -874,6 +1415,8 @@ class InterferenceFitPage(BaseChapterPage):
 
         self._sync_material_inputs()
         self._sync_roughness_factor()
+        self._sync_fit_mode_fields()
+        self._sync_assembly_fields()
 
     def _load_sample(self, filename: str) -> None:
         sample_path = EXAMPLES_DIR / filename
@@ -972,8 +1515,15 @@ class InterferenceFitPage(BaseChapterPage):
         lines.extend(
             [
                 "",
+                "输入来源追溯:",
+                *[f"- {line}" for line in self._build_input_source_trace_lines()],
+                "",
                 "关键值:",
                 f"- p_min / p_mean / p_max / p_req: {p['p_min']:.3f} / {p['p_mean']:.3f} / {p['p_max']:.3f} / {p['p_required']:.3f} MPa",
+                f"- p_req,T / p_req,Ax / p_req,comb / p_gap: {req['p_required_torque_mpa']:.3f} / {req['p_required_axial_mpa']:.3f} / {req['p_required_combined_mpa']:.3f} / {req['p_required_gap_mpa']:.3f} MPa",
+                *[f"- {line}" for line in self._build_fit_trace_lines()],
+                *[f"- {line}" for line in self._build_assembly_trace_lines()],
+                *[f"- {line}" for line in self._build_repeated_load_trace_lines()],
                 f"- p_r / p_b / p_gap: {add_p['p_radial']:.3f} / {add_p['p_bending']:.3f} / {add_p['p_gap']:.3f} MPa",
                 f"- roughness subsidence s: {rough['subsidence_um']:.3f} um",
                 f"- delta_eff,min / mean / max: {rough['delta_effective_min_um']:.3f} / {rough['delta_effective_mean_um']:.3f} / {rough['delta_effective_max_um']:.3f} um",
@@ -982,12 +1532,13 @@ class InterferenceFitPage(BaseChapterPage):
                 f"- F_press,min / mean / max: {asm['press_force_min_n']:.3f} / {asm['press_force_mean_n']:.3f} / {asm['press_force_max_n']:.3f} N",
                 f"- delta_required: {req['delta_required_um']:.3f} um",
                 f"- shaft_vm_max / hub_vm_max: {stress['shaft_vm_max']:.3f} / {stress['hub_vm_max']:.3f} MPa",
-                f"- S_torque / S_axial: {safety['torque_sf']:.3f} / {safety['axial_sf']:.3f}",
+                f"- S_torque / S_axial / S_comb: {safety['torque_sf']:.3f} / {safety['axial_sf']:.3f} / {safety['combined_sf']:.3f}",
                 f"- S_shaft / S_hub: {safety['shaft_sf']:.3f} / {safety['hub_sf']:.3f}",
                 "",
-                "说明:",
+                "模型假设与排除:",
                 "- 当前模型为 DIN 7190 核心增强版：线弹性、均匀接触压力、恒定摩擦。",
                 "- 弯矩附加压强按 QW=0 的保守简化处理。",
+                "- 本轮显式排除：centrifugal force、stepped hub geometry。",
             ]
         )
         return lines

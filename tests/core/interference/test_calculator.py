@@ -182,6 +182,92 @@ class InterferenceFitCalculatorTests(unittest.TestCase):
             result_base["required"]["delta_required_um"],
         )
 
+    def test_slip_safety_factor_increases_required_interference_and_can_exhaust_fit_window(self) -> None:
+        base = make_case()
+        base["loads"]["torque_required_nm"] = 870.0
+        base["checks"] = {
+            "slip_safety_min": 1.0,
+            "stress_safety_min": 1.2,
+        }
+
+        result_low = calculate_interference_fit(base)
+
+        stricter = make_case()
+        stricter["loads"]["torque_required_nm"] = 870.0
+        stricter["checks"] = {
+            "slip_safety_min": 1.5,
+            "stress_safety_min": 1.2,
+        }
+        result_high = calculate_interference_fit(stricter)
+
+        self.assertGreater(
+            result_high["required"]["p_required_mpa"],
+            result_low["required"]["p_required_mpa"],
+        )
+        self.assertGreater(
+            result_high["required"]["delta_required_um"],
+            result_low["required"]["delta_required_um"],
+        )
+        self.assertTrue(result_low["checks"]["fit_range_ok"])
+        self.assertFalse(result_high["checks"]["fit_range_ok"])
+
+    def test_combined_torque_and_axial_usage_can_fail_overall_even_if_single_checks_pass(self) -> None:
+        data = make_case()
+        data["loads"]["torque_required_nm"] = 50.0
+        data["loads"]["axial_force_required_n"] = 24000.0
+        data["checks"] = {
+            "slip_safety_min": 1.2,
+            "stress_safety_min": 1.2,
+        }
+
+        result = calculate_interference_fit(data)
+
+        self.assertTrue(result["checks"]["torque_ok"])
+        self.assertTrue(result["checks"]["axial_ok"])
+        self.assertFalse(result["checks"]["combined_ok"])
+        self.assertFalse(result["overall_pass"])
+
+    def test_force_fit_mode_is_exposed_in_assembly_detail(self) -> None:
+        data = make_case()
+        data["assembly"] = {
+            "method": "force_fit",
+            "mu_press_in": 0.08,
+            "mu_press_out": 0.06,
+        }
+
+        result = calculate_interference_fit(data)
+
+        self.assertEqual(result["assembly_detail"]["method"], "force_fit")
+        self.assertIn("force_fit", result["assembly_detail"])
+        self.assertGreater(result["assembly_detail"]["force_fit"]["press_in_force_n"], 0.0)
+
+    def test_repeated_load_block_reports_applicable_case(self) -> None:
+        data = make_case()
+        data["advanced"] = {
+            "repeated_load_mode": "on",
+        }
+        data["loads"]["torque_required_nm"] = 120.0
+
+        result = calculate_interference_fit(data)
+
+        self.assertTrue(result["repeated_load"]["enabled"])
+        self.assertTrue(result["repeated_load"]["applicable"])
+        self.assertGreater(result["repeated_load"]["max_transferable_torque_nm"], 0.0)
+        self.assertFalse(result["repeated_load"]["fretting_risk"])
+
+    def test_repeated_load_block_reports_not_applicable_case(self) -> None:
+        data = make_case()
+        data["geometry"]["fit_length_mm"] = 8.0
+        data["advanced"] = {
+            "repeated_load_mode": "on",
+        }
+
+        result = calculate_interference_fit(data)
+
+        self.assertTrue(result["repeated_load"]["enabled"])
+        self.assertFalse(result["repeated_load"]["applicable"])
+        self.assertIn("not applicable", " ".join(result["repeated_load"]["notes"]).lower())
+
     def test_gaping_check_fails_when_radial_and_bending_loads_are_high(self) -> None:
         data = make_case()
         data["loads"]["radial_force_required_n"] = 36000.0
