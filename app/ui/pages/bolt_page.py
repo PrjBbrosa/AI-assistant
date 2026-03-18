@@ -11,6 +11,7 @@ from typing import Any
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import (
     QComboBox,
+    QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -359,7 +360,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "clamped.D_A",
                 "被夹件等效外径 DA",
                 "mm",
-                "锥台/圆柱模型的被夹件外径。自动柔度计算需要。",
+                "圆柱/锥体模型表示等效外径；套筒模型下等同于套筒外径。自动柔度计算需要。",
                 mapping=("clamped", "D_A"),
                 default="24",
             ),
@@ -381,9 +382,10 @@ CHAPTERS: list[dict[str, Any]] = [
             ),
             FieldSpec(
                 "stiffness.auto_compliance",
-                "自动计算柔度",
+                "弹性柔度计算方式",
                 "-",
-                "勾选后根据几何参数自动计算螺栓和被夹件柔度，替代手动输入。",
+                "柔度 = 单位力引起的弹性变形量（mm/N），描述零件软硬程度。"
+                "自动计算根据几何和材料估算；手动输入则直接填写工程经验值或试验值。",
                 mapping=("stiffness", "auto_compliance"),
                 widget_type="choice",
                 options=("手动输入", "自动计算"),
@@ -391,17 +393,19 @@ CHAPTERS: list[dict[str, Any]] = [
             ),
             FieldSpec(
                 "stiffness.bolt_compliance",
-                "螺栓顺从度 δs",
+                "螺栓柔度 δs",
                 "mm/N",
-                "与被夹件顺从度二选一输入；若填刚度可留空。",
+                "1N 拉力下螺栓的伸长量。值越大螺栓越软。"
+                "与被夹件柔度配套输入；若改用刚度输入可留空。",
                 mapping=("stiffness", "bolt_compliance"),
                 default="2.2e-06",
             ),
             FieldSpec(
                 "stiffness.clamped_compliance",
-                "被夹件顺从度 δp",
+                "被夹件柔度 δp",
                 "mm/N",
-                "与螺栓顺从度配套输入。",
+                "1N 压力下被夹件的压缩量。值越大被夹件越软。"
+                "与螺栓柔度配套输入。",
                 mapping=("stiffness", "clamped_compliance"),
                 default="3.1e-06",
             ),
@@ -409,14 +413,15 @@ CHAPTERS: list[dict[str, Any]] = [
                 "stiffness.bolt_stiffness",
                 "螺栓刚度 cs",
                 "N/mm",
-                "若使用刚度输入，填 cs 与 cp，顺从度可留空。",
+                "刚度 = 1/柔度，即产生 1mm 变形所需的力。"
+                "若使用刚度输入，填 cs 与 cp，柔度可留空。",
                 mapping=("stiffness", "bolt_stiffness"),
             ),
             FieldSpec(
                 "stiffness.clamped_stiffness",
                 "被夹件刚度 cp",
                 "N/mm",
-                "与 cs 配套输入。",
+                "刚度 = 1/柔度。与 cs 配套输入。",
                 mapping=("stiffness", "clamped_stiffness"),
             ),
         ],
@@ -658,6 +663,46 @@ CHAPTERS: list[dict[str, Any]] = [
             ),
         ],
     },
+    {
+        "id": "thread_strip",
+        "title": "螺纹脱扣校核 (R8)",
+        "subtitle": "检查螺纹是否会被拉滑丝",
+        "fields": [
+            FieldSpec(
+                "thread_strip.m_eff",
+                "有效旋合深度 m_eff",
+                "mm",
+                "螺栓实际旋入螺母或螺纹孔的有效螺纹长度。"
+                "标准螺母高度约 0.8d~1.0d；螺纹孔连接需实测。"
+                "留空则跳过脱扣校核。",
+                mapping=("thread_strip", "m_eff"),
+            ),
+            FieldSpec(
+                "thread_strip.tau_BM",
+                "内螺纹剪切强度",
+                "MPa",
+                "螺母或壳体材料的剪切强度。"
+                "钢螺母一般可取 Rp0.2 x 0.6；"
+                "铝合金壳体约 150~200 MPa；铸铁约 200~250 MPa。",
+                mapping=("thread_strip", "tau_BM"),
+            ),
+            FieldSpec(
+                "thread_strip.tau_BS",
+                "外螺纹剪切强度",
+                "MPa",
+                "螺栓材料的剪切强度。留空时自动取 Rp0.2 x 0.6。",
+                mapping=("thread_strip", "tau_BS"),
+            ),
+            FieldSpec(
+                "thread_strip.safety_required",
+                "脱扣安全系数要求",
+                "-",
+                "最小脱扣安全系数，通常取 1.25。",
+                mapping=("thread_strip", "safety_required"),
+                default="1.25",
+            ),
+        ],
+    },
 ]
 
 
@@ -669,6 +714,7 @@ CHECK_LABELS = {
     "thermal_loss_ok": "温度损失影响校核",
     "fatigue_ok": "疲劳校核（简化 Goodman）",
     "bearing_pressure_ok": "支承面压强校核（R7）",
+    "thread_strip_ok": "螺纹脱扣校核（R8）",
 }
 
 CHECK_LEVELS: tuple[tuple[str, str], ...] = (
@@ -697,6 +743,11 @@ SURFACE_TREATMENT_MAP: dict[str, str] = {
 }
 VERIFY_MODE_FIELD_IDS: set[str] = {"loads.FM_min_input"}
 CUSTOM_THREAD_FIELD_IDS: set[str] = {"fastener.d_custom", "fastener.p_custom"}
+# 手动柔度/刚度字段：自动计算模式下隐藏
+MANUAL_COMPLIANCE_FIELD_IDS: set[str] = {
+    "stiffness.bolt_compliance", "stiffness.clamped_compliance",
+    "stiffness.bolt_stiffness", "stiffness.clamped_stiffness",
+}
 # 由 _on_part_count_changed 控制可见性的字段
 LAYER_CONTROLLED_FIELD_IDS: set[str] = {
     "clamped.custom_count",
@@ -769,10 +820,10 @@ BEGINNER_GUIDES: dict[str, str] = {
     "fastener.Rp02": "螺栓材料屈服强度；8.8 级常见约 640 MPa（以材料证书为准）。",
     "tightening.mu_thread": "螺纹摩擦系数；润滑常见 0.08~0.16。",
     "tightening.mu_bearing": "支承面摩擦系数；常见 0.10~0.20。",
-    "stiffness.bolt_compliance": "螺栓顺从度；与被夹件顺从度成对使用。",
-    "stiffness.clamped_compliance": "被夹件顺从度；单位需为 mm/N。",
-    "stiffness.bolt_stiffness": "螺栓轴向刚度；与 cp 成对使用。",
-    "stiffness.clamped_stiffness": "被夹件等效刚度；与 cs 成对输入。",
+    "stiffness.bolt_compliance": "螺栓柔度：1N 拉力下螺栓伸长多少 mm。典型 M10~M16 约 1e-6~5e-6。",
+    "stiffness.clamped_compliance": "被夹件柔度：1N 压力下被夹件压缩多少 mm。典型钢法兰约 1e-7~5e-7。",
+    "stiffness.bolt_stiffness": "螺栓刚度：产生 1mm 伸长所需的拉力。刚度 = 1/柔度。",
+    "stiffness.clamped_stiffness": "被夹件刚度：产生 1mm 压缩所需的压力。与 cs 配套输入。",
     "stiffness.load_introduction_factor_n": "外载导入比例修正；轴向端部导入通常取 1.0。",
 }
 
@@ -836,6 +887,8 @@ class BoltPage(QWidget):
         left_actions.addWidget(self.btn_calculate)
         left_actions.addWidget(self.btn_clear)
         left_actions.addWidget(self.btn_save)
+        self.btn_help_guide = QPushButton("校核指南", actions)
+        right_actions.addWidget(self.btn_help_guide)
         right_actions.addWidget(self.btn_load_1)
         right_actions.addWidget(self.btn_load_2)
         actions_layout.addLayout(left_actions)
@@ -899,7 +952,7 @@ class BoltPage(QWidget):
         footer_layout.setSpacing(6)
         self.overall_badge = QLabel("等待计算", footer)
         self.overall_badge.setObjectName("WaitBadge")
-        self.info_label = QLabel("选择左侧章节填写参数；聚焦任意字段可查看“参数说明+新手提示”。", footer)
+        self.info_label = QLabel("选择左侧章节填写参数；聚焦任意字段可查看参数说明和新手提示。", footer)
         self.info_label.setObjectName("SectionHint")
         self.info_label.setWordWrap(True)
         footer_layout.addWidget(self.overall_badge, 0, Qt.AlignmentFlag.AlignLeft)
@@ -916,6 +969,7 @@ class BoltPage(QWidget):
         self.btn_calculate.clicked.connect(self._calculate)
         self.btn_clear.clicked.connect(self._clear)
         self.btn_save.clicked.connect(self._save_report)
+        self.btn_help_guide.clicked.connect(self._show_logic_guide)
         self.check_level_combo.currentIndexChanged.connect(self._apply_check_level_visibility)
         self.calc_mode_combo.currentIndexChanged.connect(self._apply_calculation_mode_visibility)
         self.btn_input_tab.clicked.connect(lambda: self._switch_nav_tab(0))
@@ -957,8 +1011,13 @@ class BoltPage(QWidget):
                     lambda text, n=ln: self._on_layer_material_changed(n, text)
                 )
                 self._on_layer_material_changed(ln, mat_w.currentText())
+        # 柔度计算方式联动
+        ac_widget = self._field_widgets.get("stiffness.auto_compliance")
+        if ac_widget and isinstance(ac_widget, QComboBox):
+            ac_widget.currentTextChanged.connect(self._on_compliance_mode_changed)
         # 初始化可见性
         self._on_part_count_changed()
+        self._on_compliance_mode_changed()
         # 拧紧方式联动 αA hint
         tmethod_w = self._field_widgets.get("assembly.tightening_method")
         if tmethod_w and isinstance(tmethod_w, QComboBox):
@@ -976,6 +1035,10 @@ class BoltPage(QWidget):
         p_widget = self._field_widgets.get("fastener.p")
         if p_widget and isinstance(p_widget, QComboBox):
             p_widget.currentTextChanged.connect(self._on_thread_p_changed)
+        jt_widget = self._field_widgets.get("elements.joint_type")
+        if jt_widget and isinstance(jt_widget, QComboBox):
+            jt_widget.currentTextChanged.connect(self._sync_joint_diagram_from_ui)
+            self._sync_joint_diagram_from_ui()
 
     def eventFilter(self, watched, event):  # noqa: N802
         if watched in self._widget_hints and event.type() in (QEvent.Type.FocusIn, QEvent.Type.Enter):
@@ -989,6 +1052,8 @@ class BoltPage(QWidget):
         for chapter in CHAPTERS:
             self._add_step_item(chapter["title"])
             page = self._create_chapter_page(chapter["title"], chapter["subtitle"], chapter["fields"])
+            if chapter["id"] == "assembly":
+                self._append_assembly_guide(page)
             self.chapter_stack.addWidget(page)
 
     def _add_step_item(self, title: str) -> None:
@@ -1124,6 +1189,251 @@ class BoltPage(QWidget):
         page_layout.addWidget(scroll, 1)
         return page
 
+    def _append_assembly_guide(self, page: QWidget) -> None:
+        """在装配属性章节末尾添加新手说明面板。"""
+        scroll = page.findChild(QScrollArea)
+        if scroll is None:
+            return
+        container = scroll.widget()
+        if container is None:
+            return
+        form_layout = container.layout()
+        if form_layout is None:
+            return
+        # 移除末尾 stretch 以便插入说明卡片
+        last = form_layout.itemAt(form_layout.count() - 1)
+        if last and last.spacerItem():
+            form_layout.removeItem(last)
+
+        guide_card = QFrame(container)
+        guide_card.setObjectName("SubCard")
+        guide_layout = QVBoxLayout(guide_card)
+        guide_layout.setContentsMargins(12, 10, 12, 10)
+        guide_layout.setSpacing(6)
+
+        toggle_btn = QPushButton("  新手指南：装配参数到底在说什么？  ", guide_card)
+        toggle_btn.setObjectName("LinkButton")
+        toggle_btn.setFlat(True)
+        toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        guide_layout.addWidget(toggle_btn)
+
+        guide_text = QLabel(guide_card)
+        guide_text.setObjectName("SectionHint")
+        guide_text.setWordWrap(True)
+        guide_text.setText(
+            "--- 拧紧方式 ---\n"
+            "实际装配中，我们拧螺栓只做两件事：拧到某个扭矩、或者拧到某个扭矩再转一个角度。\n"
+            "不同方式的控制精度不同，直接影响预紧力的散差范围：\n"
+            "  扭矩法：用扭矩扳手拧到目标扭矩值。最常见，但摩擦波动导致预紧力散差大（约 +/-25%）\n"
+            "  转角法：先拧到一个较小的贴合扭矩，再转过固定角度。散差更小（约 +/-10%）\n"
+            "  液压拉伸法：用液压工具直接拉伸螺栓再拧紧螺母。散差最小（约 +/-5%），但需专用设备\n"
+            "  热装法：加热螺栓使其伸长后旋入，冷却收缩产生预紧力。精度高，用于大型设备\n"
+            "\n"
+            "--- 拧紧系数 αA ---\n"
+            "αA = FMmax / FMmin，描述同一批螺栓拧紧后预紧力的最大值和最小值之比。\n"
+            "它不是你设置的值，而是装配工艺能力决定的：\n"
+            "  扭矩法：αA 通常 1.4~1.8（散差大）\n"
+            "  转角法：αA 通常 1.1~1.3（散差小）\n"
+            "  液压法：αA 通常 1.05~1.15（散差很小）\n"
+            "αA 越大意味着需要更多裕量来保证最差情况也安全，螺栓利用率越低。\n"
+            "\n"
+            "--- 装配利用系数 v ---\n"
+            "拧紧时允许螺栓承受多大比例的屈服强度。0.9 表示允许达到 90% 屈服极限。\n"
+            "设得越高，预紧力越大，但离永久变形越近。一般取 0.85~0.95。\n"
+            "\n"
+            "--- 摩擦系数 (螺纹/支承面) ---\n"
+            "你拧扭矩扳手时，扭矩并不全部变成预紧力。大约：\n"
+            "  50% 消耗在螺栓头底面与零件表面的摩擦（支承面摩擦 muK）\n"
+            "  40% 消耗在螺纹牙面之间的摩擦（螺纹摩擦 muG）\n"
+            "  只有约 10% 真正转化为螺栓的轴向预紧力\n"
+            "所以摩擦系数对预紧力影响极大。表面润滑剂、镀层都会显著改变摩擦。\n"
+            "常见范围：干燥钢面 0.12~0.18；润滑 0.08~0.12；MoS2 涂层 0.06~0.10\n"
+            "\n"
+            "--- 嵌入损失 FZ ---\n"
+            "零件表面微观凸起在预紧力作用下会逐渐压平，导致螺栓实际预紧力下降。\n"
+            "表面越粗糙、接触面越多，损失越大。工具可根据粗糙度等级自动估算。\n"
+            "\n"
+            "--- 总结：扭矩 vs 预紧力 ---\n"
+            "你设定的是扭矩，但螺栓真正需要的是预紧力。\n"
+            "两者之间的转换取决于摩擦，摩擦的不确定性由 αA 来描述。\n"
+            "所以：控制好摩擦 → 减小 αA → 提高螺栓利用率 → 用更小的螺栓满足需求。"
+        )
+        guide_text.setVisible(False)
+
+        def _toggle():
+            visible = not guide_text.isVisible()
+            guide_text.setVisible(visible)
+            toggle_btn.setText(
+                "  收起新手指南  " if visible else "  新手指南：装配参数到底在说什么？  "
+            )
+
+        toggle_btn.clicked.connect(_toggle)
+
+        form_layout.addWidget(guide_card)
+        form_layout.addStretch(1)
+
+    # ------------------------------------------------------------------
+    # 校核指南对话框
+    # ------------------------------------------------------------------
+    def _show_logic_guide(self) -> None:
+        """弹出校核逻辑链路指南，帮助新手理解输入→计算→校核的完整思路。"""
+        dlg = QDialog(self)
+        dlg.setWindowTitle("VDI 2230 螺栓校核指南")
+        dlg.resize(720, 780)
+
+        root = QVBoxLayout(dlg)
+        root.setContentsMargins(0, 0, 0, 0)
+
+        scroll = QScrollArea(dlg)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+
+        container = QWidget(scroll)
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(16)
+
+        # ---------- 标题 ----------
+        title = QLabel("VDI 2230 螺栓校核 — 你需要知道的一切", container)
+        title.setObjectName("SectionTitle")
+        title.setStyleSheet("font-size: 18px;")
+        layout.addWidget(title)
+
+        intro = QLabel(
+            "这份指南帮你快速理解：你需要准备什么、工具帮你算什么、最终怎么判定通过或不通过。",
+            container,
+        )
+        intro.setObjectName("SectionHint")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        # ---------- 辅助函数 ----------
+        def _section(title_text: str, body_text: str) -> QFrame:
+            card = QFrame(container)
+            card.setObjectName("SubCard")
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(14, 12, 14, 12)
+            card_layout.setSpacing(6)
+            t = QLabel(title_text, card)
+            t.setObjectName("SubSectionTitle")
+            t.setStyleSheet("font-size: 14px;")
+            b = QLabel(body_text, card)
+            b.setObjectName("SectionHint")
+            b.setWordWrap(True)
+            card_layout.addWidget(t)
+            card_layout.addWidget(b)
+            return card
+
+        def _flow_arrow() -> QLabel:
+            arrow = QLabel("  ▼", container)
+            arrow.setStyleSheet("color: #D97757; font-size: 18px; font-weight: bold;")
+            return arrow
+
+        # ---------- 第一步：你需要准备什么 ----------
+        layout.addWidget(_section(
+            "第一步：你需要准备什么（输入）",
+            "校核一个螺栓连接，你至少需要以下信息：\n\n"
+            "1. 螺栓规格 — 选一个标准螺纹（如 M10×1.5），工具自动查出 d2、d3、As\n"
+            "2. 螺栓强度等级 — 选一个等级（如 8.8 级），工具自动填入 Rp0.2\n"
+            "3. 外部载荷 — 工作中拉开连接的最大轴向力 FA 和横向力 FQ\n"
+            "4. 连接形式 — 螺纹孔（拧入基体）还是通孔（穿过被夹件+螺母）\n"
+            "5. 摩擦系数 — 螺纹面和支承面的摩擦（不确定就先用默认值 0.12）\n"
+            "6. 装配方式 — 你打算怎么拧（扭矩扳手、转角法、液压拉伸...）\n\n"
+            "可选项（进阶）：\n"
+            "- 密封力、防滑要求 — 如果连接有密封或传递横向力\n"
+            "- 柔度/刚度 — 有 FEM 数据时可直接输入，否则用自动计算\n"
+            "- 温度和材料 — 如果螺栓和被夹件材料不同且有温差\n"
+            "- 疲劳参数 — 如果是反复加载工况",
+        ))
+
+        layout.addWidget(_flow_arrow())
+
+        # ---------- 第二步：工具怎么算 ----------
+        layout.addWidget(_section(
+            "第二步：工具帮你算什么（计算链路）",
+            "你点击「执行校核」后，工具按照 VDI 2230 标准的链路一步步算：\n\n"
+            "R0. 输入汇总\n"
+            "    整理你的输入，计算力比系数 φ = δp/(δs+δp)\n"
+            "    φ 决定了外载在螺栓和被夹件之间如何分配\n\n"
+            "R1. 预紧力\n"
+            "    从「工作时至少需要多大夹紧力」反推「装配时至少拧多紧」\n"
+            "    FM,min = FK,req + (1-φn)×FA + FZ + Fth\n"
+            "    FK,req = 密封力和防滑力中较大者\n"
+            "    FZ = 嵌入损失，Fth = 热损失\n\n"
+            "R2. 拧紧扭矩\n"
+            "    把预紧力转换成你扳手上该读到的扭矩值\n"
+            "    MA = FM × (d2/2 × tan(λ+ρ') + DKm/2 × μK)",
+        ))
+
+        layout.addWidget(_flow_arrow())
+
+        # ---------- 第三步：怎么判定 ----------
+        layout.addWidget(_section(
+            "第三步：校核判据 — 逐项检查螺栓是否安全",
+            "R3. 残余夹紧力 — 最差情况下，连接还夹得住吗？\n"
+            "    FK,res = FM,min - FZ - Fth - (1-φn)×FA ≥ FK,req\n"
+            "    如果夹不住 → 加大预紧力或换更大螺栓\n\n"
+            "R4. 装配应力 — 拧紧时螺栓会不会拧坏？\n"
+            "    拧紧产生拉力+扭转，合成 von Mises 应力 ≤ ν × Rp0.2\n"
+            "    如果超了 → 降低利用系数、换更高等级螺栓、或减小摩擦\n\n"
+            "R5. 服役应力 — 工作载荷下螺栓会不会被拉断？\n"
+            "    螺栓最大轴向力 = FM,max + φn×FA ≤ Rp0.2/SF\n"
+            "    如果超了 → 换更大螺栓或降低外载\n\n"
+            "R6. 疲劳（可选）— 反复加载会不会疲劳断裂？\n"
+            "    应力幅 σ_a = φn×FA/(2×As) ≤ 许用疲劳强度\n"
+            "    如果超了 → 增大螺栓规格、减小 φn、或使用轧制螺纹\n\n"
+            "R7. 支承面压强 — 螺栓头底面会不会压坏零件？\n"
+            "    p_B = FM,max / A_bearing ≤ p_G,allow\n"
+            "    铝件或塑料件尤其要注意\n\n"
+            "R8. 螺纹脱扣（可选）— 螺纹会不会被拉滑丝？\n"
+            "    比较内/外螺纹的剪切承载力，取弱侧计算安全系数\n"
+            "    铝壳体螺纹孔连接必须检查",
+        ))
+
+        layout.addWidget(_flow_arrow())
+
+        # ---------- 第四步：结果怎么看 ----------
+        layout.addWidget(_section(
+            "第四步：结果怎么看",
+            "所有 R3~R8 校核项都通过 → 螺栓连接安全\n"
+            "任一项不通过 → 需要调整设计，常见思路：\n\n"
+            "  换更大规格螺栓 — 增大 As，降低应力\n"
+            "  换更高等级螺栓 — 提高 Rp0.2，增大许用应力\n"
+            "  改善拧紧精度 — 降低 αA，减小散差裕量\n"
+            "  控制摩擦 — 加润滑可降低摩擦波动\n"
+            "  减小外载 — 重新审视载荷估算是否偏保守\n\n"
+            "左侧「校核链路」标签页可逐步查看每个 R 步骤的详细公式和中间值。",
+        ))
+
+        # ---------- 快速参考表 ----------
+        layout.addWidget(_section(
+            "快速参考：关键输入和它影响什么",
+            "螺栓规格 (d, p)   → 承载面积 As → 直接决定能承受多大力\n"
+            "强度等级 (Rp0.2)  → 许用应力上限 → 越高越耐力，但也更脆\n"
+            "摩擦系数 (μG, μK) → 扭矩↔预紧力转换 → 摩擦不确定是最大风险源\n"
+            "拧紧系数 (αA)     → 预紧力散差 → 影响最大/最小预紧力差距\n"
+            "利用系数 (ν)      → 装配利用度 → 越高预紧力越大但安全裕量越小\n"
+            "柔度 (δs, δp)     → 力比 φ → 决定外载在螺栓与被夹件间的分配\n"
+            "载荷导入系数 (n)   → 修正 φ → 载荷导入位置离螺栓头越远 n 越小\n"
+            "外载 (FA, FQ)     → 工作载荷 → 校核的核心输入",
+        ))
+
+        layout.addStretch(1)
+        scroll.setWidget(container)
+        root.addWidget(scroll)
+
+        close_btn = QPushButton("我明白了", dlg)
+        close_btn.setObjectName("PrimaryButton")
+        close_btn.clicked.connect(dlg.accept)
+        btn_layout = QHBoxLayout()
+        btn_layout.setContentsMargins(24, 8, 24, 16)
+        btn_layout.addStretch(1)
+        btn_layout.addWidget(close_btn)
+        btn_layout.addStretch(1)
+        root.addLayout(btn_layout)
+
+        dlg.exec()
+
     def _create_editor(self, spec: FieldSpec, parent: QWidget) -> QWidget:
         if spec.widget_type == "choice":
             editor = QComboBox(parent)
@@ -1215,6 +1525,8 @@ class BoltPage(QWidget):
                 pass  # controlled by _on_thread_d_changed
             elif field_id in LAYER_CONTROLLED_FIELD_IDS:
                 pass  # controlled by _on_part_count_changed
+            elif field_id in MANUAL_COMPLIANCE_FIELD_IDS:
+                pass  # controlled by _on_compliance_mode_changed
             else:
                 card.setVisible(True)
 
@@ -1393,6 +1705,17 @@ class BoltPage(QWidget):
             alpha_w.clear()
             alpha_w.setFocus()
 
+    def _on_compliance_mode_changed(self, _text: str = "") -> None:
+        """柔度计算方式变更时切换手动输入字段可见性。"""
+        ac_w = self._field_widgets.get("stiffness.auto_compliance")
+        is_auto = (
+            isinstance(ac_w, QComboBox) and ac_w.currentText() == "自动计算"
+        )
+        for fid in MANUAL_COMPLIANCE_FIELD_IDS:
+            card = self._field_cards.get(fid)
+            if card is not None:
+                card.setVisible(not is_auto)
+
     def _on_tightening_method_changed(self, text: str) -> None:
         """拧紧方式变更时更新 αA 字段的 hint/tooltip。"""
         self._set_dynamic_field_help("tightening.alpha_A", ALPHA_A_HINTS.get(text, ""))
@@ -1518,9 +1841,9 @@ class BoltPage(QWidget):
 
         self.diagram_widget = ClampingDiagramWidget(container)
         self.diagram_widget.setMinimumHeight(340)
-        legend = QLabel("FM=装配预紧力，FA=工作外载，FK=残余夹紧力；右侧给出数值与零件说明。", container)
-        legend.setObjectName("SectionHint")
-        legend.setWordWrap(True)
+        self.diagram_help_label = QLabel(self._build_diagram_help_text("tapped"), container)
+        self.diagram_help_label.setObjectName("SectionHint")
+        self.diagram_help_label.setWordWrap(True)
         tri_title = QLabel("螺纹受力三角图", container)
         tri_title.setObjectName("SubSectionTitle")
         self.thread_triangle_widget = ThreadForceTriangleWidget(container)
@@ -1528,13 +1851,40 @@ class BoltPage(QWidget):
 
         content_layout.addWidget(title)
         content_layout.addWidget(self.diagram_widget, 3)
-        content_layout.addWidget(legend)
+        content_layout.addWidget(self.diagram_help_label)
         content_layout.addWidget(tri_title)
         content_layout.addWidget(self.thread_triangle_widget, 2)
         content_layout.addStretch(1)
         scroll.setWidget(container)
         layout.addWidget(scroll)
         self.chapter_stack.addWidget(page)
+
+    def _build_diagram_help_text(self, joint_type: str) -> str:
+        joint_note = (
+            "当前为螺纹孔连接：自动柔度会把螺纹啮合区按等效附加长度计入螺栓柔度。"
+            if joint_type == "tapped"
+            else "当前为通孔连接：自动柔度会把螺母侧附加变形按等效附加长度计入螺栓柔度。"
+        )
+        return (
+            "FM=装配预紧力，FA=工作外载，FK=残余夹紧力。\n"
+            "柔度 δ 表示单位载荷引起的弹性变形，定义为 δ = Δl / F，单位 mm/N；"
+            "它和刚度 k 互为倒数，即 k = 1 / δ。δ 越大，连接越软；δ 越小，连接越硬。\n"
+            "本页中螺栓柔度 δs 主要由有效长度 l_eff、材料弹性模量 E_bolt 和应力面积 As 决定；"
+            "被夹件柔度 δp 主要由夹紧长度 lK、材料弹性模量 E_clamped、支承内径/等效外径 DA 决定。"
+            "自动计算会按几何和材料估算 δs/δp，手动输入则直接采用工程经验值。\n"
+            "后续载荷分配按 phi = δp / (δs + δp) 进入计算。"
+            f"{joint_note}"
+        )
+
+    def _sync_joint_diagram_from_ui(self, *_args) -> None:
+        jt_widget = self._field_widgets.get("elements.joint_type")
+        if not isinstance(jt_widget, QComboBox):
+            joint_type = "tapped"
+        else:
+            joint_type = JOINT_TYPE_MAP.get(jt_widget.currentText(), "tapped")
+        self.diagram_widget.set_joint_type(joint_type)
+        if hasattr(self, "diagram_help_label"):
+            self.diagram_help_label.setText(self._build_diagram_help_text(joint_type))
 
     def _build_results_page(self) -> None:
         self._add_step_item("校核结果与消息")
@@ -1568,7 +1918,7 @@ class BoltPage(QWidget):
 
         self.result_title = QLabel("尚未执行计算", summary_card)
         self.result_title.setObjectName("SubSectionTitle")
-        self.result_summary = QLabel("填写参数并点击“执行校核”后，这里显示可读结论。", summary_card)
+        self.result_summary = QLabel("填写参数并点击执行校核后，这里显示可读结论。", summary_card)
         self.result_summary.setObjectName("SectionHint")
         self.result_summary.setWordWrap(True)
         summary_layout.addWidget(self.result_title)
@@ -1855,6 +2205,7 @@ class BoltPage(QWidget):
                         alpha_w.setText(str(alpha_val))
                         alpha_w.setReadOnly(matched)
             self._on_part_count_changed()
+            self._on_compliance_mode_changed()
 
         if "check_level" in ui_state:
             self._set_check_level(str(ui_state["check_level"]))
@@ -1940,7 +2291,7 @@ class BoltPage(QWidget):
         self._last_payload = None
         self._last_result = None
         self.result_title.setText("尚未执行计算")
-        self.result_summary.setText("填写参数并点击“执行校核”后，这里显示可读结论。")
+        self.result_summary.setText("填写参数并点击执行校核后，这里显示可读结论。")
         self.metrics_text.setText("尚无结果。")
         self.message_box.clear()
         for badge in self._check_badges.values():
@@ -2026,6 +2377,24 @@ class BoltPage(QWidget):
         if treatment_w is not None and isinstance(treatment_w, QComboBox):
             treatment_en = SURFACE_TREATMENT_MAP.get(treatment_w.currentText(), "rolled")
             payload.setdefault("options", {})["surface_treatment"] = treatment_en
+        stiffness_section = payload.setdefault("stiffness", {})
+        is_auto = bool(stiffness_section.get("auto_compliance"))
+        has_any_stiffness = any(
+            key in stiffness_section for key in ("bolt_stiffness", "clamped_stiffness")
+        )
+        has_full_stiffness = all(
+            key in stiffness_section for key in ("bolt_stiffness", "clamped_stiffness")
+        )
+        if is_auto:
+            stiffness_section.pop("bolt_compliance", None)
+            stiffness_section.pop("clamped_compliance", None)
+            stiffness_section.pop("bolt_stiffness", None)
+            stiffness_section.pop("clamped_stiffness", None)
+        elif has_any_stiffness:
+            if not has_full_stiffness:
+                raise InputError("若使用刚度输入，请同时填写螺栓刚度 cs 与被夹件刚度 cp。")
+            stiffness_section.pop("bolt_compliance", None)
+            stiffness_section.pop("clamped_compliance", None)
 
         check_level = self._current_check_level()
         if check_level in {"thermal", "fatigue"}:
@@ -2207,12 +2576,25 @@ class BoltPage(QWidget):
         r7_note = result.get("r7_note", "")
         if r7_note:
             messages.append(f"[R7 说明] {r7_note}")
+        r8_note = result.get("r8_note", "")
+        if r8_note:
+            strip = result.get("thread_strip", {})
+            messages.append(
+                f"[R8 脱扣] {r8_note}，"
+                f"安全系数 = {strip.get('strip_safety', 0):.2f}"
+                f"（要求 >= {strip.get('strip_safety_required', 1.25):.2f}）"
+            )
         messages.append(
-            "[说明] 本版本支持分层校核：常规(R3/R4/R5)、温度影响、疲劳简化Goodman。"
-            "螺纹脱扣与完整疲劳谱仍未覆盖。"
+            "[说明] 本版本支持分层校核：常规(R3/R4/R5)、温度影响、疲劳简化Goodman、螺纹脱扣(R8)。"
+            "完整疲劳谱与偏心弯矩仍未覆盖。"
         )
         self.message_box.setPlainText("\n".join(messages))
 
+        self.diagram_widget.set_joint_type(result.get("joint_type", "tapped"))
+        if hasattr(self, "diagram_help_label"):
+            self.diagram_help_label.setText(
+                self._build_diagram_help_text(result.get("joint_type", "tapped"))
+            )
         self.diagram_widget.set_forces(inter["FMmin_N"], fa_max, force["F_K_residual_N"])
         self.thread_triangle_widget.set_thread_forces(
             inter["FMmax_N"],
@@ -2238,6 +2620,13 @@ class BoltPage(QWidget):
             recs.append("[建议] 热损失偏大：可补偿预紧力、优化材料热匹配或降低温差。")
         if "fatigue_ok" in checks and not checks.get("fatigue_ok", True):
             recs.append("[建议] 疲劳不通过：可降低应力幅、提高螺栓等级、优化载荷谱或增大规格。")
+        if "thread_strip_ok" in checks and not checks.get("thread_strip_ok", True):
+            strip = result.get("thread_strip", {})
+            side = strip.get("critical_side", "")
+            if side == "nut":
+                recs.append("[建议] 螺纹脱扣不通过（壳体侧）：可加深旋合深度、换用更高强度壳体材料、或加大螺栓规格。")
+            else:
+                recs.append("[建议] 螺纹脱扣不通过（螺栓侧）：可加深旋合深度或提高螺栓强度等级。")
         if not recs:
             recs.append("[建议] 当前工况满足全部校核。建议保留 10% 以上工程裕量。")
         return recs

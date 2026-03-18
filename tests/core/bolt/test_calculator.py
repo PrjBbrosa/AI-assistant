@@ -713,6 +713,51 @@ class TestAutoCompliance:
         actual_dp = result["stiffness_model"]["delta_p_mm_per_n"]
         assert abs(actual_dp - expected_dp) / expected_dp < 0.01
 
+    def test_auto_compliance_joint_type_changes_bolt_flexibility(self):
+        """自动柔度建模下，通孔与螺纹孔连接不应得到完全相同的螺栓柔度。"""
+        data = _base_input()
+        del data["stiffness"]["bolt_compliance"]
+        del data["stiffness"]["clamped_compliance"]
+        data["stiffness"]["auto_compliance"] = True
+        data["stiffness"]["E_bolt"] = 210_000.0
+        data["stiffness"]["E_clamped"] = 210_000.0
+        data["clamped"] = {
+            "basic_solid": "cylinder",
+            "total_thickness": 30.0,
+            "D_A": 24.0,
+        }
+        data["bearing"]["bearing_d_inner"] = 11.0
+
+        data["options"] = {"joint_type": "tapped"}
+        tapped = calculate_vdi2230_core(data)
+
+        data["options"] = {"joint_type": "through"}
+        through = calculate_vdi2230_core(data)
+
+        assert through["stiffness_model"]["delta_s_mm_per_n"] > \
+               tapped["stiffness_model"]["delta_s_mm_per_n"]
+        assert through["intermediate"]["phi_n"] != tapped["intermediate"]["phi_n"]
+
+    def test_auto_sleeve_model_uses_existing_geometry_inputs(self):
+        """套筒模型应可直接使用 UI 现有几何字段完成自动柔度建模。"""
+        data = _base_input()
+        del data["stiffness"]["bolt_compliance"]
+        del data["stiffness"]["clamped_compliance"]
+        data["stiffness"]["auto_compliance"] = True
+        data["stiffness"]["E_bolt"] = 210_000.0
+        data["stiffness"]["E_clamped"] = 210_000.0
+        data["clamped"] = {
+            "basic_solid": "sleeve",
+            "total_thickness": 30.0,
+            "D_A": 30.0,
+        }
+        data["bearing"]["bearing_d_inner"] = 11.0
+
+        result = calculate_vdi2230_core(data)
+
+        assert result["stiffness_model"]["delta_p_mm_per_n"] > 0
+        assert result["stiffness_model"]["auto_modeled"] is True
+
 
 class TestMultiLayerValidation:
     def test_empty_layers_raises(self):
@@ -821,3 +866,106 @@ class TestMultiLayerThermal:
         assert result["stiffness_model"]["auto_modeled"] is True
         assert result["thermal"]["thermal_auto_estimated"] is True
         assert result["thermal"]["thermal_auto_value_N"] > 0
+
+
+class TestThreadStripR8:
+    """R8 螺纹脱扣校核。"""
+
+    def _strip_input(self) -> dict:
+        data = _base_input()
+        data["thread_strip"] = {
+            "m_eff": 12.0,       # 旋合深度 12mm
+            "tau_BM": 350.0,     # 内螺纹材料剪切强度 (钢螺母)
+        }
+        return data
+
+    def test_r8_skipped_when_no_strip_data(self):
+        """无 thread_strip 数据时 R8 不激活。"""
+        data = _base_input()
+        result = calculate_vdi2230_core(data)
+        assert "thread_strip_ok" not in result["checks"]
+        assert result["thread_strip"] == {}
+
+    def test_r8_pass_with_sufficient_engagement(self):
+        """旋合深度足够时 R8 通过。"""
+        data = self._strip_input()
+        result = calculate_vdi2230_core(data)
+        assert "thread_strip_ok" in result["checks"]
+        assert result["checks"]["thread_strip_ok"] is True
+        assert result["thread_strip"]["strip_safety"] >= 1.25
+
+    def test_r8_fail_with_shallow_engagement(self):
+        """旋合深度不足时 R8 不通过。"""
+        data = self._strip_input()
+        data["thread_strip"]["m_eff"] = 2.0  # 极浅
+        result = calculate_vdi2230_core(data)
+        assert result["checks"]["thread_strip_ok"] is False
+        assert result["overall_pass"] is False
+
+    def test_r8_identifies_critical_side_nut(self):
+        """内螺纹材料弱时，临界侧为螺母/壳体侧。"""
+        data = self._strip_input()
+        data["thread_strip"]["tau_BM"] = 120.0  # 铝壳体
+        result = calculate_vdi2230_core(data)
+        assert result["thread_strip"]["critical_side"] == "nut"
+        assert "壳体" in result["r8_note"]
+
+    def test_r8_identifies_critical_side_bolt(self):
+        """螺栓材料弱于螺母时，临界侧为螺栓侧。"""
+        data = self._strip_input()
+        data["thread_strip"]["tau_BS"] = 100.0  # 人为压低
+        data["thread_strip"]["tau_BM"] = 600.0  # 高强螺母
+        result = calculate_vdi2230_core(data)
+        assert result["thread_strip"]["critical_side"] == "bolt"
+        assert "螺栓" in result["r8_note"]
+
+    def test_r8_formula_correctness(self):
+        """验证剪切面积和承载力公式。"""
+        import math
+        data = self._strip_input()
+        result = calculate_vdi2230_core(data)
+        strip = result["thread_strip"]
+        d3 = result["derived_geometry_mm"]["d3"]
+        d = data["fastener"]["d"]
+        m_eff = 12.0
+
+        A_SB_expected = math.pi * d3 * m_eff * 0.75
+        A_SM_expected = math.pi * d * m_eff * 0.58
+        assert abs(strip["A_SB_mm2"] - A_SB_expected) < 0.1
+        assert abs(strip["A_SM_mm2"] - A_SM_expected) < 0.1
+
+        F_strip_bolt = A_SB_expected * strip["tau_BS_MPa"]
+        F_strip_nut = A_SM_expected * strip["tau_BM_MPa"]
+        assert abs(strip["F_strip_bolt_N"] - F_strip_bolt) < 1.0
+        assert abs(strip["F_strip_nut_N"] - F_strip_nut) < 1.0
+
+    def test_r8_missing_tau_bm_raises(self):
+        """缺少内螺纹剪切强度时应报错。"""
+        data = _base_input()
+        data["thread_strip"] = {"m_eff": 12.0}  # 无 tau_BM
+        with pytest.raises(InputError, match="tau_BM"):
+            calculate_vdi2230_core(data)
+
+    def test_r8_overall_pass_includes_strip(self):
+        """R8 不通过应影响 overall_pass。"""
+        data = self._strip_input()
+        data["thread_strip"]["m_eff"] = 1.5
+        result = calculate_vdi2230_core(data)
+        assert result["checks"]["thread_strip_ok"] is False
+        assert result["overall_pass"] is False
+
+    def test_r8_default_tau_bs_from_rp02(self):
+        """默认 tau_BS = Rp0.2 * 0.6。"""
+        data = self._strip_input()
+        result = calculate_vdi2230_core(data)
+        expected_tau_bs = data["fastener"]["Rp02"] * 0.6
+        assert abs(result["thread_strip"]["tau_BS_MPa"] - expected_tau_bs) < 0.01
+
+    def test_r8_custom_safety_factor(self):
+        """自定义安全系数要求。"""
+        data = self._strip_input()
+        data["thread_strip"]["safety_required"] = 2.0
+        result = calculate_vdi2230_core(data)
+        # 更高的安全系数要求可能导致不通过
+        strip = result["thread_strip"]
+        assert strip["strip_safety_required"] == 2.0

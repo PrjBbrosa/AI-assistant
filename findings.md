@@ -160,3 +160,68 @@
   - 自定义热参数会静默回退成钢默认值
   - 多层自定义 alpha 空值会抛原生 `ValueError`
   - 重复计算会让 R 步骤详情页输入控件数量从 `54 -> 108`
+
+## 2026-03-18 Interference-Fit Deep Review Working Notes
+
+### Review Goal
+- 详细审查“过盈配合”章节（文档、UI、calculator、示例、测试）
+- 确认是否存在：
+  - 公式 bug
+  - 章节遗漏
+  - 逻辑错误 / 结果语义问题
+  - 与 DIN 7190 / 经典工具案例不一致的地方
+
+### Planned Comparison Baselines
+- 本地基线：
+  - `core/interference/calculator.py`
+  - `core/interference/fit_selection.py`
+  - `core/interference/assembly.py`
+  - `app/ui/pages/interference_fit_page.py`
+  - `tests/core/interference/*`
+  - `tests/ui/test_interference_page.py`
+- 外部基线：
+  - DIN 7190 / ISO 286 相关公开可得资料
+  - eAssistant interference fit handbook pages
+  - 其他工程校核工具（优先选公开说明较全、能看到公式或案例的工具）
+
+### Early Local Findings
+- `docs/plans/2026-03-08-interference-fit-din7190-core-design.md` 的范围说明已落后于当前实现：
+  - 文档仍写“暂不扩展” `ISO 286` 配合推荐、热装温差、重复载荷
+  - 但当前 `core/interference/` 已包含 `fit_selection.py`、`assembly.py`、`repeated_load`
+- 这意味着“章节设计文档 / 实际功能 / 用户可见说明”之间存在同步风险，需要继续核对 UI 页面和 README 是否已经同步
+- 当前 `InterferenceFitPage` 的章节结构已经扩展为：
+  - 过盈来源模式（直接输入 / 优选配合 / 偏差换算）
+  - 装配流程（manual_only / shrink_fit / force_fit）
+  - 高级校核（repeated-load / fretting）
+- 当前 UI 文案把 `advanced.repeated_load_mode` 明确标成“不参与基础 DIN verdict”，这一点与 `calculator.py` 中 `overall_pass` 的实现一致
+- `fit_selection.py` 当前只实现了 `H7/p6`、`H7/s6`、`H7/u6` 且直径范围仅 `6~50 mm` 的 curated subset；这是可控实现，但需要重点检查：
+  - UI / README 是否充分提醒“不是完整 ISO 286 数据库”
+  - 对外比较时不能把它表述成“完整标准搜索”
+
+### Coverage Observations In Progress
+- `tests/core/interference/test_calculator.py` 已覆盖：
+  - 基本压力/能力输出
+  - 粗糙度影响
+  - `KA` 与 `slip_safety_min` 对需求过盈的影响
+  - `combined_ok` 进入总判定
+  - `force_fit` / `repeated_load` 基本分支
+- 但暂未从当前已读部分看到以下明确断言：
+  - `p_required` 由 `torque / axial / combined / gap` 取 `max` 的组成说明是否正确暴露到结果层
+  - `fit_selection` 的每个公差带边界点（如 `10/18/24/30/40/50 mm`）是否都被锁定
+  - `shrink_fit` 中轴冷却项对所需轮毂温度的影响是否有回归测试
+  - UI 导出报告是否完整提示“curated subset / 非完整标准库”
+
+### UI/Core Alignment Notes
+- `InterferenceFitPage._build_payload()` 已把以下 UI 选择器真正落入 payload：
+  - `fit.mode` -> `fit_selection` 派生并回填 `fit.delta_min/max_um`
+  - `assembly.method` -> `assembly.method`
+  - `advanced.repeated_load_mode` -> `advanced.repeated_load_mode`
+- `InterferenceFitPage._render_result()` 与 `_build_report_lines()` 已显式展示：
+  - `p_req,T / p_req,Ax / p_req,comb / p_gap`
+  - `combined_ok`
+  - fit source / assembly trace / repeated load trace
+- 到目前为止，尚未发现“UI 字段存在但未进入计算”或“计算结果存在但 UI 完全未展示”的严重脱节
+- 更可能的问题集中在：
+  - 文案是否把适用范围与简化假设说透
+  - 测试是否足以锁定工程边界
+  - 与外部案例相比是否存在数值偏差或概念偏差

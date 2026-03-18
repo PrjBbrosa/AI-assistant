@@ -4,7 +4,7 @@
 在保留 VDI 2230 螺栓计算核心的基础上，搭建本地 PySide6 桌面框架并预留多模块入口，支持后续打包为 `.exe`。
 
 ## Current Phase
-Phase 10 (Phase 9 complete)
+Phase 11 (Phase 10 in_progress, review branch added)
 
 ## Phases
 ### Phase 1: Requirements & Discovery
@@ -77,6 +77,13 @@ Phase 10 (Phase 9 complete)
 - [ ] Execute the remediation plan in an isolated workspace
 - **Status:** in_progress
 
+### Phase 11: Interference-Fit Chapter Deep Review
+- [ ] Audit the interference-fit chapter UI/core/tests/docs end-to-end
+- [ ] Cross-check formulas and result semantics against DIN 7190-style references and tool manuals
+- [ ] Re-run local examples and targeted edge cases
+- [ ] Write a formal review summary with findings, omissions, and comparison notes
+- **Status:** in_progress
+
 ## Key Questions
 1. 交付形态是 Web 还是本地桌面？（已选本地桌面）
 2. 模块范围是只做螺栓还是全量？（已选“螺栓先做，其余占位”）
@@ -93,6 +100,7 @@ Phase 10 (Phase 9 complete)
 | 本轮暂不实现 `centrifugal force` 与 `stepped hub geometry` | 用户已明确排除，避免范围蔓延 |
 | 过盈配合后续扩展按“正确性 → 配合选择 → 装配 → 重复载荷/报告追溯”推进 | 先修可信度，再补齐 eAssistant 中最有工程价值的能力 |
 | 螺栓页后续修复优先级定为“展示语义/输入持久化/热参数校验/UI 回归测试” | 当前最大风险不在主公式，而在 UI 与实际 payload / checks 脱节 |
+| 本轮新增一次“过盈配合章节深度审查”，先审查再决定是否进入修复 | 用户当前目标是确认 bug / 遗漏 / 逻辑风险，并对照 DIN 案例与同类工具结果 |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
@@ -104,3 +112,4 @@ Phase 10 (Phase 9 complete)
 - 在文档中明确“实现范围”和“未覆盖项”
 - 螺栓页 2026-03-17 深度审查结果已落到 `docs/review/2026-03-17-bolt-page-deep-review.md`
 - 螺栓页后续修复计划已落到 `docs/superpowers/plans/2026-03-17-bolt-page-review-followup.md`
+- 本轮将补充一份过盈配合章节深度审查记录，重点覆盖 DIN 7190 公式链、UI 章节语义、案例对比与测试盲区

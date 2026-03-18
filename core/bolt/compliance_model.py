@@ -8,21 +8,33 @@ from core.bolt.calculator import InputError, _positive
 
 
 def calculate_bolt_compliance(
-    d: float, p: float, l_K: float, E_bolt: float,
+    d: float, p: float, l_K: float, E_bolt: float, joint_type: str = "tapped",
 ) -> Dict[str, float]:
     """计算螺栓弹性柔度 δs (mm/N)。
 
     简化模型：δs = l_eff / (E × As)
-    l_eff = l_K + 0.4·d（考虑螺栓头和螺纹过渡段的等效长度）
+    l_eff = l_K + l_add
+    - 通孔连接：l_add ≈ 0.8·d（螺栓头/过渡段 + 螺母侧附加变形）
+    - 螺纹孔连接：l_add ≈ 0.73·d（螺栓头/过渡段 + 螺纹啮合区等效长度）
     """
     _positive(d, "d")
     _positive(p, "p")
     _positive(l_K, "l_K")
     _positive(E_bolt, "E_bolt")
+    if joint_type not in {"tapped", "through"}:
+        raise InputError(f"未知的连接形式: {joint_type}")
     As = math.pi / 4.0 * (d - 0.9382 * p) ** 2
-    l_eff = l_K + 0.4 * d
+    head_transition = 0.4 * d
+    joint_extension = 0.4 * d if joint_type == "through" else 0.33 * d
+    l_eff = l_K + head_transition + joint_extension
     delta_s = l_eff / (E_bolt * As)
-    return {"delta_s": delta_s, "As": As, "l_eff": l_eff}
+    return {
+        "delta_s": delta_s,
+        "As": As,
+        "l_eff": l_eff,
+        "joint_extension_mm": joint_extension,
+        "joint_type": joint_type,
+    }
 
 
 def calculate_clamped_compliance(

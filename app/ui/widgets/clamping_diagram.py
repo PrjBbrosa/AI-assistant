@@ -16,6 +16,7 @@ class ClampingDiagramWidget(QWidget):
         self._fm = 0.0
         self._fa = 0.0
         self._fk = 0.0
+        self._joint_type = "tapped"
         self._svg_renderer = QSvgRenderer(self)
         self.setMinimumHeight(320)
 
@@ -23,6 +24,10 @@ class ClampingDiagramWidget(QWidget):
         self._fm = max(0.0, fm)
         self._fa = max(0.0, fa)
         self._fk = max(0.0, fk)
+        self.update()
+
+    def set_joint_type(self, joint_type: str) -> None:
+        self._joint_type = "through" if joint_type == "through" else "tapped"
         self.update()
 
     def paintEvent(self, event) -> None:  # noqa: N802
@@ -80,20 +85,14 @@ class ClampingDiagramWidget(QWidget):
 
         # Left-side component legend (to avoid overlap with drawing callouts)
         painter.setPen(QPen(QColor("#5A564F"), 1.0))
-        painter.setFont(QFont("Avenir Next", 10))
+        painter.setFont(QFont("Avenir Next", 9))
         painter.drawText(
             left_legend_rect,
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
-            "零件说明:\n"
-            "1 螺栓头\n"
-            "2 上垫圈\n"
-            "3 被连接件1\n"
-            "4 被连接件2\n"
-            "5 下垫圈\n"
-            "6 螺母",
+            self._legend_text(),
         )
 
-        painter.setFont(QFont("Avenir Next", 11))
+        painter.setFont(QFont("Avenir Next", 10))
         painter.setPen(QPen(QColor("#6B665E"), 1.0))
         painter.drawText(
             right_values_rect,
@@ -105,6 +104,28 @@ class ClampingDiagramWidget(QWidget):
 
     def _build_svg(self) -> str:
         """Return an engineering-style section view in SVG."""
+        if self._joint_type == "through":
+            return self._build_through_svg()
+        return self._build_tapped_svg()
+
+    def _legend_text(self) -> str:
+        if self._joint_type == "through":
+            return (
+                "零件说明:\n"
+                "1 螺栓头\n"
+                "2 上被连接件\n"
+                "3 下被连接件\n"
+                "4 螺母"
+            )
+        return (
+            "零件说明:\n"
+            "1 螺栓头\n"
+            "2 上被连接件\n"
+            "3 下被连接件/基体\n"
+            "4 内螺纹啮合区"
+        )
+
+    def _build_through_svg(self) -> str:
         return """
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540">
   <defs>
@@ -136,9 +157,6 @@ class ClampingDiagramWidget(QWidget):
   <polygon points="308,86 432,86 454,118 432,150 308,150 286,118"
            fill="url(#steel)" stroke="#7f7260" stroke-width="2"/>
 
-  <!-- Washer (top, in contact with head and upper member) -->
-  <rect x="300" y="150" width="140" height="12" rx="2" fill="#d9cfbf" stroke="#7f7260" stroke-width="1.5"/>
-
   <!-- Shank -->
   <rect x="350" y="150" width="40" height="268" fill="url(#shank)" stroke="#7f7260" stroke-width="2"/>
 
@@ -153,9 +171,6 @@ class ClampingDiagramWidget(QWidget):
     <line x1="350" y1="380" x2="390" y2="394"/>
     <line x1="350" y1="396" x2="390" y2="410"/>
   </g>
-
-  <!-- Washer (bottom, in contact with lower member and nut) -->
-  <rect x="300" y="346" width="140" height="12" rx="2" fill="#d9cfbf" stroke="#7f7260" stroke-width="1.5"/>
 
   <!-- Nut -->
   <polygon points="308,358 432,358 454,390 432,422 308,422 286,390"
@@ -175,11 +190,88 @@ class ClampingDiagramWidget(QWidget):
   <!-- Component index markers -->
   <g font-family="Arial, sans-serif" font-size="12" fill="#4b433a">
     <circle cx="270" cy="118" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="266" y="123">1</text>
-    <circle cx="284" cy="156" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="280" y="161">2</text>
-    <circle cx="176" cy="206" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="172" y="211">3</text>
-    <circle cx="176" cy="300" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="172" y="305">4</text>
-    <circle cx="284" cy="352" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="280" y="357">5</text>
-    <circle cx="270" cy="390" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="266" y="395">6</text>
+    <circle cx="176" cy="206" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="172" y="211">2</text>
+    <circle cx="176" cy="300" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="172" y="305">3</text>
+    <circle cx="270" cy="390" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="266" y="395">4</text>
+  </g>
+
+</svg>
+""".strip()
+
+    def _build_tapped_svg(self) -> str:
+        return """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540">
+  <defs>
+    <linearGradient id="steel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f0eee9"/>
+      <stop offset="50%" stop-color="#d8d2c7"/>
+      <stop offset="100%" stop-color="#bdb3a5"/>
+    </linearGradient>
+    <linearGradient id="shank" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#c8bfb1"/>
+      <stop offset="50%" stop-color="#f3efe6"/>
+      <stop offset="100%" stop-color="#b5ab9d"/>
+    </linearGradient>
+    <pattern id="hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(30)">
+      <line x1="0" y1="0" x2="0" y2="10" stroke="#b9ad9b" stroke-width="2"/>
+    </pattern>
+  </defs>
+
+  <!-- Clamped members -->
+  <rect x="160" y="162" width="470" height="92" fill="#e8dfd3" stroke="#9e907d" stroke-width="2"/>
+  <rect x="160" y="254" width="470" height="92" fill="#e8dfd3" stroke="#9e907d" stroke-width="2"/>
+  <rect x="160" y="162" width="470" height="92" fill="url(#hatch)" opacity="0.28"/>
+  <rect x="160" y="254" width="470" height="92" fill="url(#hatch)" opacity="0.28"/>
+
+  <!-- Contact plane -->
+  <line x1="160" y1="254" x2="630" y2="254" stroke="#8f816d" stroke-width="1.6"/>
+
+  <!-- Bolt head -->
+  <polygon points="308,86 432,86 454,118 432,150 308,150 286,118"
+           fill="url(#steel)" stroke="#7f7260" stroke-width="2"/>
+
+  <!-- Shank -->
+  <rect x="350" y="150" width="40" height="214" fill="url(#shank)" stroke="#7f7260" stroke-width="2"/>
+
+  <!-- Threaded shank in tapped hole -->
+  <rect x="350" y="286" width="40" height="132" fill="#c9bfae" opacity="0.55"/>
+  <g stroke="#6f6251" stroke-width="1.5">
+    <line x1="350" y1="292" x2="390" y2="306"/>
+    <line x1="350" y1="308" x2="390" y2="322"/>
+    <line x1="350" y1="324" x2="390" y2="338"/>
+    <line x1="350" y1="340" x2="390" y2="354"/>
+    <line x1="350" y1="356" x2="390" y2="370"/>
+    <line x1="350" y1="372" x2="390" y2="386"/>
+    <line x1="350" y1="388" x2="390" y2="402"/>
+  </g>
+
+  <!-- Internal thread / tapped region -->
+  <rect x="338" y="286" width="64" height="132" fill="none" stroke="#7f7260" stroke-width="1.6"/>
+  <g stroke="#6f6251" stroke-width="1.3">
+    <line x1="338" y1="294" x2="350" y2="304"/>
+    <line x1="390" y1="304" x2="402" y2="294"/>
+    <line x1="338" y1="314" x2="350" y2="324"/>
+    <line x1="390" y1="324" x2="402" y2="314"/>
+    <line x1="338" y1="334" x2="350" y2="344"/>
+    <line x1="390" y1="344" x2="402" y2="334"/>
+    <line x1="338" y1="354" x2="350" y2="364"/>
+    <line x1="390" y1="364" x2="402" y2="354"/>
+    <line x1="338" y1="374" x2="350" y2="384"/>
+    <line x1="390" y1="384" x2="402" y2="374"/>
+    <line x1="338" y1="394" x2="350" y2="404"/>
+    <line x1="390" y1="404" x2="402" y2="394"/>
+  </g>
+  <text x="436" y="408" font-family="Arial, sans-serif" font-size="15" fill="#5a564f">内螺纹</text>
+
+  <!-- Center line -->
+  <line x1="370" y1="70" x2="370" y2="510" stroke="#9b8d7a" stroke-width="1.2" stroke-dasharray="8 8"/>
+
+  <!-- Component index markers -->
+  <g font-family="Arial, sans-serif" font-size="12" fill="#4b433a">
+    <circle cx="270" cy="118" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="266" y="123">1</text>
+    <circle cx="176" cy="206" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="172" y="211">2</text>
+    <circle cx="176" cy="300" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="172" y="305">3</text>
+    <circle cx="430" cy="352" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="426" y="357">4</text>
   </g>
 
 </svg>
@@ -213,7 +305,7 @@ class ClampingDiagramWidget(QWidget):
         painter.setBrush(QColor(251, 248, 243, 235))
         painter.drawRoundedRect(rect, 5, 5)
         painter.setPen(QPen(QColor("#1F1D1A"), 1.0))
-        painter.setFont(QFont("Avenir Next", 10, 700))
+        painter.setFont(QFont("Avenir Next", 9, 700))
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
 
 

@@ -217,3 +217,22 @@
 | What's the goal? | 修复螺栓页 save/load round-trip、热参数验证、R5 结果语义、流程图重复渲染 |
 | What have I learned? | Phase 9 所有 core+UI+test 工作已完成（33 interference tests, 131 total pass），仅文档收尾遗漏 |
 | What have I done? | Phase 9: 正确性修正+ISO 286 配合选择+装配流程+重复载荷+追溯，全部实现并验证 |
+
+## Session: 2026-03-18
+
+### Phase 11: Interference-Fit Chapter Deep Review
+- **Status:** in_progress
+- **Started:** 2026-03-18
+- Actions taken:
+  - 读取并应用 `using-superpowers` 与 `planning-with-files` 技能
+  - 检查既有规划文件并切换到“过盈配合深度审查”上下文
+  - 记录本轮目标：核对过盈配合章节的 bug、遗漏、逻辑问题，并对照 DIN 7190 / 同类工具案例
+  - 检测到仓库存在未提交的螺栓相关修改，本轮不触碰这些文件
+  - 首轮审读 `interference` 设计文档与 `calculator.py`，发现设计文档的范围说明已落后于当前实现（fit selection / assembly / repeated load 已实现）
+  - 继续审读 `fit_selection.py`、`assembly.py`、`interference_fit_page.py`，确认 UI 已暴露这些能力，且 repeated-load 不并入基础 verdict
+  - 开始检查 `tests/core/interference/*` 的断言边界，标记出尚未锁定的风险点（公差带边界、热装冷却项、报告提示语义）
+  - 读通 `InterferenceFitPage` 的 payload / render / report 链路与 UI 测试，暂未发现明显“字段未接线”问题，当前风险更偏向边界覆盖与章节说明精度
+- Files created/modified:
+  - task_plan.md (updated)
+  - findings.md (updated)
+  - progress.md (updated)

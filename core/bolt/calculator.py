@@ -67,6 +67,7 @@ def _resolve_compliance(
     d: float = 0, p: float = 0,
     bearing_d_inner: float = 0, bearing_d_outer: float = 0,
     clamped: Dict[str, Any] | None = None,
+    joint_type: str = "tapped",
 ) -> Dict[str, float]:
     has_compliance = "bolt_compliance" in stiffness and "clamped_compliance" in stiffness
     has_stiffness = "bolt_stiffness" in stiffness and "clamped_stiffness" in stiffness
@@ -94,7 +95,7 @@ def _resolve_compliance(
                 raise InputError("被夹件层数须在 1~10 之间")
             l_K = sum(float(layer["l_K"]) for layer in layers)
             _positive(l_K, "clamped.total_thickness (各层求和)")
-            bolt_r = calculate_bolt_compliance(d, p, l_K, E_bolt)
+            bolt_r = calculate_bolt_compliance(d, p, l_K, E_bolt, joint_type=joint_type)
             delta_s = bolt_r["delta_s"]
             d_h = bearing_d_inner
             for layer in layers:
@@ -105,16 +106,25 @@ def _resolve_compliance(
             # ---------- 单层模式（保持不变）----------
             E_clamped = _positive(float(stiffness.get("E_clamped", 210_000)), "stiffness.E_clamped")
             l_K = _positive(float(cl.get("total_thickness", 0)), "clamped.total_thickness")
-            bolt_r = calculate_bolt_compliance(d, p, l_K, E_bolt)
+            bolt_r = calculate_bolt_compliance(d, p, l_K, E_bolt, joint_type=joint_type)
             delta_s = bolt_r["delta_s"]
             solid_type = str(cl.get("basic_solid", "cylinder"))
             D_A = float(cl.get("D_A", bearing_d_outer))
             d_h = bearing_d_inner
             D_w = (bearing_d_inner + bearing_d_outer) / 2.0
-            clamp_r = calculate_clamped_compliance(
-                model=solid_type, d_h=d_h, D_w=D_w, D_A=D_A,
-                l_K=l_K, E_clamped=E_clamped,
-            )
+            if solid_type == "sleeve":
+                clamp_r = calculate_clamped_compliance(
+                    model=solid_type,
+                    D_outer=D_A,
+                    D_inner=d_h,
+                    l_K=l_K,
+                    E_clamped=E_clamped,
+                )
+            else:
+                clamp_r = calculate_clamped_compliance(
+                    model=solid_type, d_h=d_h, D_w=D_w, D_A=D_A,
+                    l_K=l_K, E_clamped=E_clamped,
+                )
             delta_p = clamp_r["delta_p"]
         auto_modeled = True
     else:
@@ -283,6 +293,7 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         stiffness, d=d, p=p,
         bearing_d_inner=bearing_d_inner, bearing_d_outer=bearing_d_outer,
         clamped=clamped,
+        joint_type=joint_type,
     )
 
     delta_s = compliance["delta_s"]
@@ -486,6 +497,78 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         f_a_perm = 0.1 * rp02 * geometry["As"] / phi_n
         pass_additional = fa_max <= f_a_perm
 
+    # --- R8 螺纹脱扣校核 ---
+    # VDI 2230: 比较螺栓最大拉力与内/外螺纹的剪切承载力。
+    # 外螺纹（螺栓侧）剪切面积 A_SB = π × d3 × m_eff × C1
+    # 内螺纹（螺母/壳体侧）剪切面积 A_SM = π × d × m_eff × C3
+    # C1 ≈ 0.75 (ISO 公制标准螺纹的螺纹啮合修正系数)
+    # C3 ≈ 0.58 (内螺纹参与承载的有效比例)
+    # 安全系数 S_strip = min(F_strip_B, F_strip_M) / F_bolt_max
+    thread_strip = data.get("thread_strip", {})
+    m_eff = _float_or_none(thread_strip.get("m_eff"), "thread_strip.m_eff")
+    tau_BM = _float_or_none(thread_strip.get("tau_BM"), "thread_strip.tau_BM")
+    r8_active = m_eff is not None and m_eff > 0
+    r8_note = ""
+    strip_result: Dict[str, Any] = {}
+
+    if r8_active:
+        _positive(m_eff, "thread_strip.m_eff")
+        # 螺栓侧（外螺纹）剪切强度：默认取 Rp0.2 × 0.6
+        tau_BS = float(thread_strip.get("tau_BS", rp02 * 0.6))
+        _positive(tau_BS, "thread_strip.tau_BS")
+        # 内螺纹侧剪切强度（螺母/壳体材料）
+        if tau_BM is None or tau_BM <= 0:
+            raise InputError(
+                "thread_strip.tau_BM（内螺纹材料剪切强度）必须 > 0。"
+                "钢螺母一般可取 Rp0.2×0.6；铝壳体约 150~200 MPa。"
+            )
+        _positive(tau_BM, "thread_strip.tau_BM")
+
+        C1 = float(thread_strip.get("C1", 0.75))
+        C3 = float(thread_strip.get("C3", 0.58))
+
+        # 外螺纹（螺栓侧）剪切面积和承载力
+        A_SB = math.pi * geometry["d3"] * m_eff * C1
+        F_strip_bolt = A_SB * tau_BS
+
+        # 内螺纹（螺母/壳体侧）剪切面积和承载力
+        A_SM = math.pi * d * m_eff * C3
+        F_strip_nut = A_SM * tau_BM
+
+        # 螺栓最大拉力
+        F_bolt_max = f_bolt_work_max
+
+        # 哪一侧先脱扣
+        if F_strip_bolt <= F_strip_nut:
+            critical_side = "bolt"
+            F_strip_min = F_strip_bolt
+        else:
+            critical_side = "nut"
+            F_strip_min = F_strip_nut
+
+        strip_safety = F_strip_min / F_bolt_max if F_bolt_max > 0 else math.inf
+        strip_safety_required = float(thread_strip.get("safety_required", 1.25))
+        pass_strip = strip_safety >= strip_safety_required
+
+        side_cn = "螺栓侧（外螺纹）" if critical_side == "bolt" else "螺母/壳体侧（内螺纹）"
+        r8_note = f"脱扣临界侧：{side_cn}"
+
+        strip_result = {
+            "m_eff_mm": m_eff,
+            "A_SB_mm2": A_SB,
+            "A_SM_mm2": A_SM,
+            "tau_BS_MPa": tau_BS,
+            "tau_BM_MPa": tau_BM,
+            "F_strip_bolt_N": F_strip_bolt,
+            "F_strip_nut_N": F_strip_nut,
+            "F_bolt_max_N": F_bolt_max,
+            "critical_side": critical_side,
+            "strip_safety": strip_safety,
+            "strip_safety_required": strip_safety_required,
+            "C1": C1,
+            "C3": C3,
+        }
+
     # --- R7 支承面压强校核 ---
     p_g_allow = float(bearing.get("p_G_allow", 0.0))
     r7_active = p_g_allow > 0
@@ -527,6 +610,8 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         checks_out["fatigue_ok"] = pass_fatigue
     if r7_active:
         checks_out["bearing_pressure_ok"] = pass_bearing
+    if r8_active:
+        checks_out["thread_strip_ok"] = pass_strip
 
     stresses_out = {
         "sigma_ax_assembly": sigma_ax_assembly,
@@ -580,6 +665,8 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         "tightening_method": tightening_method,
         "r3_note": r3_note,
         "r7_note": r7_note,
+        "r8_note": r8_note,
+        "thread_strip": strip_result,
         "thermal": {
             "thermal_loss_effective_N": thermal_effective,
             "thermal_loss_ratio": thermal_loss_ratio,

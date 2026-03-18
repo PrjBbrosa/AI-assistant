@@ -192,6 +192,43 @@ class BoltPageStateTests(unittest.TestCase):
         self.assertIn("0.5~0.7", n_widget.toolTip())  # type: ignore[attr-defined]
         self.assertIn("0.5~0.7", page._widget_hints[n_widget])  # type: ignore[index]
 
+    def test_manual_stiffness_overrides_default_compliance_values(self) -> None:
+        page = BoltPage()
+
+        page._field_widgets["stiffness.bolt_stiffness"].setText("1000000")  # type: ignore[attr-defined]
+        page._field_widgets["stiffness.clamped_stiffness"].setText("2000000")  # type: ignore[attr-defined]
+
+        payload = page._build_payload()
+
+        self.assertNotIn("bolt_compliance", payload["stiffness"])
+        self.assertNotIn("clamped_compliance", payload["stiffness"])
+        self.assertEqual(payload["stiffness"]["bolt_stiffness"], 1000000.0)
+        self.assertEqual(payload["stiffness"]["clamped_stiffness"], 2000000.0)
+
+    def test_diagram_switches_with_joint_type(self) -> None:
+        page = BoltPage()
+
+        page._field_widgets["elements.joint_type"].setCurrentText("螺纹孔连接")  # type: ignore[attr-defined]
+        page._sync_joint_diagram_from_ui()
+        tapped_svg = page.diagram_widget._build_svg()  # type: ignore[attr-defined]
+
+        page._field_widgets["elements.joint_type"].setCurrentText("通孔螺栓连接")  # type: ignore[attr-defined]
+        page._sync_joint_diagram_from_ui()
+        through_svg = page.diagram_widget._build_svg()  # type: ignore[attr-defined]
+
+        self.assertIn("内螺纹", tapped_svg)
+        self.assertNotIn("Nut", tapped_svg)
+        self.assertIn("Nut", through_svg)
+
+    def test_diagram_help_explains_compliance(self) -> None:
+        page = BoltPage()
+
+        help_text = page.diagram_help_label.text()  # type: ignore[attr-defined]
+
+        self.assertIn("柔度", help_text)
+        self.assertIn("δ = Δl / F", help_text)
+        self.assertIn("phi", help_text)
+
 
 if __name__ == "__main__":
     unittest.main()
