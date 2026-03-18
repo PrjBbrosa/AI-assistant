@@ -50,3 +50,113 @@
 
 ## Visual/Browser Findings
 - 已完成 VDI 官方页面、eAssistant 手册页面和 PCB 白皮书检索，确认了实现所需的主流程和核心方程
+
+## 2026-03-16 Interference-Fit Review Findings
+
+### Scope Confirmed
+- 本轮继续保留当前圆柱面模型边界：`实心轴 + 厚壁轮毂 + 线弹性 + 常摩擦`
+- 用户明确排除：
+  - `centrifugal force`
+  - `stepped hub geometry`
+- 用户要求纳入梳理与后续执行的方向：
+  - 正确性修正（安全系数、联合作用、结论语义）
+  - ISO 286 配合/公差搜索
+  - shrink/force fit 装配章节
+  - repeated load / fretting corrosion
+  - 结果与报告的可追溯性
+
+### High-Severity Gaps (已修复)
+- ~~`delta_required` / `fit_range_ok` 当前未纳入 `checks.slip_safety_min`~~ → 已修正，`slip_safety_min` 参与 p_required 计算
+- ~~扭矩与轴向力联合作用未进入总判定~~ → 已修正，`combined_ok` 进入 `overall_pass` 且 UI 展示
+- ~~`fit_range_ok` 语义偏乐观~~ → 已收紧，`p_required` 取 torque/axial/combined/gap 的 max
+
+### UI / Payload Semantics
+- 以下字段是“辅助选择器”，并不直接进入 calculator：
+  - `materials.shaft_material`
+  - `materials.hub_material`
+  - `roughness.profile`
+- `options.curve_points` 只影响压入力曲线的离散点数，不影响任何校核通过/不通过结论
+- 报告中目前缺少参数来源追溯，无法看出材料/粗糙度/配合范围来自：
+  - 手工输入
+  - 预设库
+  - 标准版本
+
+### eAssistant / DIN 7190 Capability Mapping
+- 已被当前实现覆盖：
+  - `KA` 工况系数
+  - `p_min >= p_r + p_b` 张口缝条件
+  - `Uw = U - k(RzA + RzI)` 粗糙度压平
+  - min/mean/max 结果组织
+  - 服役摩擦与装配摩擦拆分
+- Phase 9 已实现（2026-03-17 验证通过，131 tests all pass）：
+  - ISO 286 配合/公差搜索与推荐（`fit_selection.py`，优选配合 + 偏差换算）
+  - shrink fit 温差/装配间隙（`assembly.py`，热装温度计算 + 间隙模式）
+  - force fit 压入/压出摩擦与装配工艺说明（`assembly.py`，独立压入/压出摩擦系数）
+  - repeated load / fretting corrosion（calculator 内 `repeated_load_mode` + applicability gate）
+  - 结果与报告的输入来源追溯（material/profile/fit source/assembly method 全链路追溯）
+- 尚未覆盖且本轮明确排除：
+  - centrifugal force / speed
+  - stepped hub / stepped shaft geometry
+
+### Verification Notes
+- 已运行 `python3 -m unittest tests.core.interference.test_calculator tests.ui.test_interference_page -v`
+- 结果：10 个测试全部通过
+- 额外手动验证发现：
+  - 存在 `torque_ok=True`、`axial_ok=True`、但 `combined_ok=False` 的输入组合
+  - 存在 `torque_ok=False`、但 `fit_range_ok=True` 的输入组合
+
+## 2026-03-17 Bolt Page Deep Review Findings
+
+### Scope Confirmed
+- 重点审查对象：
+  - `app/ui/pages/bolt_page.py`
+  - `app/ui/pages/bolt_flowchart.py`
+  - `app/ui/input_condition_store.py`
+  - `core/bolt/calculator.py`
+- 审查重点：
+  - 页面前后逻辑是否一致
+  - 参数是否真正进入 payload / calculator
+  - 工况覆盖边界是否明确
+  - 是否存在无效配置、陈旧文案和 UI-only 虚拟参数
+
+### High-Severity Findings
+- R5 正式判据已用 `sigma_vm_work`，但页面摘要和导出报告仍显示 `sigma_ax_work`，会把扭矩法失败工况伪装成“低利用率”
+- 自定义热膨胀系数留空时，core 会静默回退成钢默认值 `11.5e-6`，热损失估算可能被错误压成 0
+- 螺栓页输入条件快照保存的是显示文本，标准螺距如 `1.5（粗牙）` 回灌时会直接触发 `ValueError`
+
+### Medium-Severity Findings
+- `calculation_mode` 不会被保存到输入条件快照中，恢复后页面总会回到 `design`
+- raw payload 中的 `joint_type/basic_solid/surface_class/tightening_method/surface_treatment` 不会恢复到 UI choice 控件
+- 多层热参数 `alpha` 留空时，页面层直接抛原生 `ValueError`，没有转成字段级 `InputError`
+- 流程图详情页在重复计算时会重复堆叠输入回显控件
+
+### Low-Severity / Cleanup Findings
+- `summary_key` 配置未使用
+- `tightening_method` 字段说明仍写“仅记录，不参与算法分支”，与当前实现不符
+- 动态 tooltip 已更新，但底部说明栏依赖的 `_widget_hints` 没有同步更新
+
+### Coverage Assessment
+- 已覆盖：
+  - R3/R4/R5
+  - 温度损失
+  - 简化 Goodman 疲劳
+  - 可选 R7 支承面压强
+  - 单层/多层柔度建模
+- 尚未覆盖或仅保留占位：
+  - 偏心/弯矩工况
+  - 螺纹脱扣
+  - 完整疲劳谱
+  - 通孔双侧不同支承几何
+
+### Verification Notes
+- 已运行：
+  - `QT_QPA_PLATFORM=offscreen python3 -m pytest tests/core/bolt/test_calculator.py tests/core/bolt/test_compliance_model.py tests/ui/test_input_condition_store.py -q`
+- 结果：
+  - `76 passed`
+- 额外 headless 复现确认：
+  - snapshot round-trip 会因 `1.5（粗牙）` 崩溃
+  - `calculation_mode` 快照恢复失败
+  - raw payload choice 状态恢复失败
+  - 自定义热参数会静默回退成钢默认值
+  - 多层自定义 alpha 空值会抛原生 `ValueError`
+  - 重复计算会让 R 步骤详情页输入控件数量从 `54 -> 108`

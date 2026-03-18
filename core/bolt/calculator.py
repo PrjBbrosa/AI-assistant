@@ -26,6 +26,20 @@ def _positive(value: float, name: str, allow_zero: bool = False) -> float:
     return value
 
 
+def _float_or_none(value: Any, name: str) -> float | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool):
+        raise InputError(f"{name} 必须为有限数字，当前值: {value}")
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise InputError(f"{name} 必须为数字，当前值: {value}") from exc
+    if not math.isfinite(parsed):
+        raise InputError(f"{name} 必须为有限数字，当前值: {value}")
+    return parsed
+
+
 def load_input_json(path: Path) -> Dict[str, Any]:
     """Load input JSON and normalize errors as InputError."""
     try:
@@ -291,18 +305,17 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     # 条件：用户手动输入的 thermal_force_loss 为 0 或空时才使用估算值；
     #        需要温度差、刚度和夹紧长度信息齐备才能估算。
     # ------------------------------------------------------------------
-    _ALPHA_STEEL_DEFAULT = 11.5e-6  # 1/K
-    alpha_bolt = float(operating.get("alpha_bolt", _ALPHA_STEEL_DEFAULT))
-    alpha_parts = float(operating.get("alpha_parts", _ALPHA_STEEL_DEFAULT))
+    alpha_bolt = _float_or_none(operating.get("alpha_bolt"), "operating.alpha_bolt")
+    alpha_parts = _float_or_none(operating.get("alpha_parts"), "operating.alpha_parts")
 
     thermal_auto_estimated = False
     thermal_auto_value = 0.0
     layer_thermals = operating.get("layer_thermals")
 
     if thermal_force_loss == 0.0:
-        temp_bolt = operating.get("temp_bolt")
-        temp_parts = operating.get("temp_parts")
-        l_K = clamped.get("total_thickness")
+        temp_bolt = _float_or_none(operating.get("temp_bolt"), "operating.temp_bolt")
+        temp_parts = _float_or_none(operating.get("temp_parts"), "operating.temp_parts")
+        l_K = _float_or_none(clamped.get("total_thickness"), "clamped.total_thickness")
 
         if (
             temp_bolt is not None
@@ -310,20 +323,53 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
             and l_K is not None
         ):
             try:
-                temp_bolt = float(temp_bolt)
-                temp_parts = float(temp_parts)
-                l_K = float(l_K)
                 delta_T = temp_bolt - temp_parts
                 if delta_T != 0.0 and l_K > 0.0:
                     if layer_thermals:
+                        if alpha_bolt is None:
+                            raise InputError("operating.alpha_bolt 缺失，无法自动估算多层热损失。")
                         # 多层热位移：逐层求和
+                        parsed_layer_thermals = []
+                        for idx, lt in enumerate(layer_thermals):
+                            if not isinstance(lt, dict):
+                                raise InputError(
+                                    f"operating.layer_thermals[{idx}] 必须为对象。"
+                                )
+                            layer_alpha = _float_or_none(
+                                lt.get("alpha"),
+                                f"operating.layer_thermals[{idx}].alpha",
+                            )
+                            layer_thickness = _float_or_none(
+                                lt.get("l_K"),
+                                f"operating.layer_thermals[{idx}].l_K",
+                            )
+                            if layer_alpha is None:
+                                raise InputError(
+                                    f"operating.layer_thermals[{idx}].alpha 缺失，无法自动估算热损失。"
+                                )
+                            if layer_thickness is None:
+                                raise InputError(
+                                    f"operating.layer_thermals[{idx}].l_K 缺失，无法自动估算热损失。"
+                                )
+                            parsed_layer_thermals.append(
+                                {"alpha": layer_alpha, "l_K": layer_thickness}
+                            )
                         delta_l_parts = sum(
-                            float(lt["alpha"]) * float(lt["l_K"]) * delta_T
-                            for lt in layer_thermals
+                            lt["alpha"] * lt["l_K"] * delta_T
+                            for lt in parsed_layer_thermals
                         )
                         delta_l_bolt = alpha_bolt * l_K * delta_T
                         thermal_auto_value = abs(delta_l_parts - delta_l_bolt) / (delta_s + delta_p)
                     else:
+                        if alpha_bolt is None or alpha_parts is None:
+                            missing_name = (
+                                "operating.alpha_bolt"
+                                if alpha_bolt is None
+                                else "operating.alpha_parts"
+                            )
+                            raise InputError(
+                                f"{missing_name} 缺失，无法自动估算热损失。"
+                            )
                         # 单层热损失：保持原公式
                         c_s = 1.0 / delta_s  # 螺栓刚度 N/mm
                         c_p = 1.0 / delta_p  # 被夹件刚度 N/mm
@@ -335,7 +381,9 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
                     if thermal_auto_value > 0.0:
                         thermal_force_loss = thermal_auto_value
                         thermal_auto_estimated = True
-            except (ValueError, ZeroDivisionError):
+            except InputError:
+                raise
+            except ZeroDivisionError:
                 # 参数不全或异常时静默跳过，保留 thermal_force_loss = 0
                 pass
 

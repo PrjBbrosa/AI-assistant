@@ -204,6 +204,52 @@ class TestThermalMaterial:
         assert thermal["thermal_auto_estimated"] is True
         assert thermal["thermal_auto_value_N"] > 0
 
+    def test_missing_alpha_inputs_raise_when_auto_thermal_estimation_needed(self):
+        """热校核启用自动热损失估算时，缺少 alpha 不应静默回退为钢材默认值。"""
+        data = _base_input()
+        data["options"] = {"check_level": "thermal"}
+        data["loads"]["thermal_force_loss"] = 0
+        data["operating"] = {
+            "temp_bolt": 120.0,
+            "temp_parts": 20.0,
+        }
+        data["clamped"] = {"total_thickness": 20.0}
+
+        with pytest.raises(InputError, match="alpha_bolt|alpha_parts"):
+            calculate_vdi2230_core(data)
+
+    def test_invalid_thermal_temperature_input_raises_instead_of_silent_skip(self):
+        """热估算依赖的温度输入格式错误时，不应静默跳过热损失计算。"""
+        data = _base_input()
+        data["options"] = {"check_level": "thermal"}
+        data["loads"]["thermal_force_loss"] = 0
+        data["operating"] = {
+            "temp_bolt": "oops",
+            "temp_parts": 20.0,
+            "alpha_bolt": 11.5e-6,
+            "alpha_parts": 23.0e-6,
+        }
+        data["clamped"] = {"total_thickness": 20.0}
+
+        with pytest.raises(InputError, match="operating.temp_bolt"):
+            calculate_vdi2230_core(data)
+
+    def test_nan_thermal_temperature_input_raises_instead_of_silent_skip(self):
+        """NaN/inf 这类无效数值也应被视为坏输入，而不是被热估算静默吞掉。"""
+        data = _base_input()
+        data["options"] = {"check_level": "thermal"}
+        data["loads"]["thermal_force_loss"] = 0
+        data["operating"] = {
+            "temp_bolt": float("nan"),
+            "temp_parts": 20.0,
+            "alpha_bolt": 11.5e-6,
+            "alpha_parts": 23.0e-6,
+        }
+        data["clamped"] = {"total_thickness": 20.0}
+
+        with pytest.raises(InputError, match="operating.temp_bolt"):
+            calculate_vdi2230_core(data)
+
     def test_same_material_no_thermal_loss(self):
         """相同材料、相同温度 → 无热损失。"""
         data = _base_input()

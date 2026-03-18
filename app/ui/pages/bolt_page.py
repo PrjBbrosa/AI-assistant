@@ -430,7 +430,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "assembly.tightening_method",
                 "拧紧方式",
                 "-",
-                "装配方式选项。首版用于记录，不参与算法分支。",
+                "装配方式选项。用于 αA 建议范围提示，并影响扭矩法下 R5 的残余扭转载荷修正。",
                 widget_type="choice",
                 options=("扭矩法", "转角法", "液压拉伸法", "热装法"),
                 default="扭矩法",
@@ -1152,6 +1152,19 @@ class BoltPage(QWidget):
         newbie = BEGINNER_GUIDES.get(spec.field_id, "可先加载测试案例 1 运行，再按实际工况逐项替换。")
         return f"{spec.label}{unit_part}\n参数说明：{spec.hint}\n新手提示：{newbie}"
 
+    def _set_dynamic_field_help(self, field_id: str, extra_hint: str = "") -> None:
+        widget = self._field_widgets.get(field_id)
+        spec = self._field_specs.get(field_id)
+        if widget is None or spec is None:
+            return
+        help_text = self._build_field_help(spec)
+        if extra_hint:
+            help_text = f"{help_text}\n当前建议：{extra_hint}"
+        widget.setToolTip(help_text)  # type: ignore[attr-defined]
+        self._widget_hints[widget] = help_text
+        if widget.hasFocus():
+            self.info_label.setText(help_text)
+
     def _current_check_level(self) -> str:
         level = self.check_level_combo.currentData()
         return str(level) if level else "basic"
@@ -1382,15 +1395,14 @@ class BoltPage(QWidget):
 
     def _on_tightening_method_changed(self, text: str) -> None:
         """拧紧方式变更时更新 αA 字段的 hint/tooltip。"""
-        alpha_w = self._field_widgets.get("tightening.alpha_A")
-        if alpha_w is not None and isinstance(alpha_w, QLineEdit):
-            alpha_w.setToolTip(ALPHA_A_HINTS.get(text, ""))
+        self._set_dynamic_field_help("tightening.alpha_A", ALPHA_A_HINTS.get(text, ""))
 
     def _on_position_changed(self, text: str) -> None:
         """载荷导入位置变更时更新 n 字段的 hint/tooltip。"""
-        n_w = self._field_widgets.get("stiffness.load_introduction_factor_n")
-        if n_w is not None and isinstance(n_w, QLineEdit):
-            n_w.setToolTip(N_POSITION_HINTS.get(text, ""))
+        self._set_dynamic_field_help(
+            "stiffness.load_introduction_factor_n",
+            N_POSITION_HINTS.get(text, ""),
+        )
 
     def _on_thread_d_changed(self, text: str) -> None:
         """公称直径下拉变更时更新螺距选项和自定义字段可见性。"""
@@ -1658,17 +1670,70 @@ class BoltPage(QWidget):
         label.style().polish(label)
 
     def _capture_input_snapshot(self) -> dict[str, Any]:
-        return build_form_snapshot(
+        snapshot = build_form_snapshot(
             self._field_specs.values(),
             self._read_widget_value,
-            extra_state={"check_level": self._current_check_level()},
+            extra_state={
+                "check_level": self._current_check_level(),
+                "calculation_mode": self.calc_mode_combo.currentData() or "design",
+            },
         )
+        fastener = snapshot.setdefault("inputs", {}).setdefault("fastener", {})
+        d_raw = self._resolve_thread_d()
+        p_raw = self._resolve_thread_p()
+        if d_raw:
+            fastener["d"] = d_raw
+        if p_raw:
+            fastener["p"] = p_raw
+        return snapshot
 
     def _apply_input_data(self, data: dict[str, Any]) -> None:
         inputs_data = data.get("inputs")
         inputs = inputs_data if isinstance(inputs_data, dict) else data
         ui_state_data = data.get("ui_state")
         ui_state = ui_state_data if isinstance(ui_state_data, dict) else {}
+        options_data = inputs.get("options")
+        options = options_data if isinstance(options_data, dict) else {}
+        clamped_data = inputs.get("clamped")
+        clamped = clamped_data if isinstance(clamped_data, dict) else {}
+
+        choice_restore_maps: dict[str, dict[str, str]] = {
+            "elements.joint_type": {v: k for k, v in JOINT_TYPE_MAP.items()},
+            "clamped.basic_solid": {v: k for k, v in BASIC_SOLID_MAP.items()},
+            "clamped.surface_class": {v: k for k, v in SURFACE_CLASS_MAP.items()},
+            "assembly.tightening_method": {v: k for k, v in TIGHTENING_METHOD_MAP.items()},
+            "options.surface_treatment": {v: k for k, v in SURFACE_TREATMENT_MAP.items()},
+        }
+
+        def _parse_pitch_text(raw: Any) -> float | None:
+            text = str(raw).strip()
+            if not text:
+                return None
+            candidates = [text]
+            if "（" in text:
+                candidates.append(text.split("（", 1)[0].strip())
+            for candidate in candidates:
+                try:
+                    return float(candidate)
+                except ValueError:
+                    continue
+            return None
+
+        def _restore_choice_text(field_id: str, raw: Any) -> str:
+            if field_id == "stiffness.auto_compliance":
+                if isinstance(raw, bool):
+                    return "自动计算" if raw else "手动输入"
+                text = str(raw).strip().lower()
+                if text in {"true", "1", "自动计算"}:
+                    return "自动计算"
+                if text in {"false", "0", "手动输入"}:
+                    return "手动输入"
+                return str(raw)
+            restore_map = choice_restore_maps.get(field_id)
+            raw_text = str(raw).strip()
+            if restore_map is None:
+                return raw_text
+            return restore_map.get(raw_text, raw_text)
 
         self._clear()
         for spec in self._field_specs.values():
@@ -1683,7 +1748,7 @@ class BoltPage(QWidget):
             if value is None:
                 continue
             widget = self._field_widgets[spec.field_id]
-            text = str(value)
+            text = _restore_choice_text(spec.field_id, value)
             # 螺纹直径：JSON 中存的是数值 10，需转换为 "M10"
             if spec.field_id == "fastener.d" and isinstance(widget, QComboBox):
                 d_key = f"M{int(float(text))}" if text.replace(".", "").isdigit() else text
@@ -1699,8 +1764,12 @@ class BoltPage(QWidget):
             # 螺距：JSON 中存的是数值 1.5，需匹配下拉中含该数值的项
             if spec.field_id == "fastener.p" and isinstance(widget, QComboBox):
                 matched = False
+                pitch_value = _parse_pitch_text(text)
                 for i in range(widget.count()):
-                    if widget.itemData(i) is not None and float(widget.itemData(i)) == float(text):
+                    item_value = widget.itemData(i)
+                    if pitch_value is None or item_value is None:
+                        continue
+                    if float(item_value) == pitch_value:
                         widget.setCurrentIndex(i)
                         matched = True
                         break
@@ -1717,11 +1786,28 @@ class BoltPage(QWidget):
             else:
                 widget.setText(text)  # type: ignore[attr-defined]
 
+        raw_choice_fallbacks: tuple[tuple[str, dict[str, Any], str], ...] = (
+            ("elements.joint_type", options, "joint_type"),
+            ("clamped.basic_solid", clamped, "basic_solid"),
+            ("clamped.surface_class", clamped, "surface_class"),
+            ("assembly.tightening_method", options, "tightening_method"),
+            ("options.surface_treatment", options, "surface_treatment"),
+        )
+        for field_id, section, key in raw_choice_fallbacks:
+            if field_id in ui_state or key not in section:
+                continue
+            widget = self._field_widgets.get(field_id)
+            if not isinstance(widget, QComboBox):
+                continue
+            restored_text = _restore_choice_text(field_id, section[key])
+            idx = widget.findText(restored_text)
+            if idx >= 0:
+                widget.setCurrentIndex(idx)
+
         # ---------- 多层被夹件 fallback 恢复（用于加载原始 payload JSON）----------
         # 正常 save/load 流程中，通用循环已通过 ui_state 恢复所有层字段。
         # 此处仅处理 inputs 中有 clamped.layers 但 ui_state 中无层字段的情况。
-        clamped_data = inputs.get("clamped", {})
-        saved_layers = clamped_data.get("layers")
+        saved_layers = clamped.get("layers")
         has_layer_ui_state = any(
             k.startswith("clamped.layer_") for k in ui_state
         )
@@ -1773,9 +1859,16 @@ class BoltPage(QWidget):
         if "check_level" in ui_state:
             self._set_check_level(str(ui_state["check_level"]))
         else:
-            options = inputs.get("options")
-            if isinstance(options, dict) and "check_level" in options:
+            if "check_level" in options:
                 self._set_check_level(str(options["check_level"]))
+
+        calc_mode = ui_state.get("calculation_mode")
+        if calc_mode is None:
+            calc_mode = options.get("calculation_mode")
+        if calc_mode is not None:
+            calc_idx = self.calc_mode_combo.findData(str(calc_mode))
+            if calc_idx >= 0:
+                self.calc_mode_combo.setCurrentIndex(calc_idx)
 
         if "operating.setup_case" not in ui_state:
             fa_val = inputs.get("loads", {}).get("FA_max", 0) if isinstance(inputs.get("loads"), dict) else 0
@@ -1869,6 +1962,17 @@ class BoltPage(QWidget):
 
     def _build_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {}
+
+        def _read_line_float(field_id: str, label: str) -> float:
+            widget = self._field_widgets.get(field_id)
+            raw = widget.text().strip() if isinstance(widget, QLineEdit) else ""
+            if not raw:
+                raise InputError(f"字段 [{label}] 不能为空，请输入数字。")
+            try:
+                return float(raw)
+            except ValueError as exc:
+                raise InputError(f"字段 [{label}] 请输入数字，当前值: {raw}") from exc
+
         for spec in self._field_specs.values():
             if spec.mapping is None:
                 continue
@@ -1923,6 +2027,17 @@ class BoltPage(QWidget):
             treatment_en = SURFACE_TREATMENT_MAP.get(treatment_w.currentText(), "rolled")
             payload.setdefault("options", {})["surface_treatment"] = treatment_en
 
+        check_level = self._current_check_level()
+        if check_level in {"thermal", "fatigue"}:
+            thermal_requirements = (
+                ("operating.bolt_material", "operating.alpha_bolt", "螺栓热膨胀系数"),
+                ("operating.clamped_material", "operating.alpha_parts", "被夹件/基体热膨胀系数"),
+            )
+            for material_id, alpha_id, alpha_label in thermal_requirements:
+                material_w = self._field_widgets.get(material_id)
+                if isinstance(material_w, QComboBox) and material_w.currentText() == "自定义":
+                    _read_line_float(alpha_id, alpha_label)
+
         # ---------- 多层被夹件 payload 构建 ----------
         part_count = self._get_effective_part_count()
         payload.setdefault("clamped", {})["part_count"] = part_count
@@ -1934,14 +2049,10 @@ class BoltPage(QWidget):
             d_h_val = payload.get("bearing", {}).get("bearing_d_inner", 13.0)
 
             for i in range(1, part_count + 1):
-                t_w = self._field_widgets.get(f"clamped.layer_{i}.thickness")
-                da_w = self._field_widgets.get(f"clamped.layer_{i}.D_A")
-                e_w = self._field_widgets.get(f"clamped.layer_{i}.E")
-                alpha_w = self._field_widgets.get(f"clamped.layer_{i}.alpha")
-                t_val = float(t_w.text().strip()) if t_w else 15.0
-                da_val = float(da_w.text().strip()) if da_w else 24.0
-                e_val = float(e_w.text().strip()) if e_w else 210_000.0
-                alpha_val = float(alpha_w.text().strip()) if alpha_w else 11.5e-6
+                t_val = _read_line_float(f"clamped.layer_{i}.thickness", f"第{i}层厚度")
+                da_val = _read_line_float(f"clamped.layer_{i}.D_A", f"第{i}层外径 DA")
+                e_val = _read_line_float(f"clamped.layer_{i}.E", f"第{i}层弹性模量")
+                alpha_val = _read_line_float(f"clamped.layer_{i}.alpha", f"第{i}层热膨胀系数")
                 total_thickness += t_val
                 layers.append({
                     "model": "cylinder",
@@ -2062,8 +2173,8 @@ class BoltPage(QWidget):
             f"• 残余夹紧力: FK,res = {force['F_K_residual_N']:.1f} N  /  需求 {inter['F_K_required_N']:.1f} N",
             f"• 装配等效应力: {stresses['sigma_vm_assembly']:.1f} MPa  /  允许 {stresses['sigma_allow_assembly']:.1f} MPa"
             f"  [{_ratio(stresses['sigma_vm_assembly'], stresses['sigma_allow_assembly'])}]",
-            f"• 服役轴向应力: {stresses['sigma_ax_work']:.1f} MPa  /  允许 {stresses['sigma_allow_work']:.1f} MPa"
-            f"  [{_ratio(stresses['sigma_ax_work'], stresses['sigma_allow_work'])}]",
+            f"• 服役等效应力: {stresses['sigma_vm_work']:.1f} MPa  /  允许 {stresses['sigma_allow_work']:.1f} MPa"
+            f"  [{_ratio(stresses['sigma_vm_work'], stresses['sigma_allow_work'])}]",
             f"• 附加载荷参考: FA,max = {fa_max:.1f} N  /  参考上限 {result.get('references', {}).get('FA_perm_N', 0):.1f} N  (⚠ 参考估算，非 VDI 标准项)",
         ]
         if level in ("thermal", "fatigue"):
@@ -2187,7 +2298,7 @@ class BoltPage(QWidget):
                 f"- FK_required: {inter['F_K_required_N']:.2f} N",
                 f"- FA_perm: {result.get('references', {}).get('FA_perm_N', 0):.2f} N (参考估算)",
                 f"- sigma_vm_assembly: {stresses['sigma_vm_assembly']:.2f} MPa",
-                f"- sigma_ax_work: {stresses['sigma_ax_work']:.2f} MPa",
+                f"- sigma_vm_work: {stresses['sigma_vm_work']:.2f} MPa",
                 "",
                 "输入摘要:",
                 f"- d: {payload.get('fastener', {}).get('d', 'N/A')} mm",

@@ -11,23 +11,19 @@ from PySide6.QtWidgets import (
 
 
 R_STEPS: list[dict[str, Any]] = [
-    {"id": "r0", "title": "R0 输入汇总",  "has_check": False,
-     "summary_key": "r0_summary"},
-    {"id": "r1", "title": "R1 预紧力",    "has_check": False,
-     "summary_key": "r1_summary"},
-    {"id": "r2", "title": "R2 扭矩",      "has_check": False,
-     "summary_key": "r2_summary"},
+    {"id": "r0", "title": "R0 输入汇总",  "has_check": False},
+    {"id": "r1", "title": "R1 预紧力",    "has_check": False},
+    {"id": "r2", "title": "R2 扭矩",      "has_check": False},
     {"id": "r3", "title": "R3 残余夹紧",  "has_check": True,
-     "check_key": "residual_clamp_ok", "summary_key": "r3_summary"},
+     "check_key": "residual_clamp_ok"},
     {"id": "r4", "title": "R4 装配应力",  "has_check": True,
-     "check_key": "assembly_von_mises_ok", "summary_key": "r4_summary"},
+     "check_key": "assembly_von_mises_ok"},
     {"id": "r5", "title": "R5 服役应力",  "has_check": True,
-     "check_key": "operating_axial_ok", "summary_key": "r5_summary"},
+     "check_key": "operating_axial_ok"},
     {"id": "r6", "title": "R6 疲劳",      "has_check": True,
-     "check_key": "fatigue_ok", "visibility": "fatigue",
-     "summary_key": "r6_summary"},
+     "check_key": "fatigue_ok", "visibility": "fatigue"},
     {"id": "r7", "title": "R7 支承面",    "has_check": True,
-     "check_key": "bearing_pressure_ok", "summary_key": "r7_summary"},
+     "check_key": "bearing_pressure_ok"},
 ]
 
 
@@ -201,7 +197,7 @@ class FlowchartNavWidget(QWidget):
             2: f"MA={torque.get('MA_min_Nm', 0):.1f}~{torque.get('MA_max_Nm', 0):.1f} N·m",
             3: f"FK_res={forces.get('F_K_residual_N', 0):,.0f} N  FK_req={inter.get('F_K_required_N', 0):,.0f} N",
             4: f"σ_vm={stresses.get('sigma_vm_assembly', 0):.0f} ≤ {stresses.get('sigma_allow_assembly', 0):.0f} MPa",
-            5: f"σ_vm={stresses.get('sigma_vm_work', stresses.get('sigma_ax_work', 0)):.0f} ≤ {stresses.get('sigma_allow_work', 0):.0f} MPa",
+            5: f"σ_vm={stresses.get('sigma_vm_work', 0):.0f} ≤ {stresses.get('sigma_allow_work', 0):.0f} MPa",
             6: f"σ_a={fatigue.get('sigma_a', 0):.1f} ≤ {fatigue.get('sigma_a_allow', 0):.1f} MPa",
             7: f"p_B={stresses.get('p_bearing', 0):.0f} ≤ {stresses.get('p_G_allow', 0):.0f} MPa"
                if "p_bearing" in stresses else "未设置许用压强",
@@ -365,6 +361,13 @@ class RStepDetailPage(QFrame):
                          field_widgets: dict[str, Any],
                          result: dict[str, Any] | None = None) -> None:
         """构建输入回显区。"""
+        while self._input_layout.count():
+            item = self._input_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+        self._input_labels.clear()
+
         step_id = self._step["id"]
         field_ids = R_STEP_FIELDS.get(step_id, [])
         row = 0
@@ -488,19 +491,26 @@ class RStepDetailPage(QFrame):
             )
         if step_id == "r5":
             k_tau = stresses.get("k_tau", 0)
-            vm_work = stresses.get("sigma_vm_work", stresses.get("sigma_ax_work", 0))
+            vm_work = stresses.get("sigma_vm_work", 0)
+            axial_line = (
+                f"\nσ_ax_work  = F_bolt_max/As = {stresses.get('sigma_ax_work', 0):.1f} MPa"
+            )
             torsion_line = ""
             if k_tau > 0:
                 torsion_line = (
                     f"\nk_τ = {k_tau:.1f}（扭矩法残留）"
+                    f"{axial_line}"
                     f"\nσ_vm_work  = √(σ²+3(k_τ·τ)²) = {vm_work:.1f} MPa"
+                )
+            else:
+                torsion_line = (
+                    f"\nσ_vm_work  = σ_ax_work = {vm_work:.1f} MPa"
                 )
             return (
                 f"F_bolt_max = FM,max + φn×FA = {forces.get('F_bolt_work_max_N', 0):,.0f} N\n"
-                f"σ_ax_work  = F_bolt_max/As = {stresses.get('sigma_ax_work', 0):.1f} MPa"
-                f"{torsion_line}\n"
+                f"{torsion_line.lstrip()}\n"
                 f"σ_allow    = Rp0.2/SF = {stresses.get('sigma_allow_work', 0):.1f} MPa\n"
-                f"判据: {'σ_vm' if k_tau > 0 else 'σ_ax'} ≤ σ_allow"
+                f"判据: σ_vm_work ≤ σ_allow"
             )
         if step_id == "r6":
             surface_cn = "轧制" if fatigue.get("surface_treatment", "rolled") == "rolled" else "切削"

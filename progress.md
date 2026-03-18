@@ -112,6 +112,77 @@
   - task_plan.md (updated)
   - findings.md (updated)
 
+## Session: 2026-03-16
+
+### Phase 9: Interference-Fit DIN 7190 Gap Closure
+- **Status:** complete
+- **Started:** 2026-03-16
+- **Completed:** 2026-03-17
+- Actions taken (planning):
+  - 读取当前 `core/interference/calculator.py`、`app/ui/pages/interference_fit_page.py` 与相关测试，梳理字段到 payload 到结论的映射关系
+  - 提取并审阅附件 `eAssistantHandb_en - fit.pdf` 第 14 章内容，对照 DIN 7190 / eAssistant 的输入项、结果项和说明项
+  - 确认用户本轮明确排除 `centrifugal force` 与 `stepped hub geometry`
+  - 识别并记录 P0/P1 问题：安全系数未进入需求过盈、联合作用未进入总判定、`fit_range_ok` 语义偏乐观、若干参数缺少来源追溯
+  - 编写正式实施计划
+- Actions taken (implementation — Chunk 1: Correctness):
+  - 修正 `slip_safety_min` 参与 `p_required` 和 `delta_required` 计算
+  - 将 `combined_ok`（扭矩+轴向联合作用）纳入 `overall_pass`
+  - 收紧 `p_required` 取 torque/axial/combined/gap 的 max
+  - UI 展示 combined check 结果和 demand breakdown
+  - `curve_points` 标注为纯绘图选项
+- Actions taken (implementation — Chunk 2: Fit Selection & Assembly):
+  - 创建 `core/interference/fit_selection.py`：ISO 286 优选配合 (H7/p6, H7/s6, H7/u6) + 用户偏差换算
+  - 创建 `core/interference/assembly.py`：shrink_fit（热装温度）+ force_fit（压入/压出力）+ manual_only
+  - 集成到 calculator 和 UI 页面
+- Actions taken (implementation — Chunk 3: Repeated Load, Traceability & Close-out):
+  - 在 calculator 中增加 `repeated_load_mode` 开关与适用性检查（l/d > 0.25, 同模量, 无弯矩）
+  - 报告追溯：material preset、roughness profile、fit source、assembly method 全链路
+  - 更新 examples 示例文件覆盖 tolerance-derived + assembly mode + preset trace
+  - 更新 README.md 过盈配合章节
+- Verification:
+  - 33 interference-specific tests pass
+  - 131 total repository tests pass (zero failures)
+- Files created/modified:
+  - core/interference/calculator.py (major update)
+  - core/interference/fit_selection.py (created)
+  - core/interference/assembly.py (created)
+  - core/interference/__init__.py (updated)
+  - app/ui/pages/interference_fit_page.py (major update)
+  - tests/core/interference/test_calculator.py (expanded to 15 tests)
+  - tests/core/interference/test_fit_selection.py (created, 5 tests)
+  - tests/core/interference/test_assembly.py (created, 3 tests)
+  - tests/ui/test_interference_page.py (expanded to 13 tests)
+  - examples/interference_case_01.json (updated with assembly/fit metadata)
+  - examples/interference_case_02.json (updated with assembly/fit metadata)
+  - README.md (updated)
+  - docs/superpowers/plans/2026-03-16-interference-fit-gap-closure.md (created)
+  - task_plan.md (updated)
+  - findings.md (updated)
+  - progress.md (updated)
+
+## Session: 2026-03-17
+
+### Phase 10: Bolt Page Deep Review & Remediation Planning
+- **Status:** in_progress
+- **Started:** 2026-03-17
+- Actions taken:
+  - 读取并交叉比对 `bolt_page.py` 的字段定义、payload 构建、结果渲染与 `calculator.py` 的实际判据
+  - 对 `bolt_flowchart.py` 的流程图摘要、输入回显和重复渲染行为做 headless 验证
+  - 用脚本复现并记录以下问题：
+    - R5 页面/报告展示值与正式判据不一致
+    - 自定义热膨胀系数缺失时静默回退为钢默认值
+    - 输入条件 snapshot round-trip 对标准螺距会崩溃
+    - `calculation_mode` 和多项 choice 状态不会恢复
+    - 多层自定义 `alpha` 空值抛原生 `ValueError`
+    - R 步骤详情页重复计算后控件翻倍
+  - 编写正式审查报告与 superpowers 后续执行计划
+- Files created/modified:
+  - docs/review/2026-03-17-bolt-page-deep-review.md (created)
+  - docs/superpowers/plans/2026-03-17-bolt-page-review-followup.md (created)
+  - task_plan.md (updated)
+  - findings.md (updated)
+  - progress.md (updated)
+
 ## Test Results
 | Test | Input | Expected | Actual | Status |
 |------|-------|----------|--------|--------|
@@ -124,17 +195,25 @@
 | 表单版 GUI 冒烟 | `QT_QPA_PLATFORM=offscreen` 启动新界面并退出 | 可启动 | `GUI_SMOKE_OK` | ✓ |
 | Chapter版语法回归 | `python3 -m py_compile app/ui/pages/bolt_page.py app/ui/widgets/clamping_diagram.py` | 无报错 | 无报错 | ✓ |
 | Chapter版 GUI 冒烟 | `QT_QPA_PLATFORM=offscreen` 启动并退出 | 可启动 | `GUI_SMOKE_OK` | ✓ |
+| 过盈配合核心/UI回归 | `python3 -m unittest tests.core.interference.test_calculator tests.ui.test_interference_page -v` | 全部通过 | 10 tests OK | ✓ |
+| 螺栓 core/UI 子集回归 | `QT_QPA_PLATFORM=offscreen python3 -m pytest tests/core/bolt/test_calculator.py tests/core/bolt/test_compliance_model.py tests/ui/test_input_condition_store.py -q` | 全部通过 | 76 tests OK | ✓ |
+| 螺栓页 snapshot 回灌复现 | headless `BoltPage` + `_capture_input_snapshot()` / `_apply_input_data()` | 应能 round-trip | `ValueError: could not convert string to float: '1.5（粗牙）'` | ✗ |
+| 螺栓页 calc mode 持久化复现 | headless `BoltPage` 切换 `verify` 后保存/恢复 | 应恢复为 `verify` | 未持久化，恢复后仍为 `design` | ✗ |
+| 螺栓页 raw payload choice 恢复复现 | 直接 `_apply_input_data(raw_payload)` | 应恢复 choice 状态 | `joint_type/basic_solid/surface_class/tightening_method/surface_treatment` 全部回到默认值 | ✗ |
+| 多层自定义 alpha 校验复现 | 双层 + 第一层材料“自定义”且 `alpha` 留空 | 应给出字段级 `InputError` | 原生 `ValueError: could not convert string to float: ''` | ✗ |
+| R 步骤详情页重复渲染复现 | 同一页面重复执行 `_calculate()` | 控件数应稳定 | `54 -> 108`，发生重复堆积 | ✗ |
 
 ## Error Log
 | Timestamp | Error | Attempt | Resolution |
 |-----------|-------|---------|------------|
 | 2026-03-01 | 残余夹紧力边界值因浮点误差被判失败 | 1 | 在比较中加入工程容差 `residual_tol` |
+| 2026-03-16 | `apply_patch` 首次更新 `task_plan.md` 因上下文不匹配失败 | 1 | 先读取带行号的当前文件，再按精确上下文重打补丁 |
 
 ## 5-Question Reboot Check
 | Question | Answer |
 |----------|--------|
-| Where am I? | Phase 6 |
-| Where am I going? | 交付桌面框架并等待用户下一轮功能扩展 |
-| What's the goal? | 本地桌面框架 + 螺栓模块先落地 + 可打包 |
-| What have I learned? | PySide6 框架与现有核心计算可低成本整合 |
-| What have I done? | 完成重构、桌面 UI、打包脚本与验证 |
+| Where am I? | Phase 9 complete, Phase 10 in_progress |
+| Where am I going? | Phase 10: 螺栓页深度审查后续修复 |
+| What's the goal? | 修复螺栓页 save/load round-trip、热参数验证、R5 结果语义、流程图重复渲染 |
+| What have I learned? | Phase 9 所有 core+UI+test 工作已完成（33 interference tests, 131 total pass），仅文档收尾遗漏 |
+| What have I done? | Phase 9: 正确性修正+ISO 286 配合选择+装配流程+重复载荷+追溯，全部实现并验证 |
