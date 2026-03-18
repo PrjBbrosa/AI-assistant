@@ -232,6 +232,26 @@
   - 继续审读 `fit_selection.py`、`assembly.py`、`interference_fit_page.py`，确认 UI 已暴露这些能力，且 repeated-load 不并入基础 verdict
   - 开始检查 `tests/core/interference/*` 的断言边界，标记出尚未锁定的风险点（公差带边界、热装冷却项、报告提示语义）
   - 读通 `InterferenceFitPage` 的 payload / render / report 链路与 UI 测试，暂未发现明显“字段未接线”问题，当前风险更偏向边界覆盖与章节说明精度
+  - 复现并确认 raw payload -> UI 回灌会被默认选择器覆盖（材料、粗糙度、assembly mode、repeated-load mode）
+  - 运行过盈配合专项回归：`33 passed`
+  - 对照 eAssistant public DIN 7190 example、eAssistant ISO 286 handbook、MITCalc brochure、RoyMech 公式页完成外部审查
+  - 输出正式审查报告 `docs/review/2026-03-18-interference-fit-deep-review.md`
+- Files created/modified:
+  - task_plan.md (updated)
+  - findings.md (updated)
+  - progress.md (updated)
+  - docs/review/2026-03-18-interference-fit-deep-review.md (created)
+
+## Session: 2026-03-19
+
+### Phase 12: Interference-Fit Fretting Step Planning
+- **Status:** in_progress
+- **Started:** 2026-03-19
+- Actions taken:
+  - 读取并应用 `brainstorming`、`writing-plans`、`planning-with-files` 技能
+  - 用户确认 fretting 按“过盈配合第 5 步增强模块”规划，不做独立页面
+  - 用户确认首版 fretting 只输出风险等级与建议，不并入主 verdict
+  - 回读当前 `repeated_load / fretting` 代码与测试，确认当前基线仍是 lightweight advanced block
 - Files created/modified:
   - task_plan.md (updated)
   - findings.md (updated)

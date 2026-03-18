@@ -4,7 +4,7 @@
 在保留 VDI 2230 螺栓计算核心的基础上，搭建本地 PySide6 桌面框架并预留多模块入口，支持后续打包为 `.exe`。
 
 ## Current Phase
-Phase 11 (Phase 10 in_progress, review branch added)
+Phase 12 (Phase 10 in_progress, Phase 11 complete, fretting planning added)
 
 ## Phases
 ### Phase 1: Requirements & Discovery
@@ -78,10 +78,17 @@ Phase 11 (Phase 10 in_progress, review branch added)
 - **Status:** in_progress
 
 ### Phase 11: Interference-Fit Chapter Deep Review
-- [ ] Audit the interference-fit chapter UI/core/tests/docs end-to-end
-- [ ] Cross-check formulas and result semantics against DIN 7190-style references and tool manuals
-- [ ] Re-run local examples and targeted edge cases
-- [ ] Write a formal review summary with findings, omissions, and comparison notes
+- [x] Audit the interference-fit chapter UI/core/tests/docs end-to-end
+- [x] Cross-check formulas and result semantics against DIN 7190-style references and tool manuals
+- [x] Re-run local examples and targeted edge cases
+- [x] Write a formal review summary with findings, omissions, and comparison notes
+- **Status:** complete
+
+### Phase 12: Interference-Fit Fretting Step Planning
+- [ ] Define the scope of Step 5 fretting enhancement inside the interference-fit module
+- [ ] Compare lightweight vs engineering-grade implementation approaches and complexity
+- [ ] Write a design spec for the approved approach
+- [ ] Write an implementation plan after the spec is approved
 - **Status:** in_progress
 
 ## Key Questions
@@ -101,6 +108,7 @@ Phase 11 (Phase 10 in_progress, review branch added)
 | 过盈配合后续扩展按“正确性 → 配合选择 → 装配 → 重复载荷/报告追溯”推进 | 先修可信度，再补齐 eAssistant 中最有工程价值的能力 |
 | 螺栓页后续修复优先级定为“展示语义/输入持久化/热参数校验/UI 回归测试” | 当前最大风险不在主公式，而在 UI 与实际 payload / checks 脱节 |
 | 本轮新增一次“过盈配合章节深度审查”，先审查再决定是否进入修复 | 用户当前目标是确认 bug / 遗漏 / 逻辑风险，并对照 DIN 案例与同类工具结果 |
+| fretting 下一步按“过盈配合第 5 步增强模块”规划，而不是独立通用页面 | 用户已明确希望 fretting 服务于过盈配合场景，并且首版先给风险等级与建议，不并入主 verdict |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
@@ -113,3 +121,5 @@ Phase 11 (Phase 10 in_progress, review branch added)
 - 螺栓页 2026-03-17 深度审查结果已落到 `docs/review/2026-03-17-bolt-page-deep-review.md`
 - 螺栓页后续修复计划已落到 `docs/superpowers/plans/2026-03-17-bolt-page-review-followup.md`
 - 本轮将补充一份过盈配合章节深度审查记录，重点覆盖 DIN 7190 公式链、UI 章节语义、案例对比与测试盲区
+- 过盈配合章节 2026-03-18 深度审查结果已落到 `docs/review/2026-03-18-interference-fit-deep-review.md`
+- fretting 第 5 步本轮先完成方案与计划文档，不直接进入实现

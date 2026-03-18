@@ -225,3 +225,40 @@
   - 文案是否把适用范围与简化假设说透
   - 测试是否足以锁定工程边界
   - 与外部案例相比是否存在数值偏差或概念偏差
+
+### Confirmed Review Findings
+- `app/ui/pages/interference_fit_page.py` 存在 raw payload 回灌语义缺口：
+  - 若输入文件只提供 `inputs` 而没有 `ui_state`，`_apply_input_data()` 之后的 `_sync_*()` 会把自定义材料、粗糙度 profile、assembly mode、repeated-load mode 覆盖回默认值
+  - 这不会影响已保存的表单快照，但会影响 raw calculator payload / 外部 JSON 的 UI 复核可靠性
+- 本地 `examples/interference_case_01.json` 与 eAssistant 公共 DIN 7190 案例在核心尺寸/载荷上高度相似，但边界不同：
+  - eAssistant 公共案例为 `空心轴 (inner diameter = 30 mm)`，并考虑 speed / operating temperature
+  - 当前工具明确是 `实心轴 + 不计离心力 + 不计服役温度`
+  - 因此两者不能直接拿数值结论做一对一校核
+- `fit_selection.py` 当前是“受限子集”而不是完整 ISO 286 搜索器：
+  - 仅支持 `H7/p6`、`H7/s6`、`H7/u6`
+  - 仅覆盖 `6~50 mm`
+  - 与 eAssistant handbook / MITCalc 所示能力相比属于有意收窄实现
+- 已生成正式审查报告：
+  - `docs/review/2026-03-18-interference-fit-deep-review.md`
+
+## 2026-03-19 Fretting Step Planning Notes
+
+### Scope Confirmed
+- 用户希望新增的是“过盈配合里的第 5 步 fretting 增强模块”，而不是独立通用 fretting 页面
+- 首版 fretting 输出目标：
+  - 给出风险等级
+  - 给出工程建议
+  - 不并入基础 `overall_pass` 主 verdict
+
+### Current Local Baseline
+- 当前仓库已存在一个 very-lightweight fretting/repeated-load block：
+  - `advanced.repeated_load_mode`
+  - 适用性 gate：`l/d > 0.25`、模量接近、无弯矩
+  - 输出：`applicable`、`max_transferable_torque_nm`、`fretting_risk`
+- 这更像“附加提示块”，还不是完整的 Step 5 fretting 子模块
+
+### Planning Objective
+- 先评估复杂度并提出 2~3 条实现路线
+- 用户确认方向后，再写：
+  - `docs/superpowers/specs/2026-03-19-...-design.md`
+  - `docs/superpowers/plans/2026-03-19-...md`

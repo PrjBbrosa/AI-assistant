@@ -12,6 +12,7 @@ from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -38,6 +39,7 @@ from app.ui.input_condition_store import (
 )
 from app.ui.widgets.clamping_diagram import ClampingDiagramWidget, ThreadForceTriangleWidget
 from app.ui.report_export import export_report_lines
+from app.ui.report_pdf import generate_bolt_report
 from app.ui.pages.bolt_flowchart import (
     FlowchartNavWidget, RStepDetailPage, R_STEPS,
 )
@@ -2637,9 +2639,23 @@ class BoltPage(QWidget):
             return
 
         default_path = EXAMPLES_DIR / "bolt_check_report.pdf"
-        out_path = export_report_lines(self, "导出结果说明", default_path, self._build_report_lines())
-        if out_path is not None:
-            self.info_label.setText(f"结果说明已导出: {out_path}")
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "导出校核报告", str(default_path),
+            "PDF Files (*.pdf);;Word Files (*.docx);;Text Files (*.txt);;All Files (*)",
+        )
+        if not file_path:
+            return
+        out_path = Path(file_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        suffix = out_path.suffix.lower()
+        if suffix == ".pdf":
+            generate_bolt_report(out_path, self._last_payload, self._last_result)
+        elif suffix == ".docx":
+            from app.ui.report_export import _export_docx
+            _export_docx(out_path, self._build_report_lines())
+        else:
+            out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
+        self.info_label.setText(f"校核报告已导出: {out_path}")
 
     def _build_report_lines(self) -> list[str]:
         assert self._last_result is not None
