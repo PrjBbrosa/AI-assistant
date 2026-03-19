@@ -221,7 +221,7 @@
 ## Session: 2026-03-18
 
 ### Phase 11: Interference-Fit Chapter Deep Review
-- **Status:** in_progress
+- **Status:** complete
 - **Started:** 2026-03-18
 - Actions taken:
   - 读取并应用 `using-superpowers` 与 `planning-with-files` 技能
@@ -245,14 +245,126 @@
 ## Session: 2026-03-19
 
 ### Phase 12: Interference-Fit Fretting Step Planning
-- **Status:** in_progress
+- **Status:** complete
 - **Started:** 2026-03-19
 - Actions taken:
   - 读取并应用 `brainstorming`、`writing-plans`、`planning-with-files` 技能
   - 用户确认 fretting 按“过盈配合第 5 步增强模块”规划，不做独立页面
   - 用户确认首版 fretting 只输出风险等级与建议，不并入主 verdict
   - 回读当前 `repeated_load / fretting` 代码与测试，确认当前基线仍是 lightweight advanced block
+  - 与用户逐段确认 fretting 设计：模块定位、输入与判级、页面结构与集成方式
+  - 写出 fretting 正式 spec：`docs/superpowers/specs/2026-03-19-interference-fit-fretting-step-design.md`
+  - 写出 fretting implementation plan：`docs/superpowers/plans/2026-03-19-interference-fit-fretting-step.md`
 - Files created/modified:
   - task_plan.md (updated)
   - findings.md (updated)
   - progress.md (updated)
+  - docs/superpowers/specs/2026-03-19-interference-fit-fretting-step-design.md (created)
+  - docs/superpowers/plans/2026-03-19-interference-fit-fretting-step.md (created)
+
+### Phase 13: Interference-Fit Fretting Step Implementation
+- **Status:** complete
+- **Started:** 2026-03-19
+- **Completed:** 2026-03-19
+- Actions taken:
+  - 按 TDD 先新增 `tests/core/interference/test_fretting.py`，确认 RED：`core.interference.fretting` 不存在
+  - 实现 `core/interference/fretting.py`，输出结构化 Step 5 结果：适用性、风险等级、驱动因素、建议、可信度、notes
+  - 在 `core/interference/calculator.py` 中接入新 `fretting` 结果块，并保留 legacy `advanced.repeated_load_mode` 兼容
+  - 新增 calculator 集成测试，锁定：
+    - fretting 结果存在
+    - fretting 不改变 `overall_pass`
+    - legacy advanced 开关仍可启用 fretting
+  - 升级 `app/ui/pages/interference_fit_page.py`：
+    - 用 `Fretting 风险评估` Step 5 替换旧“高级校核”
+    - 接入 `fretting.*` payload
+    - 支持 legacy load 映射
+    - 报告与结果区新增 Step 5 fretting 段落
+  - 更新 `examples/interference_case_01.json` 和 `README.md`
+- Verification:
+  - `python3 -m pytest tests/core/interference/test_fretting.py tests/core/interference/test_calculator.py -q` -> pass
+  - `QT_QPA_PLATFORM=offscreen python3 -m pytest tests/ui/test_interference_page.py -q` -> pass
+  - `QT_QPA_PLATFORM=offscreen python3 -m pytest tests/core/interference/test_fretting.py tests/core/interference/test_calculator.py tests/core/interference/test_fit_selection.py tests/core/interference/test_assembly.py tests/ui/test_interference_page.py -q` -> `41 passed`
+  - manual smoke:
+    - disabled
+    - high-risk while base verdict still pass
+    - legacy-switch
+    - not-applicable
+- Files created/modified:
+  - core/interference/fretting.py (created)
+  - core/interference/calculator.py (updated)
+  - core/interference/__init__.py (updated)
+  - tests/core/interference/test_fretting.py (created)
+  - tests/core/interference/test_calculator.py (updated)
+  - app/ui/pages/interference_fit_page.py (updated)
+  - tests/ui/test_interference_page.py (updated)
+  - examples/interference_case_01.json (updated)
+  - README.md (updated)
+  - task_plan.md (updated)
+  - findings.md (updated)
+  - progress.md (updated)
+
+### Phase 14: Interference-Fit Closeout
+- **Status:** complete
+- **Started:** 2026-03-19
+- **Completed:** 2026-03-19
+- Actions taken:
+  - 为 `InterferenceFitPage._apply_input_data()` 增加 raw payload 恢复语义：
+    - 缺少 `ui_state` 时，从原始 `materials` / `roughness` / `assembly` / `fit_selection` / `fretting` 输入反推 UI 选择器
+    - 无法匹配预设时保留 `自定义`，避免静默覆盖原始输入
+  - 新增 UI 回归测试，锁定 custom raw inputs round-trip 行为
+  - 为 `fit_selection` 增加公差带边界回归测试，覆盖 `H7/s6` 与 `H7/u6` 的代表 band
+  - 新增公开 benchmark 差异说明文档
+  - 给历史设计文档与深度审查文档补充当前状态说明，避免继续误读范围边界
+- Verification:
+  - `QT_QPA_PLATFORM=offscreen python3 -m pytest tests/ui/test_interference_page.py::InterferenceFitPageTests::test_apply_input_data_preserves_custom_raw_inputs_without_ui_state -q` -> pass
+  - `python3 -m pytest tests/core/interference/test_fit_selection.py -q` -> `7 passed`
+  - `QT_QPA_PLATFORM=offscreen python3 -m pytest -q` -> `176 passed`
+- Files created/modified:
+  - app/ui/pages/interference_fit_page.py (updated)
+  - tests/ui/test_interference_page.py (updated)
+  - tests/core/interference/test_fit_selection.py (updated)
+  - docs/references/2026-03-19-interference-public-benchmark-notes.md (created)
+  - docs/plans/2026-03-08-interference-fit-din7190-core-design.md (updated)
+  - docs/review/2026-03-18-interference-fit-deep-review.md (updated)
+  - task_plan.md (updated)
+  - findings.md (updated)
+  - progress.md (updated)
+
+### Phase 15: Interference-Fit Hollow-Shaft Support
+- **Status:** complete
+- **Started:** 2026-03-19
+- **Completed:** 2026-03-19
+- Actions taken:
+  - 读取并应用 `brainstorming`、`test-driven-development`、`writing-plans`、`executing-plans` 技能
+  - 结合当前过盈配合主链路与 eAssistant handbook 边界，确定空心轴支持首版只扩展主模型，不同步扩展 speed / service temperature / stepped geometry
+  - 写出空心轴 design spec：`docs/superpowers/specs/2026-03-19-interference-fit-hollow-shaft-design.md`
+  - 写出空心轴 implementation plan：`docs/superpowers/plans/2026-03-19-interference-fit-hollow-shaft.md`
+  - 按 TDD 先新增 RED 测试，锁定：
+    - 空心轴降低接触压力和承载能力
+    - `shaft_inner_d_mm >= shaft_d_mm` 报错
+    - 空心轴下 repeated-load 不适用
+    - UI 新字段 / payload / 报告语义
+  - 在 `core/interference/calculator.py` 中新增：
+    - `geometry.shaft_inner_d_mm`
+    - 空心轴柔度放大因子
+    - 空心轴轴侧应力系数
+    - 空心轴下 repeated-load / fretting applicability 降级
+  - 在 `app/ui/pages/interference_fit_page.py` 中新增轴内径字段，并更新标题、副标题、hint、结果区和报告
+  - 更新 README 与 benchmark 差异说明
+- Verification:
+  - `QT_QPA_PLATFORM=offscreen python3 -m pytest tests/core/interference/test_calculator.py tests/ui/test_interference_page.py -q` -> `35 passed`
+  - `QT_QPA_PLATFORM=offscreen python3 -m pytest tests/core/interference/test_fretting.py tests/core/interference/test_calculator.py tests/core/interference/test_fit_selection.py tests/core/interference/test_assembly.py tests/ui/test_interference_page.py -q` -> `48 passed`
+  - `QT_QPA_PLATFORM=offscreen python3 -m pytest -q` -> `180 passed`
+- Files created/modified:
+  - task_plan.md (updated)
+  - findings.md (updated)
+  - progress.md (updated)
+  - docs/superpowers/specs/2026-03-19-interference-fit-hollow-shaft-design.md (created)
+  - docs/superpowers/plans/2026-03-19-interference-fit-hollow-shaft.md (created)
+  - core/interference/calculator.py (updated)
+  - core/interference/fretting.py (updated)
+  - app/ui/pages/interference_fit_page.py (updated)
+  - tests/core/interference/test_calculator.py (updated)
+  - tests/ui/test_interference_page.py (updated)
+  - README.md (updated)
+  - docs/references/2026-03-19-interference-public-benchmark-notes.md (updated)

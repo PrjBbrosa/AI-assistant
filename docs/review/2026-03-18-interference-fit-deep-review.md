@@ -201,3 +201,24 @@
    - 每个 band 交界直径
    - 每个 fit family 至少 2 个 band
 4. 更新设计文档，避免后续审查继续被陈旧范围说明干扰
+
+## 2026-03-19 Follow-up
+
+本审查中的主要收尾项已继续推进，状态如下：
+
+- 已修复：
+  - raw payload 回灌到 UI 时的默认选择器覆盖问题
+  - 现在若只加载原始 `inputs`/core payload，页面会尽量从原始数值反推材料、粗糙度、配合与装配选择器；无法匹配时则保留 `自定义`
+- 已补充：
+  - `fit_selection` band 边界测试
+  - 公开 benchmark 差异说明文档 `docs/references/2026-03-19-interference-public-benchmark-notes.md`
+  - Step 5 `fretting` 风险评估设计与实现
+- 已同步：
+  - `docs/plans/2026-03-08-interference-fit-din7190-core-design.md` 增加“状态更新”说明，避免继续把历史设计稿误读为当前能力边界
+
+仍保留的明显能力边界：
+
+- 空心轴主模型已在 2026-03-19 后续实现中接入，但 repeated-load 简化式仍不适用于空心轴
+- 离心力 / 转速尚未进入当前主模型
+- 服役温度尚未进入当前主模型
+- ISO 286 仍是受限子集而非完整公差数据库

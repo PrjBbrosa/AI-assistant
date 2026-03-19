@@ -54,8 +54,8 @@ class MainWindow(QMainWindow):
             ("螺栓连接", BoltPage(self)),
             ("过盈配合", InterferenceFitPage(self)),
             ("赫兹应力", HertzContactPage(self)),
-            ("蜗轮", WormGearPage(self)),
-            ("弹簧", PlaceholderPage("弹簧", self)),
+            ("蜗轮蜗杆设计", WormGearPage(self)),
+            ("花键过盈配合设计", PlaceholderPage("花键过盈配合设计", self)),
             ("材料与标准库", PlaceholderPage("材料与标准库", self)),
         ]
 
@@ -91,7 +91,7 @@ class MainWindow(QMainWindow):
         self.module_list.setObjectName("ModuleList")
         self.module_list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-        helper = QLabel("左侧保留模块入口，当前已实现“螺栓连接”“过盈配合”“赫兹应力”“蜗轮”。", sidebar)
+        helper = QLabel("左侧保留模块入口，当前已实现”螺栓连接””过盈配合””赫兹应力””蜗轮蜗杆设计”。", sidebar)
         helper.setObjectName("BrandSubtitle")
         helper.setWordWrap(True)
         helper.setAlignment(Qt.AlignmentFlag.AlignTop)

@@ -36,9 +36,19 @@ def _in_closed_interval(value: float, lo: float, hi: float, name: str) -> float:
     return value
 
 
+def _hollow_shaft_compliance_factor(bore_ratio: float, nu_shaft: float) -> float:
+    if bore_ratio <= 0.0:
+        return 1.0
+    ratio_sq = bore_ratio * bore_ratio
+    classical_hollow_ratio = ((1.0 + ratio_sq) / (1.0 - ratio_sq)) - nu_shaft
+    classical_solid_ratio = 1.0 - nu_shaft
+    return classical_hollow_ratio / classical_solid_ratio
+
+
 def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     """Calculate core checks for cylindrical press/shrink fits."""
     from .assembly import calculate_assembly_detail
+    from .fretting import assess_fretting_risk
 
     geometry = data.get("geometry", {})
     materials = data.get("materials", {})
@@ -49,13 +59,21 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     checks = data.get("checks", {})
     options = data.get("options", {})
     advanced = data.get("advanced", {})
+    fretting_input = data.get("fretting", {})
 
     d = _positive(float(_require(geometry, "shaft_d_mm", "geometry")), "geometry.shaft_d_mm")
+    d_inner = _positive(
+        float(geometry.get("shaft_inner_d_mm", 0.0)),
+        "geometry.shaft_inner_d_mm",
+        allow_zero=True,
+    )
     d_outer = _positive(
         float(_require(geometry, "hub_outer_d_mm", "geometry")),
         "geometry.hub_outer_d_mm",
     )
     l_fit = _positive(float(_require(geometry, "fit_length_mm", "geometry")), "geometry.fit_length_mm")
+    if d_inner >= d:
+        raise InputError("geometry.shaft_inner_d_mm 必须满足 0 <= d_i < d")
     if d_outer <= d:
         raise InputError("geometry.hub_outer_d_mm 必须大于 geometry.shaft_d_mm")
 
@@ -177,8 +195,11 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
         raise InputError("advanced.repeated_load_mode 必须是 off 或 on")
 
     radius = d / 2.0
+    bore_ratio = d_inner / d if d > 0 else 0.0
+    hollow_shaft = d_inner > 0.0
     geometry_factor = (d_outer * d_outer + d * d) / (d_outer * d_outer - d * d)
-    c_shaft = radius / e_shaft * (1.0 - nu_shaft * nu_shaft)
+    shaft_compliance_factor = _hollow_shaft_compliance_factor(bore_ratio, nu_shaft)
+    c_shaft = radius / e_shaft * (1.0 - nu_shaft * nu_shaft) * shaft_compliance_factor
     c_hub = radius / e_hub * (geometry_factor + nu_hub)
     c_total = c_shaft + c_hub
     if c_total <= 0:
@@ -208,6 +229,10 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
         return mu_assembly * pressure_mpa * contact_area_mm2
 
     hub_vm_coeff = math.sqrt(1.0 + geometry_factor + geometry_factor * geometry_factor)
+    shaft_geometry_factor = 1.0
+    if hollow_shaft:
+        shaft_geometry_factor = (d * d + d_inner * d_inner) / (d * d - d_inner * d_inner)
+    shaft_vm_coeff = math.sqrt(1.0 + shaft_geometry_factor * shaft_geometry_factor - shaft_geometry_factor)
 
     def build_state(delta_input_um: float) -> Dict[str, float]:
         delta_eff_um = max(0.0, delta_input_um - subsidence_um)
@@ -215,7 +240,7 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
         torque_cap_nm = torque_capacity_nm(pressure_mpa)
         axial_cap_n = axial_capacity_n(pressure_mpa)
         press_force_val_n = press_force_n(pressure_mpa)
-        shaft_vm_mpa = pressure_mpa
+        shaft_vm_mpa = pressure_mpa * shaft_vm_coeff
         hub_vm_mpa = pressure_mpa * hub_vm_coeff
         hub_hoop_inner_mpa = pressure_mpa * geometry_factor
         shaft_sf = math.inf if shaft_vm_mpa == 0 else yield_shaft / shaft_vm_mpa
@@ -338,6 +363,8 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     if repeated_enabled:
         if length_ratio <= 0.25:
             repeated_notes.append("not applicable: LF/DF must be greater than 0.25.")
+        elif hollow_shaft:
+            repeated_notes.append("not applicable: simplified repeated-load estimate assumes a solid shaft, not a hollow shaft.")
         elif modulus_ratio > 0.05:
             repeated_notes.append("not applicable: repeated-load estimate assumes equal elastic modulus.")
         elif bending_design_nm > 0.0:
@@ -374,6 +401,27 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
         warnings.append("Repeated-load / fretting estimate is enabled but not applicable for the current assumptions.")
     if fretting_risk:
         warnings.append("Repeated-load estimate indicates fretting risk; increase slip reserve or reduce cyclic torque.")
+
+    fretting_mode_raw = None
+    if isinstance(fretting_input, dict):
+        fretting_mode_raw = fretting_input.get("mode")
+    fretting_payload = dict(fretting_input) if isinstance(fretting_input, dict) else {}
+    if fretting_mode_raw in (None, ""):
+        fretting_payload["mode"] = "on" if repeated_enabled else "off"
+    fretting_result = assess_fretting_risk(
+        fretting_payload,
+        {
+            "length_ratio_l_over_d": length_ratio,
+            "modulus_ratio": modulus_ratio,
+            "has_bending": bending_design_nm > 0.0,
+            "has_hollow_shaft": hollow_shaft,
+            "torque_sf": torque_sf,
+            "combined_sf": combined_sf,
+            "p_min_mpa": p_min,
+            "torque_design_nm": torque_design_nm,
+            "torque_capacity_min_nm": torque_min_nm,
+        },
+    )
 
     curve_max_um = max(delta_max_um * 1.25, delta_required_um * 1.15, 1.0)
     if curve_max_um <= 0:
@@ -412,11 +460,16 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "inputs_echo": data,
         "model": {
-            "type": "cylindrical_interference_solid_shaft",
-            "assumption": "线弹性、均匀接触压力、常摩擦系数、QW=0 保守简化",
+            "type": "cylindrical_interference_hollow_shaft" if hollow_shaft else "cylindrical_interference_solid_shaft",
+            "shaft_type": "hollow_shaft" if hollow_shaft else "solid_shaft",
+            "assumption": "线弹性、均匀接触压力、常摩擦系数、QW=0 保守简化；空心轴按兼容当前实心轴基线的柔度放大处理",
         },
         "derived": {
             "geometry_factor": geometry_factor,
+            "shaft_geometry_factor": shaft_geometry_factor,
+            "shaft_inner_d_mm": d_inner,
+            "shaft_bore_ratio": bore_ratio,
+            "shaft_compliance_factor": shaft_compliance_factor,
             "contact_area_mm2": contact_area_mm2,
             "radial_compliance_shaft_mm_per_mpa": c_shaft,
             "radial_compliance_hub_mm_per_mpa": c_hub,
@@ -512,6 +565,7 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
             "modulus_ratio": modulus_ratio,
             "notes": repeated_notes,
         },
+        "fretting": fretting_result,
         "checks": checks_out,
         "overall_pass": overall_pass,
         "messages": warnings,

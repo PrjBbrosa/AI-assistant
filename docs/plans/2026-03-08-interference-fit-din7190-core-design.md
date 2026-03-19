@@ -1,5 +1,31 @@
 # 过盈配合模块 DIN 7190 核心增强设计
 
+## 0. 状态更新（2026-03-19）
+
+本文件保留 2026-03-08 这一轮“核心增强设计”的原始决策背景，但其中部分范围说明已经落后于当前实现。
+
+截至 2026-03-19，当前仓库已经额外实现：
+
+- ISO 286 受限子集优选配合与偏差换算
+- `manual_only / shrink_fit / force_fit` 装配流程
+- Step 5 `fretting` 风险评估（风险等级与建议，不并入基础 verdict）
+- 输入来源追溯与报告展示
+
+截至 2026-03-19，当前仓库仍未纳入主模型：
+
+- 离心力 / 转速耦合
+- 服役温度耦合
+- 阶梯轴 / 阶梯轮毂
+- 更完整的 ISO 286 公差库
+
+阅读建议：
+
+- 若要了解当前实现边界，以代码、测试和以下文档为准：
+  - `docs/review/2026-03-18-interference-fit-deep-review.md`
+  - `docs/references/2026-03-19-interference-public-benchmark-notes.md`
+  - `docs/superpowers/specs/2026-03-19-interference-fit-fretting-step-design.md`
+- 下文第 1~8 节可视为当时的设计快照，而不是当前功能清单。
+
 ## 1. 目标
 
 - 在现有圆柱面过盈配合模块基础上，补齐本轮需要的 `DIN 7190` 核心能力。
@@ -243,4 +269,3 @@
 - 附件 `eAssistantHandb_en - fit.pdf` 第 14 章
 - `DIN 7190` 核心流程
 - 现有项目文档 `docs/references/2026-03-05-interference-roughness-sources.md`
-

@@ -26,6 +26,30 @@ class FitSelectionTests(unittest.TestCase):
                 nominal_diameter_mm=55.0,
             )
 
+    def test_preferred_fit_band_edges_select_expected_h7_s6_windows(self) -> None:
+        result_10 = derive_interference_from_preferred_fit(
+            fit_name="H7/s6",
+            nominal_diameter_mm=10.0,
+        )
+        result_18 = derive_interference_from_preferred_fit(
+            fit_name="H7/s6",
+            nominal_diameter_mm=18.0,
+        )
+
+        self.assertEqual(result_10["delta_min_um"], 4.0)
+        self.assertEqual(result_10["delta_max_um"], 20.0)
+        self.assertEqual(result_18["delta_min_um"], 7.0)
+        self.assertEqual(result_18["delta_max_um"], 27.0)
+
+    def test_preferred_fit_h7_u6_mid_band_matches_curated_window(self) -> None:
+        result = derive_interference_from_preferred_fit(
+            fit_name="H7/u6",
+            nominal_diameter_mm=35.0,
+        )
+
+        self.assertEqual(result["delta_min_um"], 27.0)
+        self.assertEqual(result["delta_max_um"], 61.0)
+
     def test_user_defined_deviations_can_be_converted_to_interference_window(self) -> None:
         result = derive_interference_from_deviations(
             shaft_upper_um=35.0,

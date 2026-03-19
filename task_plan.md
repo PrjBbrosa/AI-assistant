@@ -4,7 +4,7 @@
 在保留 VDI 2230 螺栓计算核心的基础上，搭建本地 PySide6 桌面框架并预留多模块入口，支持后续打包为 `.exe`。
 
 ## Current Phase
-Phase 12 (Phase 10 in_progress, Phase 11 complete, fretting planning added)
+Phase 15 complete (Interference-fit hollow-shaft support landed; Phase 10 still in_progress)
 
 ## Phases
 ### Phase 1: Requirements & Discovery
@@ -85,11 +85,32 @@ Phase 12 (Phase 10 in_progress, Phase 11 complete, fretting planning added)
 - **Status:** complete
 
 ### Phase 12: Interference-Fit Fretting Step Planning
-- [ ] Define the scope of Step 5 fretting enhancement inside the interference-fit module
-- [ ] Compare lightweight vs engineering-grade implementation approaches and complexity
-- [ ] Write a design spec for the approved approach
-- [ ] Write an implementation plan after the spec is approved
-- **Status:** in_progress
+- [x] Define the scope of Step 5 fretting enhancement inside the interference-fit module
+- [x] Compare lightweight vs engineering-grade implementation approaches and complexity
+- [x] Write a design spec for the approved approach
+- [x] Write an implementation plan after the spec is approved
+- **Status:** complete
+
+### Phase 13: Interference-Fit Fretting Step Implementation
+- [x] Add fretting core helper with structured risk output
+- [x] Integrate fretting into interference calculator without changing base verdict
+- [x] Upgrade interference page Step 5 fields, report lines, and legacy compatibility
+- [x] Update examples / README and run interference regression
+- **Status:** complete
+
+### Phase 14: Interference-Fit Closeout
+- [x] Fix raw payload -> UI restore semantics for custom materials/profile/assembly/fretting
+- [x] Add fit-selection boundary regression coverage
+- [x] Add public benchmark disclaimer and sync historical design/review docs
+- [x] Re-run repository verification before final closeout
+- **Status:** complete
+
+### Phase 15: Interference-Fit Hollow-Shaft Support
+- [x] Write hollow-shaft design spec and implementation plan
+- [x] Add RED tests for hollow-shaft core and UI behavior
+- [x] Implement hollow-shaft geometry in calculator and page/report
+- [x] Run verification and write closeout notes
+- **Status:** complete
 
 ## Key Questions
 1. 交付形态是 Web 还是本地桌面？（已选本地桌面）
@@ -109,6 +130,7 @@ Phase 12 (Phase 10 in_progress, Phase 11 complete, fretting planning added)
 | 螺栓页后续修复优先级定为“展示语义/输入持久化/热参数校验/UI 回归测试” | 当前最大风险不在主公式，而在 UI 与实际 payload / checks 脱节 |
 | 本轮新增一次“过盈配合章节深度审查”，先审查再决定是否进入修复 | 用户当前目标是确认 bug / 遗漏 / 逻辑风险，并对照 DIN 案例与同类工具结果 |
 | fretting 下一步按“过盈配合第 5 步增强模块”规划，而不是独立通用页面 | 用户已明确希望 fretting 服务于过盈配合场景，并且首版先给风险等级与建议，不并入主 verdict |
+| 空心轴支持本轮按“兼容当前实心轴基线”的增量方式接入 | 先补齐主模型几何边界，同时避免把 speed / temperature / stepped geometry 一起引入导致范围失控 |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
@@ -123,3 +145,10 @@ Phase 12 (Phase 10 in_progress, Phase 11 complete, fretting planning added)
 - 本轮将补充一份过盈配合章节深度审查记录，重点覆盖 DIN 7190 公式链、UI 章节语义、案例对比与测试盲区
 - 过盈配合章节 2026-03-18 深度审查结果已落到 `docs/review/2026-03-18-interference-fit-deep-review.md`
 - fretting 第 5 步本轮先完成方案与计划文档，不直接进入实现
+- fretting 第 5 步设计 spec 已写入 `docs/superpowers/specs/2026-03-19-interference-fit-fretting-step-design.md`
+- fretting 第 5 步 implementation plan 已写入 `docs/superpowers/plans/2026-03-19-interference-fit-fretting-step.md`
+- fretting 第 5 步实现已完成，核心 helper/UI/报告/样例与测试均已接入
+- 过盈配合 closeout 已补齐：raw payload 回灌修复、fit band 边界测试、benchmark 差异说明与历史文档同步
+- 空心轴支持 design spec 已写入 `docs/superpowers/specs/2026-03-19-interference-fit-hollow-shaft-design.md`
+- 空心轴支持 implementation plan 已写入 `docs/superpowers/plans/2026-03-19-interference-fit-hollow-shaft.md`
+- 空心轴支持已完成：主模型、UI、报告、repeated-load 适用性和测试均已接入

@@ -90,6 +90,13 @@ class InterferenceFitCalculatorTests(unittest.TestCase):
                 }
             )
 
+    def test_invalid_hollow_shaft_geometry_is_rejected(self) -> None:
+        data = make_case()
+        data["geometry"]["shaft_inner_d_mm"] = 40.0
+
+        with self.assertRaises(InputError):
+            calculate_interference_fit(data)
+
     def test_required_interference_is_reported(self) -> None:
         data = make_case()
         data["geometry"] = {
@@ -182,6 +189,25 @@ class InterferenceFitCalculatorTests(unittest.TestCase):
             result_base["required"]["delta_required_um"],
         )
 
+    def test_hollow_shaft_reduces_pressure_and_capacity_and_updates_model_type(self) -> None:
+        solid = make_case()
+        solid_result = calculate_interference_fit(solid)
+
+        hollow = make_case()
+        hollow["geometry"]["shaft_inner_d_mm"] = 20.0
+        hollow_result = calculate_interference_fit(hollow)
+
+        self.assertEqual(hollow_result["model"]["type"], "cylindrical_interference_hollow_shaft")
+        self.assertGreater(
+            hollow_result["derived"]["radial_compliance_shaft_mm_per_mpa"],
+            solid_result["derived"]["radial_compliance_shaft_mm_per_mpa"],
+        )
+        self.assertLess(hollow_result["pressure_mpa"]["p_min"], solid_result["pressure_mpa"]["p_min"])
+        self.assertLess(
+            hollow_result["capacity"]["torque_min_nm"],
+            solid_result["capacity"]["torque_min_nm"],
+        )
+
     def test_slip_safety_factor_increases_required_interference_and_can_exhaust_fit_window(self) -> None:
         base = make_case()
         base["loads"]["torque_required_nm"] = 870.0
@@ -255,6 +281,19 @@ class InterferenceFitCalculatorTests(unittest.TestCase):
         self.assertGreater(result["repeated_load"]["max_transferable_torque_nm"], 0.0)
         self.assertFalse(result["repeated_load"]["fretting_risk"])
 
+    def test_repeated_load_block_is_not_applicable_for_hollow_shaft(self) -> None:
+        data = make_case()
+        data["geometry"]["shaft_inner_d_mm"] = 20.0
+        data["advanced"] = {
+            "repeated_load_mode": "on",
+        }
+
+        result = calculate_interference_fit(data)
+
+        self.assertTrue(result["repeated_load"]["enabled"])
+        self.assertFalse(result["repeated_load"]["applicable"])
+        self.assertIn("hollow shaft", " ".join(result["repeated_load"]["notes"]).lower())
+
     def test_repeated_load_block_reports_not_applicable_case(self) -> None:
         data = make_case()
         data["geometry"]["fit_length_mm"] = 8.0
@@ -267,6 +306,53 @@ class InterferenceFitCalculatorTests(unittest.TestCase):
         self.assertTrue(result["repeated_load"]["enabled"])
         self.assertFalse(result["repeated_load"]["applicable"])
         self.assertIn("not applicable", " ".join(result["repeated_load"]["notes"]).lower())
+
+    def test_fretting_block_is_exposed_when_new_mode_is_enabled(self) -> None:
+        data = make_case()
+        data["fretting"] = {
+            "mode": "on",
+            "load_spectrum": "pulsating",
+            "duty_severity": "medium",
+            "surface_condition": "dry",
+            "importance_level": "important",
+        }
+
+        result = calculate_interference_fit(data)
+
+        self.assertIn("fretting", result)
+        self.assertTrue(result["fretting"]["enabled"])
+        self.assertIn(result["fretting"]["risk_level"], {"low", "medium", "high", "not_applicable"})
+
+    def test_fretting_can_be_high_risk_without_changing_base_overall_pass(self) -> None:
+        data = make_case()
+        data["loads"]["axial_force_required_n"] = 12000.0
+        data["checks"] = {
+            "slip_safety_min": 1.2,
+            "stress_safety_min": 1.2,
+        }
+        data["fretting"] = {
+            "mode": "on",
+            "load_spectrum": "reversing",
+            "duty_severity": "heavy",
+            "surface_condition": "dry",
+            "importance_level": "critical",
+        }
+
+        result = calculate_interference_fit(data)
+
+        self.assertTrue(result["overall_pass"])
+        self.assertEqual(result["fretting"]["risk_level"], "high")
+
+    def test_legacy_repeated_load_switch_still_enables_fretting_assessment(self) -> None:
+        data = make_case()
+        data["advanced"] = {
+            "repeated_load_mode": "on",
+        }
+
+        result = calculate_interference_fit(data)
+
+        self.assertIn("fretting", result)
+        self.assertTrue(result["fretting"]["enabled"])
 
     def test_gaping_check_fails_when_radial_and_bending_loads_are_high(self) -> None:
         data = make_case()

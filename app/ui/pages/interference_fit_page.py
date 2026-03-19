@@ -120,7 +120,7 @@ CHAPTERS: list[dict[str, Any]] = [
     },
     {
         "title": "几何与过盈",
-        "subtitle": "圆柱面过盈（实心轴 + 厚壁轮毂）几何输入。",
+        "subtitle": "圆柱面过盈（实心轴/空心轴 + 厚壁轮毂）几何输入。",
         "fields": [
             FieldSpec(
                 "geometry.shaft_d_mm",
@@ -130,6 +130,15 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("geometry", "shaft_d_mm"),
                 default="40.0",
                 placeholder="例如 40",
+            ),
+            FieldSpec(
+                "geometry.shaft_inner_d_mm",
+                "轴内径 d_i",
+                "mm",
+                "0 表示实心轴；非零时按空心轴修正轴侧柔度与应力。",
+                mapping=("geometry", "shaft_inner_d_mm"),
+                default="0.0",
+                placeholder="实心轴填 0，例如 20",
             ),
             FieldSpec(
                 "geometry.hub_outer_d_mm",
@@ -505,17 +514,53 @@ CHAPTERS: list[dict[str, Any]] = [
         ],
     },
     {
-        "title": "高级校核",
-        "subtitle": "显式开启 repeated-load / fretting 高级评估；不参与基础 DIN verdict。",
+        "title": "Fretting 风险评估",
+        "subtitle": "Step 5 增强结果：评估微动腐蚀风险等级与建议，不参与基础 DIN verdict。",
         "fields": [
             FieldSpec(
-                "advanced.repeated_load_mode",
-                "Repeated-load / fretting 评估",
+                "fretting.mode",
+                "Fretting 评估开关",
                 "-",
-                "off 时不计算；on 时仅在满足简化假设时给出 advanced result。",
+                "off 时不计算；on 时在满足简化适用条件时输出风险等级与建议。",
                 widget_type="choice",
                 options=("off", "on"),
                 default="off",
+            ),
+            FieldSpec(
+                "fretting.load_spectrum",
+                "载荷谱",
+                "-",
+                "按首版简化规则区分 steady、pulsating 与 reversing 对 fretting 的影响。",
+                widget_type="choice",
+                options=("steady", "pulsating", "reversing"),
+                default="pulsating",
+            ),
+            FieldSpec(
+                "fretting.duty_severity",
+                "工况严酷度",
+                "-",
+                "根据设备循环频次与冲击程度选择 light、medium 或 heavy。",
+                widget_type="choice",
+                options=("light", "medium", "heavy"),
+                default="medium",
+            ),
+            FieldSpec(
+                "fretting.surface_condition",
+                "表面状态",
+                "-",
+                "首版按 coated、oiled、dry 三档评估表面保护能力。",
+                widget_type="choice",
+                options=("coated", "oiled", "dry"),
+                default="dry",
+            ),
+            FieldSpec(
+                "fretting.importance_level",
+                "部件重要度",
+                "-",
+                "用于在一般件、重要件、关键件之间施加不同的保守度。",
+                widget_type="choice",
+                options=("general", "important", "critical"),
+                default="important",
             ),
         ],
     },
@@ -535,6 +580,7 @@ BEGINNER_GUIDES: dict[str, str] = {
     "loads.application_factor_ka": "工况越冲击，KA 越大，需求过盈也会随之提高。",
     "options.curve_points": "仅影响曲线显示精细度，不改变任何通过/不通过结论。",
     "geometry.shaft_d_mm": "决定接触面积与接触半径，直接影响扭矩能力。",
+    "geometry.shaft_inner_d_mm": "填 0 表示实心轴；内孔越大，轴越柔，通常会降低接触压力和传递能力。",
     "geometry.hub_outer_d_mm": "外径越大，轮毂刚度越高、同等过盈下接触压力越低。",
     "fit.mode": "如果只知道标准配合代号，优先用“优选配合”；如果已有轴/孔偏差，改用“偏差换算”。",
     "fit.preferred_fit_name": "当前只提供受限的常用孔基制优选配合，用于快速得到可追溯的过盈窗口。",
@@ -566,7 +612,11 @@ BEGINNER_GUIDES: dict[str, str] = {
     "assembly.hub_temp_limit_c": "用于检查热装温度是否超过热处理允许范围；未知时可保留默认估算值。",
     "assembly.mu_press_in": "压入摩擦通常低于干摩擦；推荐结合润滑状态单独输入。",
     "assembly.mu_press_out": "压出摩擦用于估算 extraction force，与 press-in 不一定相同。",
-    "advanced.repeated_load_mode": "这是高级结果块，不会自动并入基础通过/不通过结论；只在满足简化适用条件时给出结果。",
+    "fretting.mode": "Step 5 是增强结果，不改变基础 DIN verdict；关闭后不输出 fretting 评估。",
+    "fretting.load_spectrum": "循环方向越激烈，越容易出现界面微滑移与 fretting 风险。",
+    "fretting.duty_severity": "可以理解为把使用频率、冲击程度和持续时间合并成一个简化严重度输入。",
+    "fretting.surface_condition": "首版不做详细材料学模型，用类别化表面状态近似界面保护能力。",
+    "fretting.importance_level": "部件越关键，建议越保守；它会抬高风险分级和建议强度。",
 }
 
 
@@ -576,7 +626,7 @@ class InterferenceFitPage(BaseChapterPage):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(
             title="过盈配合 · 圆柱面校核",
-            subtitle="DIN 7190 核心增强版：实心轴 + 厚壁轮毂，覆盖防滑、张口缝与应力校核。",
+            subtitle="DIN 7190 核心增强版：实心轴/空心轴 + 厚壁轮毂，覆盖防滑、张口缝与应力校核。",
             parent=parent,
         )
         self._last_payload: dict[str, Any] | None = None
@@ -604,7 +654,14 @@ class InterferenceFitPage(BaseChapterPage):
         )
         self._assembly_method_field = "assembly.method"
         self._assembly_clearance_mode_field = "assembly.clearance_mode"
-        self._repeated_load_mode_field = "advanced.repeated_load_mode"
+        self._fretting_mode_field = "fretting.mode"
+        self._fretting_field_ids = (
+            "fretting.mode",
+            "fretting.load_spectrum",
+            "fretting.duty_severity",
+            "fretting.surface_condition",
+            "fretting.importance_level",
+        )
         self._assembly_shrink_fields = (
             "assembly.room_temperature_c",
             "assembly.shaft_temperature_c",
@@ -907,6 +964,31 @@ class InterferenceFitPage(BaseChapterPage):
         e_widget.setText(f"{material['e_mpa']:.0f}")
         nu_widget.setText(f"{material['nu']:.2f}")
 
+    def _infer_material_preset(self, e_value: Any, nu_value: Any) -> str:
+        try:
+            e_numeric = float(e_value)
+            nu_numeric = float(nu_value)
+        except (TypeError, ValueError):
+            return "自定义"
+        for name, material in MATERIAL_LIBRARY.items():
+            if material is None:
+                continue
+            if abs(e_numeric - float(material["e_mpa"])) < 1e-6 and abs(nu_numeric - float(material["nu"])) < 1e-9:
+                return name
+        return "自定义"
+
+    def _infer_roughness_profile(self, smoothing_factor: Any) -> str:
+        try:
+            factor_numeric = float(smoothing_factor)
+        except (TypeError, ValueError):
+            return "自定义k"
+        for name, factor in ROUGHNESS_PROFILE_FACTORS.items():
+            if factor is None:
+                continue
+            if abs(factor_numeric - float(factor)) < 1e-9:
+                return name
+        return "自定义k"
+
     def _register_roughness_binding(self) -> None:
         selector = self._field_widgets.get(self._roughness_profile_field)
         if isinstance(selector, QComboBox):
@@ -1140,8 +1222,12 @@ class InterferenceFitPage(BaseChapterPage):
                 assembly_payload.pop(key, None)
             assembly_payload.pop("clearance_mode", None)
             payload["assembly"] = assembly_payload
-        payload["advanced"] = {
-            "repeated_load_mode": self._read_widget_value(self._field_specs[self._repeated_load_mode_field]) or "off"
+        payload["fretting"] = {
+            "mode": self._read_widget_value(self._field_specs[self._fretting_mode_field]) or "off",
+            "load_spectrum": self._read_widget_value(self._field_specs["fretting.load_spectrum"]) or "pulsating",
+            "duty_severity": self._read_widget_value(self._field_specs["fretting.duty_severity"]) or "medium",
+            "surface_condition": self._read_widget_value(self._field_specs["fretting.surface_condition"]) or "dry",
+            "importance_level": self._read_widget_value(self._field_specs["fretting.importance_level"]) or "important",
         }
         return payload
 
@@ -1188,10 +1274,15 @@ class InterferenceFitPage(BaseChapterPage):
         stress = result["stress_mpa"]
         safety = result["safety"]
         add_p = result["additional_pressure_mpa"]
+        model = result.get("model", {})
+        derived = result.get("derived", {})
         assembly_lines = self._build_assembly_trace_lines()
-        repeated_lines = self._build_repeated_load_trace_lines()
+        fretting_lines = self._build_fretting_trace_lines()
+        shaft_type = "hollow shaft" if model.get("shaft_type") == "hollow_shaft" else "solid shaft"
+        shaft_inner_d_mm = float(derived.get("shaft_inner_d_mm", 0.0))
 
         metric_lines = [
+            f"• 几何模型: {shaft_type}, shaft inner diameter={shaft_inner_d_mm:.2f} mm",
             f"• 设计需求压强: p_req,T={req['p_required_torque_mpa']:.2f} MPa, p_req,Ax={req['p_required_axial_mpa']:.2f} MPa, "
             f"p_req,comb={req['p_required_combined_mpa']:.2f} MPa, p_gap={req['p_required_gap_mpa']:.2f} MPa, "
             f"p_req,total={req['p_required_mpa']:.2f} MPa",
@@ -1202,7 +1293,7 @@ class InterferenceFitPage(BaseChapterPage):
             f"• 轴向能力 min/mean/max: {cap['axial_min_n']:.0f} / {cap['axial_mean_n']:.0f} / {cap['axial_max_n']:.0f} N",
             f"• 压入力 min/mean/max: {asm['press_force_min_n']:.0f} / {asm['press_force_mean_n']:.0f} / {asm['press_force_max_n']:.0f} N",
             *[f"• {line}" for line in assembly_lines],
-            *[f"• {line}" for line in repeated_lines],
+            *[f"• {line}" for line in fretting_lines],
             f"• 附加载荷压强: p_r={add_p['p_radial']:.2f} MPa, p_b={add_p['p_bending']:.2f} MPa, p_gap={add_p['p_gap']:.2f} MPa",
             f"• 粗糙度修正: s={rough['subsidence_um']:.2f} um, delta_eff,min/mean/max={rough['delta_effective_min_um']:.2f} / {rough['delta_effective_mean_um']:.2f} / {rough['delta_effective_max_um']:.2f} um",
             f"• 应力 max: shaft_vm={stress['shaft_vm_max']:.1f} MPa, hub_vm={stress['hub_vm_max']:.1f} MPa, hub_sigma_theta={stress['hub_hoop_inner_max']:.1f} MPa",
@@ -1224,11 +1315,18 @@ class InterferenceFitPage(BaseChapterPage):
         for msg in result.get("messages", []):
             messages.append(f"[提示] {msg}")
         messages.extend(self._build_recommendations(result))
+        fretting_result = result.get("fretting", {})
+        if isinstance(fretting_result, dict) and fretting_result.get("enabled"):
+            risk_level = str(fretting_result.get("risk_level", "not_applicable"))
+            messages.append(f"[Step 5] Fretting 风险等级: {risk_level}")
+            for recommendation in fretting_result.get("recommendations", []):
+                messages.append(f"[Step 5 建议] {recommendation}")
         messages.append(
             "[说明] 当前模型为 DIN 7190 核心增强版：线弹性、均匀接触压力、恒定摩擦。"
             "弯矩附加压强按 QW=0 的保守简化处理；当前仅内置有限范围的优选配合预设，"
-            "阶梯轮毂与离心力未纳入本轮。"
+            "阶梯轮毂与离心力未纳入本轮。空心轴主模型已支持，但重复载荷简化式仍仅适用于实心轴。"
         )
+        messages.append("[说明] Step 5 Fretting 风险评估属于增强结果，不改变基础通过/不通过结论。")
         self.message_box.setPlainText("\n".join(messages))
 
     def _build_recommendations(self, result: dict[str, Any]) -> list[str]:
@@ -1335,24 +1433,25 @@ class InterferenceFitPage(BaseChapterPage):
                 )
         return lines
 
-    def _build_repeated_load_trace_lines(self) -> list[str]:
+    def _build_fretting_trace_lines(self) -> list[str]:
         if not isinstance(self._last_result, dict):
             return []
-        repeated = self._last_result.get("repeated_load", {})
-        if not isinstance(repeated, dict):
+        fretting = self._last_result.get("fretting", {})
+        if not isinstance(fretting, dict):
             return []
 
         lines = [
-            "repeated load: "
-            f"enabled={repeated.get('enabled', False)}, applicable={repeated.get('applicable', False)}"
+            "fretting: "
+            f"enabled={fretting.get('enabled', False)}, applicable={fretting.get('applicable', False)}"
         ]
-        max_torque = repeated.get("max_transferable_torque_nm")
-        if max_torque is not None:
-            lines.append(f"max_transferable_torque: {float(max_torque):.3f} N·m")
-        notes = repeated.get("notes", [])
+        lines.append(f"risk level: {fretting.get('risk_level', 'not_applicable')}")
+        risk_score = fretting.get("risk_score")
+        if risk_score is not None:
+            lines.append(f"risk score: {float(risk_score):.3f} / {float(fretting.get('max_score', 0.0)):.3f}")
+        notes = fretting.get("notes", [])
         if isinstance(notes, list):
             for note in notes:
-                lines.append(f"repeated load note: {note}")
+                lines.append(f"fretting note: {note}")
         return lines
 
     def _build_input_source_trace_lines(self) -> list[str]:
@@ -1364,12 +1463,13 @@ class InterferenceFitPage(BaseChapterPage):
             return value or fallback
 
         lines = [
+            f"shaft inner diameter: {read('geometry.shaft_inner_d_mm', '0')}",
             f"shaft material preset: {read('materials.shaft_material')}",
             f"hub material preset: {read('materials.hub_material')}",
             f"roughness profile source: {read('roughness.profile')}",
             f"fit ui mode: {read('fit.mode')}",
             f"assembly ui mode: {read('assembly.method')}",
-            f"repeated load mode: {read('advanced.repeated_load_mode')}",
+            f"fretting mode: {read('fretting.mode')}",
         ]
         preferred_fit = read("fit.preferred_fit_name", "")
         if preferred_fit:
@@ -1384,12 +1484,85 @@ class InterferenceFitPage(BaseChapterPage):
         inputs = inputs_data if isinstance(inputs_data, dict) else data
         ui_state_data = data.get("ui_state")
         ui_state = ui_state_data if isinstance(ui_state_data, dict) else {}
+        legacy_ui_repeated_mode = ui_state.get("advanced.repeated_load_mode")
 
         self._clear()
+        legacy_repeated_mode = None
+        advanced_section = inputs.get("advanced")
+        if isinstance(advanced_section, dict):
+            legacy_repeated_mode = advanced_section.get("repeated_load_mode")
         for spec in self._field_specs.values():
             value: Any | None = None
             if spec.field_id in ui_state:
                 value = ui_state[spec.field_id]
+            elif spec.field_id == "materials.shaft_material" and "materials.shaft_material" not in ui_state:
+                materials_section = inputs.get("materials")
+                if isinstance(materials_section, dict):
+                    value = self._infer_material_preset(
+                        materials_section.get("shaft_e_mpa"),
+                        materials_section.get("shaft_nu"),
+                    )
+            elif spec.field_id == "materials.hub_material" and "materials.hub_material" not in ui_state:
+                materials_section = inputs.get("materials")
+                if isinstance(materials_section, dict):
+                    value = self._infer_material_preset(
+                        materials_section.get("hub_e_mpa"),
+                        materials_section.get("hub_nu"),
+                    )
+            elif spec.field_id == "roughness.profile" and "roughness.profile" not in ui_state:
+                roughness_section = inputs.get("roughness")
+                if isinstance(roughness_section, dict):
+                    value = self._infer_roughness_profile(roughness_section.get("smoothing_factor"))
+            elif spec.field_id == "assembly.method" and "assembly.method" not in ui_state:
+                assembly_section = inputs.get("assembly")
+                if isinstance(assembly_section, dict) and "method" in assembly_section:
+                    value = assembly_section["method"]
+            elif spec.field_id == "assembly.clearance_mode" and "assembly.clearance_mode" not in ui_state:
+                assembly_section = inputs.get("assembly")
+                if isinstance(assembly_section, dict) and "clearance_mode" in assembly_section:
+                    value = assembly_section["clearance_mode"]
+            elif spec.field_id == "fit.mode" and "fit.mode" not in ui_state:
+                fit_selection_section = inputs.get("fit_selection")
+                if isinstance(fit_selection_section, dict):
+                    mode = str(fit_selection_section.get("mode", "")).strip()
+                    if mode == "preferred_fit":
+                        value = "优选配合"
+                    elif mode == "user_defined_deviations":
+                        value = "偏差换算"
+                    elif mode:
+                        value = "直接输入过盈量"
+            elif spec.field_id == "fit.preferred_fit_name" and "fit.preferred_fit_name" not in ui_state:
+                fit_selection_section = inputs.get("fit_selection")
+                if isinstance(fit_selection_section, dict) and "fit_name" in fit_selection_section:
+                    value = fit_selection_section["fit_name"]
+            elif spec.field_id.startswith("fit.") and "fit.mode" not in ui_state:
+                fit_selection_section = inputs.get("fit_selection")
+                if isinstance(fit_selection_section, dict) and str(fit_selection_section.get("mode", "")).strip() == "user_defined_deviations":
+                    deviations = fit_selection_section.get("deviations_um")
+                    if isinstance(deviations, dict):
+                        deviation_map = {
+                            "fit.shaft_upper_deviation_um": "shaft_upper_um",
+                            "fit.shaft_lower_deviation_um": "shaft_lower_um",
+                            "fit.hub_upper_deviation_um": "hub_upper_um",
+                            "fit.hub_lower_deviation_um": "hub_lower_um",
+                        }
+                        deviation_key = deviation_map.get(spec.field_id)
+                        if deviation_key and deviation_key in deviations:
+                            value = deviations[deviation_key]
+            elif spec.field_id == "fretting.mode" and "fretting.mode" not in ui_state:
+                fretting_section = inputs.get("fretting")
+                if isinstance(fretting_section, dict) and "mode" in fretting_section:
+                    value = fretting_section["mode"]
+                elif legacy_ui_repeated_mode is not None:
+                    value = legacy_ui_repeated_mode
+                elif legacy_repeated_mode is not None:
+                    value = legacy_repeated_mode
+            elif spec.field_id.startswith("fretting.") and "fretting.mode" not in ui_state:
+                fretting_section = inputs.get("fretting")
+                if isinstance(fretting_section, dict):
+                    key = spec.field_id.split(".", 1)[1]
+                    if key in fretting_section:
+                        value = fretting_section[key]
             elif spec.mapping is not None:
                 sec, key = spec.mapping
                 section = inputs.get(sec)
@@ -1500,6 +1673,10 @@ class InterferenceFitPage(BaseChapterPage):
         req = result["required"]
         rough = result["roughness"]
         add_p = result["additional_pressure_mpa"]
+        model = result.get("model", {})
+        derived = result.get("derived", {})
+        shaft_type = "hollow shaft" if model.get("shaft_type") == "hollow_shaft" else "solid shaft"
+        shaft_inner_d_mm = float(derived.get("shaft_inner_d_mm", 0.0))
 
         lines = [
             "过盈配合校核报告（DIN 7190 核心增强版）",
@@ -1519,11 +1696,15 @@ class InterferenceFitPage(BaseChapterPage):
                 *[f"- {line}" for line in self._build_input_source_trace_lines()],
                 "",
                 "关键值:",
+                f"- shaft type / shaft inner diameter: {shaft_type} / {shaft_inner_d_mm:.3f} mm",
                 f"- p_min / p_mean / p_max / p_req: {p['p_min']:.3f} / {p['p_mean']:.3f} / {p['p_max']:.3f} / {p['p_required']:.3f} MPa",
                 f"- p_req,T / p_req,Ax / p_req,comb / p_gap: {req['p_required_torque_mpa']:.3f} / {req['p_required_axial_mpa']:.3f} / {req['p_required_combined_mpa']:.3f} / {req['p_required_gap_mpa']:.3f} MPa",
                 *[f"- {line}" for line in self._build_fit_trace_lines()],
                 *[f"- {line}" for line in self._build_assembly_trace_lines()],
-                *[f"- {line}" for line in self._build_repeated_load_trace_lines()],
+                "",
+                "Step 5 Fretting 风险评估:",
+                *[f"- {line}" for line in self._build_fretting_trace_lines()],
+                "- Step 5 fretting risk assessment is an enhancement result and does not change the base pass/fail verdict.",
                 f"- p_r / p_b / p_gap: {add_p['p_radial']:.3f} / {add_p['p_bending']:.3f} / {add_p['p_gap']:.3f} MPa",
                 f"- roughness subsidence s: {rough['subsidence_um']:.3f} um",
                 f"- delta_eff,min / mean / max: {rough['delta_effective_min_um']:.3f} / {rough['delta_effective_mean_um']:.3f} / {rough['delta_effective_max_um']:.3f} um",
@@ -1536,9 +1717,9 @@ class InterferenceFitPage(BaseChapterPage):
                 f"- S_shaft / S_hub: {safety['shaft_sf']:.3f} / {safety['hub_sf']:.3f}",
                 "",
                 "模型假设与排除:",
-                "- 当前模型为 DIN 7190 核心增强版：线弹性、均匀接触压力、恒定摩擦。",
+                "- 当前模型为 DIN 7190 核心增强版：线弹性、均匀接触压力、恒定摩擦；已支持实心轴与空心轴主模型。",
                 "- 弯矩附加压强按 QW=0 的保守简化处理。",
-                "- 本轮显式排除：centrifugal force、stepped hub geometry。",
+                "- 本轮显式排除：centrifugal force、stepped hub geometry；repeated-load 简化式仍只适用于实心轴。",
             ]
         )
         return lines

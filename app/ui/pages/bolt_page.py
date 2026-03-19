@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import importlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,7 +40,6 @@ from app.ui.input_condition_store import (
 )
 from app.ui.widgets.clamping_diagram import ClampingDiagramWidget, ThreadForceTriangleWidget
 from app.ui.report_export import export_report_lines
-from app.ui.report_pdf import generate_bolt_report
 from app.ui.pages.bolt_flowchart import (
     FlowchartNavWidget, RStepDetailPage, R_STEPS,
 )
@@ -48,6 +48,30 @@ from core.bolt.calculator import InputError, calculate_vdi2230_core
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES_DIR = PROJECT_ROOT / "examples"
 SAVED_INPUTS_DIR = build_saved_inputs_dir(PROJECT_ROOT)
+
+
+def _export_bolt_pdf_report(
+    out_path: Path,
+    payload: dict[str, Any],
+    result: dict[str, Any],
+    report_lines: list[str],
+) -> bool:
+    """Export the rich PDF report when reportlab is available, else fall back."""
+    try:
+        report_pdf = importlib.import_module("app.ui.report_pdf")
+    except ModuleNotFoundError as exc:
+        missing_module = (exc.name or "").split(".")[0]
+        if missing_module and missing_module != "reportlab":
+            raise
+        if not missing_module and "reportlab" not in str(exc):
+            raise
+        from app.ui.report_export import _export_pdf
+
+        _export_pdf(out_path, report_lines)
+        return False
+
+    report_pdf.generate_bolt_report(out_path, payload, result)
+    return True
 
 
 @dataclass(frozen=True)
@@ -2649,7 +2673,18 @@ class BoltPage(QWidget):
         out_path.parent.mkdir(parents=True, exist_ok=True)
         suffix = out_path.suffix.lower()
         if suffix == ".pdf":
-            generate_bolt_report(out_path, self._last_payload, self._last_result)
+            report_lines = self._build_report_lines()
+            used_rich_pdf = _export_bolt_pdf_report(
+                out_path,
+                self._last_payload,
+                self._last_result,
+                report_lines,
+            )
+            if not used_rich_pdf:
+                self.info_label.setText(
+                    f"校核报告已导出: {out_path}（当前环境未安装 reportlab，已使用基础 PDF 导出）"
+                )
+                return
         elif suffix == ".docx":
             from app.ui.report_export import _export_docx
             _export_docx(out_path, self._build_report_lines())

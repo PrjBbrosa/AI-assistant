@@ -7,11 +7,13 @@ from .fit_selection import (
     derive_interference_from_preferred_fit,
 )
 from .assembly import calculate_assembly_detail
+from .fretting import assess_fretting_risk
 
 __all__ = [
     "InputError",
     "calculate_interference_fit",
     "calculate_assembly_detail",
+    "assess_fretting_risk",
     "PREFERRED_FIT_OPTIONS",
     "derive_interference_from_deviations",
     "derive_interference_from_preferred_fit",

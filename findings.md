@@ -238,6 +238,69 @@
   - 仅支持 `H7/p6`、`H7/s6`、`H7/u6`
   - 仅覆盖 `6~50 mm`
   - 与 eAssistant handbook / MITCalc 所示能力相比属于有意收窄实现
+
+## 2026-03-19 Interference-Fit Closeout Findings
+
+### 已完成的收尾修正
+- raw payload 回灌语义缺口已修复：
+  - `InterferenceFitPage._apply_input_data()` 现在会在缺少 `ui_state` 时，从原始输入中反推材料、粗糙度 profile、assembly mode、fit mode 和 fretting mode
+  - 若与预设不匹配，则显式保持 `自定义`，不再静默覆盖原始数值
+- `fit_selection` 已补 band 边界测试：
+  - `H7/s6 @ 10 mm`
+  - `H7/s6 @ 18 mm`
+  - `H7/u6 @ 35 mm`
+- 已新增公开 benchmark 差异说明：
+  - `docs/references/2026-03-19-interference-public-benchmark-notes.md`
+- 历史设计文档已加“状态更新”说明：
+  - 防止把 2026-03-08 的设计快照误读成当前能力边界
+
+### 当前仍然明显的局限性
+- 当前主模型仍然限定为实心轴 + 厚壁轮毂
+- 空心轴尚未接入主模型，因此不能与部分 DIN/eAssistant 经典案例直接一比一 benchmark
+- 离心力 / 转速、服役温度、阶梯几何仍未进入主模型
+- ISO 286 仍为 curated subset，不是完整公差库
+
+## 2026-03-19 Hollow-Shaft Support Kickoff
+
+### Scope Decision
+- 用户已明确要求“直接做空心轴支持”
+- 本轮按最小增量范围执行：
+  - 新增 `geometry.shaft_inner_d_mm`
+  - 接入主压力/能力/应力链路
+  - 更新 UI / 报告 / trace
+- 本轮仍不扩展：
+  - speed / centrifugal
+  - service temperature
+  - stepped geometry
+
+### Design Choice
+- 为保持当前实心轴输出稳定，空心轴首版采用“兼容当前实心轴基线”的柔度放大方案
+- `shaft_inner_d_mm = 0` 时严格退化为当前结果
+- `shaft_inner_d_mm > 0` 时：
+  - 轴侧柔度增大
+  - 接触压力与承载能力下降
+  - repeated-load block 降级为 `not applicable`
+
+### Implementation Outcome
+- `geometry.shaft_inner_d_mm` 已进入主 payload / calculator / UI / report 链路
+- 当前结果层新增并使用：
+  - `model.shaft_type`
+  - `derived.shaft_inner_d_mm`
+  - `derived.shaft_bore_ratio`
+  - `derived.shaft_compliance_factor`
+- 空心轴下：
+  - `p_min`、`torque_min_nm` 按预期下降
+  - 轴侧 von Mises 应力不再沿用实心轴常量系数
+  - `repeated_load` 与简化 fretting gate 会显式返回 `not applicable`
+
+### Updated Limitations After Phase 15
+- 主模型已不再局限于实心轴，但仍然是：
+  - 实心轴/空心轴
+  - 厚壁轮毂
+  - 无 speed / centrifugal 主耦合
+  - 无 service temperature 主耦合
+  - 无 stepped geometry
+- 空心轴支持首版采用兼容当前实心轴基线的增量扩展，不应误解为“DIN 7190 完整统一空心轴求解器”
 - 已生成正式审查报告：
   - `docs/review/2026-03-18-interference-fit-deep-review.md`
 
@@ -262,3 +325,43 @@
 - 用户确认方向后，再写：
   - `docs/superpowers/specs/2026-03-19-...-design.md`
   - `docs/superpowers/plans/2026-03-19-...md`
+
+### Approved Design Direction
+- 推荐方案已确认：
+  - fretting 作为“过盈配合第 5 步增强模块”
+  - 输出 `适用性 + 风险等级 + 原因拆解 + 建议`
+  - 不进入 `overall_pass`
+  - 以当前 `repeated_load` 逻辑为基础，升级为正式 Step 5 结果块
+- 正式 spec 已写入：
+  - `docs/superpowers/specs/2026-03-19-interference-fit-fretting-step-design.md`
+- implementation plan 已写入：
+  - `docs/superpowers/plans/2026-03-19-interference-fit-fretting-step.md`
+
+### Implementation Outcome
+- 已新增 `core/interference/fretting.py`
+  - 输出 `enabled / applicable / risk_level / risk_score / drivers / recommendations / confidence / notes`
+- `core/interference/calculator.py` 已集成新的 `fretting` 结果块
+  - 新输入优先读取 `fretting.mode`
+  - legacy `advanced.repeated_load_mode` 仍可兼容触发 fretting
+  - `overall_pass` 不受 fretting 影响
+- `app/ui/pages/interference_fit_page.py` 已将旧“高级校核”升级为正式 `Fretting 风险评估` Step 5
+  - 新增字段：
+    - `fretting.mode`
+    - `fretting.load_spectrum`
+    - `fretting.duty_severity`
+    - `fretting.surface_condition`
+    - `fretting.importance_level`
+  - 报告与结果区已显示 Step 5 fretting 段落，并明确说明“不改变基础 verdict”
+- `examples/interference_case_01.json` 已切换为 fretting-enabled 示例
+- README 已更新为 Step 5 fretting 语义
+
+### Verification Evidence
+- 已运行：
+  - `QT_QPA_PLATFORM=offscreen python3 -m pytest tests/core/interference/test_fretting.py tests/core/interference/test_calculator.py tests/core/interference/test_fit_selection.py tests/core/interference/test_assembly.py tests/ui/test_interference_page.py -q`
+- 结果：
+  - `41 passed`
+- 额外 manual smoke：
+  - `disabled` -> `enabled=False`, `risk_level=not_applicable`, `overall_pass=True`
+  - `high-risk` -> `enabled=True`, `applicable=True`, `risk_level=high`, `overall_pass=True`
+  - `legacy-switch` -> legacy advanced 开关仍可启用 fretting
+  - `not-applicable` -> `risk_level=not_applicable`, 原因会写入 notes

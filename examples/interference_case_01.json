@@ -44,6 +44,13 @@
     "assembly": {
       "mu_press_in": "0.08",
       "mu_press_out": "0.06"
+    },
+    "fretting": {
+      "mode": "on",
+      "load_spectrum": "reversing",
+      "duty_severity": "heavy",
+      "surface_condition": "dry",
+      "importance_level": "critical"
     }
   },
   "ui_state": {
@@ -54,6 +61,10 @@
     "fit.preferred_fit_name": "H7/s6",
     "assembly.method": "force_fit",
     "assembly.clearance_mode": "diameter_rule",
-    "advanced.repeated_load_mode": "on"
+    "fretting.mode": "on",
+    "fretting.load_spectrum": "reversing",
+    "fretting.duty_severity": "heavy",
+    "fretting.surface_condition": "dry",
+    "fretting.importance_level": "critical"
   }
 }
