@@ -108,6 +108,131 @@ class BoltPageStateTests(unittest.TestCase):
         self.assertEqual(page._field_widgets["assembly.tightening_method"].currentText(), "转角法")  # type: ignore[attr-defined]
         self.assertEqual(page._field_widgets["options.surface_treatment"].currentText(), "切削")  # type: ignore[attr-defined]
 
+    def test_setup_case_axial_hides_transverse_fields_and_builds_zero_fq(self) -> None:
+        page = BoltPage()
+
+        page._field_widgets["operating.setup_case"].setCurrentText("轴向载荷")  # type: ignore[attr-defined]
+        page._field_widgets["loads.FA_max"].setText("12000")  # type: ignore[attr-defined]
+        page._field_widgets["loads.FQ_max"].setText("800")  # type: ignore[attr-defined]
+        page._field_widgets["loads.friction_interfaces"].setText("2")  # type: ignore[attr-defined]
+        page._field_widgets["loads.slip_friction_coefficient"].setText("0.22")  # type: ignore[attr-defined]
+
+        payload = page._build_payload()
+
+        self.assertTrue(page._field_cards["loads.FQ_max"].isHidden())
+        self.assertTrue(page._field_cards["loads.friction_interfaces"].isHidden())
+        self.assertTrue(page._field_cards["loads.slip_friction_coefficient"].isHidden())
+        self.assertEqual(payload["loads"]["FA_max"], 12000.0)
+        self.assertEqual(payload["loads"]["FQ_max"], 0.0)
+        self.assertNotIn("friction_interfaces", payload["loads"])
+        self.assertNotIn("slip_friction_coefficient", payload["loads"])
+
+    def test_setup_case_transverse_hides_axial_force_and_builds_zero_fa(self) -> None:
+        page = BoltPage()
+
+        page._field_widgets["operating.setup_case"].setCurrentText("横向载荷")  # type: ignore[attr-defined]
+        page._field_widgets["loads.FA_max"].setText("15000")  # type: ignore[attr-defined]
+        page._field_widgets["loads.FQ_max"].setText("2500")  # type: ignore[attr-defined]
+        page._field_widgets["loads.seal_force_required"].setText("3000")  # type: ignore[attr-defined]
+
+        payload = page._build_payload()
+
+        self.assertTrue(page._field_cards["loads.FA_max"].isHidden())
+        self.assertFalse(page._field_cards["loads.seal_force_required"].isHidden())
+        self.assertEqual(payload["loads"]["FA_max"], 0.0)
+        self.assertEqual(payload["loads"]["FQ_max"], 2500.0)
+        self.assertEqual(payload["loads"]["seal_force_required"], 3000.0)
+
+    def test_setup_case_combined_and_free_input_keep_all_load_fields_visible(self) -> None:
+        page = BoltPage()
+
+        page._field_widgets["operating.setup_case"].setCurrentText("轴向+横向")  # type: ignore[attr-defined]
+        page._field_widgets["loads.slip_mu_mode"].setCurrentText("跟随支承面摩擦 μK")  # type: ignore[attr-defined]
+        self.assertFalse(page._field_cards["loads.FA_max"].isHidden())
+        self.assertFalse(page._field_cards["loads.FQ_max"].isHidden())
+        self.assertFalse(page._field_cards["loads.friction_interfaces"].isHidden())
+        self.assertFalse(page._field_cards["loads.slip_mu_mode"].isHidden())
+        self.assertTrue(page._field_cards["loads.slip_friction_coefficient"].isHidden())
+
+        page._field_widgets["operating.setup_case"].setCurrentText("自由输入")  # type: ignore[attr-defined]
+        self.assertFalse(page._field_cards["loads.FA_max"].isHidden())
+        self.assertFalse(page._field_cards["loads.FQ_max"].isHidden())
+
+    def test_slip_mu_follow_mode_hides_mu_t_and_omits_payload_value(self) -> None:
+        page = BoltPage()
+
+        page._field_widgets["operating.setup_case"].setCurrentText("横向载荷")  # type: ignore[attr-defined]
+        page._field_widgets["loads.slip_mu_mode"].setCurrentText("跟随支承面摩擦 μK")  # type: ignore[attr-defined]
+        page._field_widgets["tightening.mu_bearing"].setText("0.14")  # type: ignore[attr-defined]
+
+        payload = page._build_payload()
+
+        self.assertEqual(page._field_widgets["loads.slip_mu_mode"].currentText(), "跟随支承面摩擦 μK")  # type: ignore[attr-defined]
+        self.assertFalse(page._field_cards["loads.slip_mu_mode"].isHidden())
+        self.assertTrue(page._field_cards["loads.slip_friction_coefficient"].isHidden())
+        self.assertNotIn("slip_friction_coefficient", payload["loads"])
+
+    def test_slip_mu_custom_mode_shows_mu_t_and_keeps_manual_value(self) -> None:
+        page = BoltPage()
+
+        page._field_widgets["operating.setup_case"].setCurrentText("横向载荷")  # type: ignore[attr-defined]
+        page._field_widgets["loads.slip_mu_mode"].setCurrentText("单独输入 μT")  # type: ignore[attr-defined]
+        page._field_widgets["loads.slip_friction_coefficient"].setText("0.08")  # type: ignore[attr-defined]
+
+        payload = page._build_payload()
+
+        self.assertFalse(page._field_cards["loads.slip_friction_coefficient"].isHidden())
+        self.assertEqual(payload["loads"]["slip_friction_coefficient"], 0.08)
+
+    def test_apply_raw_payload_with_slip_mu_switches_mode_to_custom(self) -> None:
+        page = BoltPage()
+        raw = _raw_bolt_payload()
+        raw["loads"]["FQ_max"] = 1200.0
+        raw["loads"]["slip_friction_coefficient"] = 0.16
+
+        page._apply_input_data(raw)
+
+        self.assertEqual(page._field_widgets["loads.slip_mu_mode"].currentText(), "单独输入 μT")  # type: ignore[attr-defined]
+        self.assertFalse(page._field_cards["loads.slip_friction_coefficient"].isHidden())
+
+    def test_bolt_material_updates_alpha_and_e_bolt_presets(self) -> None:
+        page = BoltPage()
+
+        page._field_widgets["operating.bolt_material"].setCurrentText("不锈钢")  # type: ignore[attr-defined]
+
+        self.assertEqual(page._field_widgets["operating.alpha_bolt"].text(), "16.0e-6")  # type: ignore[attr-defined]
+        self.assertEqual(page._field_widgets["stiffness.E_bolt"].text(), "193000")  # type: ignore[attr-defined]
+
+    def test_clamped_material_updates_alpha_and_e_clamped_presets(self) -> None:
+        page = BoltPage()
+
+        page._set_check_level("thermal")
+        page._apply_check_level_visibility()
+        page._field_widgets["operating.clamped_material"].setCurrentText("铝合金")  # type: ignore[attr-defined]
+
+        self.assertEqual(page._field_widgets["operating.alpha_parts"].text(), "23.0e-6")  # type: ignore[attr-defined]
+        self.assertEqual(page._field_widgets["stiffness.E_clamped"].text(), "70000")  # type: ignore[attr-defined]
+
+    def test_layer_material_updates_alpha_and_layer_e_presets(self) -> None:
+        page = BoltPage()
+
+        page._field_widgets["clamped.part_count"].setCurrentText("2")  # type: ignore[attr-defined]
+        page._on_part_count_changed()
+        page._field_widgets["clamped.layer_2.material"].setCurrentText("铸铁")  # type: ignore[attr-defined]
+
+        self.assertEqual(page._field_widgets["clamped.layer_2.alpha"].text(), "10.5e-6")  # type: ignore[attr-defined]
+        self.assertEqual(page._field_widgets["clamped.layer_2.E"].text(), "120000")  # type: ignore[attr-defined]
+
+    def test_custom_material_unlocks_manual_e_fields(self) -> None:
+        page = BoltPage()
+
+        page._field_widgets["operating.clamped_material"].setCurrentText("铝合金")  # type: ignore[attr-defined]
+        page._field_widgets["operating.clamped_material"].setCurrentText("自定义")  # type: ignore[attr-defined]
+
+        self.assertFalse(page._field_widgets["operating.alpha_parts"].isReadOnly())  # type: ignore[attr-defined]
+        self.assertEqual(page._field_widgets["operating.alpha_parts"].text(), "")  # type: ignore[attr-defined]
+        self.assertEqual(page._field_widgets["stiffness.E_clamped"].text(), "70000")  # type: ignore[attr-defined]
+
     def test_single_layer_custom_material_requires_alpha(self) -> None:
         page = BoltPage()
         page._set_check_level("thermal")

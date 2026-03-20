@@ -183,6 +183,16 @@ LAYER_FIELD_IDS: list[list[str]] = [
     for n in range(1, 6)
 ]
 
+SLIP_MU_MODE_FOLLOW = "跟随支承面摩擦 μK"
+SLIP_MU_MODE_CUSTOM = "单独输入 μT"
+
+ELASTIC_MODULUS_PRESETS: dict[str, str] = {
+    "钢": "210000",
+    "不锈钢": "193000",
+    "铝合金": "70000",
+    "铸铁": "120000",
+}
+
 
 CHAPTERS: list[dict[str, Any]] = [
     {
@@ -562,6 +572,16 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="1",
             ),
             FieldSpec(
+                "loads.slip_mu_mode",
+                "防滑摩擦系数来源",
+                "-",
+                "默认跟随支承面摩擦 μK；只有防滑界面状态明显不同时才单独输入 μT。",
+                mapping=None,
+                widget_type="choice",
+                options=(SLIP_MU_MODE_FOLLOW, SLIP_MU_MODE_CUSTOM),
+                default=SLIP_MU_MODE_FOLLOW,
+            ),
+            FieldSpec(
                 "loads.slip_friction_coefficient",
                 "防滑摩擦系数 μT",
                 "-",
@@ -853,6 +873,46 @@ BEGINNER_GUIDES: dict[str, str] = {
     "stiffness.load_introduction_factor_n": "外载导入比例修正；轴向端部导入通常取 1.0。",
 }
 
+SETUP_CASE_RULES: dict[str, dict[str, Any]] = {
+    "轴向载荷": {
+        "show": {"loads.FA_max", "loads.seal_force_required"},
+        "force_zero": {"FQ_max": 0.0},
+        "drop": {"friction_interfaces", "slip_friction_coefficient"},
+    },
+    "横向载荷": {
+        "show": {
+            "loads.FQ_max",
+            "loads.seal_force_required",
+            "loads.friction_interfaces",
+            "loads.slip_mu_mode",
+        },
+        "force_zero": {"FA_max": 0.0},
+        "drop": set(),
+    },
+    "轴向+横向": {
+        "show": {
+            "loads.FA_max",
+            "loads.FQ_max",
+            "loads.seal_force_required",
+            "loads.friction_interfaces",
+            "loads.slip_mu_mode",
+        },
+        "force_zero": {},
+        "drop": set(),
+    },
+    "自由输入": {
+        "show": {
+            "loads.FA_max",
+            "loads.FQ_max",
+            "loads.seal_force_required",
+            "loads.friction_interfaces",
+            "loads.slip_mu_mode",
+        },
+        "force_zero": {},
+        "drop": set(),
+    },
+}
+
 
 class BoltPage(QWidget):
     """VDI 2230 bolt page with chapter navigation and readable results."""
@@ -1044,6 +1104,14 @@ class BoltPage(QWidget):
         # 初始化可见性
         self._on_part_count_changed()
         self._on_compliance_mode_changed()
+        setup_case_widget = self._field_widgets.get("operating.setup_case")
+        if setup_case_widget and isinstance(setup_case_widget, QComboBox):
+            setup_case_widget.currentTextChanged.connect(self._on_setup_case_changed)
+            self._on_setup_case_changed(setup_case_widget.currentText())
+        slip_mu_mode_widget = self._field_widgets.get("loads.slip_mu_mode")
+        if slip_mu_mode_widget and isinstance(slip_mu_mode_widget, QComboBox):
+            slip_mu_mode_widget.currentTextChanged.connect(self._on_slip_mu_mode_changed)
+            self._on_slip_mu_mode_changed(slip_mu_mode_widget.currentText())
         # 拧紧方式联动 αA hint
         tmethod_w = self._field_widgets.get("assembly.tightening_method")
         if tmethod_w and isinstance(tmethod_w, QComboBox):
@@ -1578,6 +1646,9 @@ class BoltPage(QWidget):
             self.level_desc_label.setText(self._build_level_desc_text(level))
         self._apply_calculation_mode_visibility()
         self._on_part_count_changed()
+        setup_case_widget = self._field_widgets.get("operating.setup_case")
+        if isinstance(setup_case_widget, QComboBox):
+            self._on_setup_case_changed(setup_case_widget.currentText())
         if hasattr(self, "flowchart_nav"):
             self.flowchart_nav.set_r6_visible(show_fatigue)
 
@@ -1621,33 +1692,32 @@ class BoltPage(QWidget):
             rp02_w.clear()
             rp02_w.setFocus()
 
+    def _apply_material_presets(self, text: str, alpha_field_id: str, e_field_id: str) -> None:
+        alpha_w = self._field_widgets.get(alpha_field_id)
+        e_w = self._field_widgets.get(e_field_id)
+        alpha_preset = THERMAL_EXPANSION_PRESETS.get(text)
+        e_preset = ELASTIC_MODULUS_PRESETS.get(text)
+
+        if alpha_w and isinstance(alpha_w, QLineEdit):
+            if alpha_preset is not None:
+                alpha_w.setText(alpha_preset)
+                alpha_w.setReadOnly(True)
+            else:
+                alpha_w.setReadOnly(False)
+                alpha_w.clear()
+                alpha_w.setFocus()
+
+        if e_w and isinstance(e_w, QLineEdit):
+            if e_preset is not None:
+                e_w.setText(e_preset)
+
     def _on_bolt_material_changed(self, text: str) -> None:
         """螺栓材料下拉变更时自动填入热膨胀系数。"""
-        alpha_w = self._field_widgets.get("operating.alpha_bolt")
-        if not (alpha_w and isinstance(alpha_w, QLineEdit)):
-            return
-        preset = THERMAL_EXPANSION_PRESETS.get(text)
-        if preset is not None:
-            alpha_w.setText(preset)
-            alpha_w.setReadOnly(True)
-        else:
-            alpha_w.setReadOnly(False)
-            alpha_w.clear()
-            alpha_w.setFocus()
+        self._apply_material_presets(text, "operating.alpha_bolt", "stiffness.E_bolt")
 
     def _on_clamped_material_changed(self, text: str) -> None:
         """被夹件材料下拉变更时自动填入热膨胀系数。"""
-        alpha_w = self._field_widgets.get("operating.alpha_parts")
-        if not (alpha_w and isinstance(alpha_w, QLineEdit)):
-            return
-        preset = THERMAL_EXPANSION_PRESETS.get(text)
-        if preset is not None:
-            alpha_w.setText(preset)
-            alpha_w.setReadOnly(True)
-        else:
-            alpha_w.setReadOnly(False)
-            alpha_w.clear()
-            alpha_w.setFocus()
+        self._apply_material_presets(text, "operating.alpha_parts", "stiffness.E_clamped")
 
     # -- 单层字段 ID（多层模式时隐藏）--
     _SINGLE_LAYER_FIELDS: set[str] = {
@@ -1719,17 +1789,11 @@ class BoltPage(QWidget):
 
     def _on_layer_material_changed(self, layer_n: int, text: str) -> None:
         """第 N 层材料变更时自动填入对应热膨胀系数。"""
-        alpha_w = self._field_widgets.get(f"clamped.layer_{layer_n}.alpha")
-        if not (alpha_w and isinstance(alpha_w, QLineEdit)):
-            return
-        preset = THERMAL_EXPANSION_PRESETS.get(text)
-        if preset is not None:
-            alpha_w.setText(preset)
-            alpha_w.setReadOnly(True)
-        else:
-            alpha_w.setReadOnly(False)
-            alpha_w.clear()
-            alpha_w.setFocus()
+        self._apply_material_presets(
+            text,
+            f"clamped.layer_{layer_n}.alpha",
+            f"clamped.layer_{layer_n}.E",
+        )
 
     def _on_compliance_mode_changed(self, _text: str = "") -> None:
         """柔度计算方式变更时切换手动输入字段可见性。"""
@@ -1741,6 +1805,43 @@ class BoltPage(QWidget):
             card = self._field_cards.get(fid)
             if card is not None:
                 card.setVisible(not is_auto)
+
+    def _on_setup_case_changed(self, text: str) -> None:
+        """工况类型变更时切换轴向/横向字段可见性。"""
+        rules = SETUP_CASE_RULES.get(text, SETUP_CASE_RULES["自由输入"])
+        visible_fields = rules["show"]
+        managed_fields = {
+            "loads.FA_max",
+            "loads.FQ_max",
+            "loads.seal_force_required",
+            "loads.friction_interfaces",
+            "loads.slip_mu_mode",
+            "loads.slip_friction_coefficient",
+        }
+        for field_id in managed_fields:
+            card = self._field_cards.get(field_id)
+            if card is not None:
+                card.setVisible(field_id in visible_fields)
+        self._on_slip_mu_mode_changed()
+
+    def _on_slip_mu_mode_changed(self, _text: str = "") -> None:
+        """根据 μT 来源模式与工况类型切换 μT 输入框可见性。"""
+        mode_widget = self._field_widgets.get("loads.slip_mu_mode")
+        case_widget = self._field_widgets.get("operating.setup_case")
+        mu_card = self._field_cards.get("loads.slip_friction_coefficient")
+        if not (
+            isinstance(mode_widget, QComboBox)
+            and isinstance(case_widget, QComboBox)
+            and mu_card is not None
+        ):
+            return
+        case_rules = SETUP_CASE_RULES.get(
+            case_widget.currentText(),
+            SETUP_CASE_RULES["自由输入"],
+        )
+        mode_visible = "loads.slip_mu_mode" in case_rules["show"]
+        is_custom = mode_widget.currentText() == SLIP_MU_MODE_CUSTOM
+        mu_card.setVisible(mode_visible and is_custom)
 
     def _on_tightening_method_changed(self, text: str) -> None:
         """拧紧方式变更时更新 αA 字段的 hint/tooltip。"""
@@ -2162,6 +2263,26 @@ class BoltPage(QWidget):
             else:
                 widget.setText(text)  # type: ignore[attr-defined]
 
+        explicit_e_fields: list[tuple[str, str, str]] = [
+            ("stiffness.E_bolt", "stiffness", "E_bolt"),
+            ("stiffness.E_clamped", "stiffness", "E_clamped"),
+        ]
+        for layer_idx in range(1, 6):
+            explicit_e_fields.append((f"clamped.layer_{layer_idx}.E", "", ""))
+
+        for field_id, section_name, key in explicit_e_fields:
+            text: str | None = None
+            if field_id in ui_state:
+                text = str(ui_state[field_id])
+            elif section_name:
+                section = inputs.get(section_name)
+                if isinstance(section, dict) and key in section:
+                    text = str(section[key])
+            widget = self._field_widgets.get(field_id)
+            if text is None or not isinstance(widget, QLineEdit):
+                continue
+            widget.setText(text)
+
         raw_choice_fallbacks: tuple[tuple[str, dict[str, Any], str], ...] = (
             ("elements.joint_type", options, "joint_type"),
             ("clamped.basic_solid", clamped, "basic_solid"),
@@ -2230,6 +2351,8 @@ class BoltPage(QWidget):
                     if alpha_w and isinstance(alpha_w, QLineEdit):
                         alpha_w.setText(str(alpha_val))
                         alpha_w.setReadOnly(matched)
+                    if e_w and isinstance(e_w, QLineEdit):
+                        e_w.setText(str(layer.get("E_clamped", "")))
             self._on_part_count_changed()
             self._on_compliance_mode_changed()
 
@@ -2265,7 +2388,19 @@ class BoltPage(QWidget):
                 elif fq_num > 0:
                     case_widget.setCurrentText("横向载荷")
 
+        loads_section = inputs.get("loads")
+        if "loads.slip_mu_mode" not in ui_state:
+            slip_mode_widget = self._field_widgets.get("loads.slip_mu_mode")
+            if isinstance(slip_mode_widget, QComboBox):
+                has_slip_mu = isinstance(loads_section, dict) and "slip_friction_coefficient" in loads_section
+                slip_mode_widget.setCurrentText(
+                    SLIP_MU_MODE_CUSTOM if has_slip_mu else SLIP_MU_MODE_FOLLOW
+                )
+
         self._apply_check_level_visibility()
+        case_widget = self._field_widgets.get("operating.setup_case")
+        if isinstance(case_widget, QComboBox):
+            self._on_setup_case_changed(case_widget.currentText())
 
     def _load_sample(self, filename: str) -> None:
         sample_path = EXAMPLES_DIR / filename
@@ -2464,6 +2599,24 @@ class BoltPage(QWidget):
             # 多层模式移除单层参数
             payload.get("stiffness", {}).pop("E_clamped", None)
             payload.get("operating", {}).pop("alpha_parts", None)
+
+        setup_case_widget = self._field_widgets.get("operating.setup_case")
+        if isinstance(setup_case_widget, QComboBox):
+            case_rules = SETUP_CASE_RULES.get(
+                setup_case_widget.currentText(),
+                SETUP_CASE_RULES["自由输入"],
+            )
+            loads_section = payload.setdefault("loads", {})
+            for key, value in case_rules["force_zero"].items():
+                loads_section[key] = value
+            for key in case_rules["drop"]:
+                loads_section.pop(key, None)
+            slip_mode_widget = self._field_widgets.get("loads.slip_mu_mode")
+            if (
+                isinstance(slip_mode_widget, QComboBox)
+                and slip_mode_widget.currentText() == SLIP_MU_MODE_FOLLOW
+            ):
+                loads_section.pop("slip_friction_coefficient", None)
 
         return payload
 
