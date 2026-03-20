@@ -85,6 +85,12 @@ def apply_theme(app: QApplication) -> None:
             border: 1px solid #D9D3CA;
             border-radius: 10px;
         }
+        QFrame#WarningCard {
+            background-color: #FFF2DE;
+            border: 1px solid #E7C590;
+            border-left: 4px solid #D97757;
+            border-radius: 10px;
+        }
         QFrame#DisabledSubCard {
             background-color: #F0EDE8;
             border: 1px dashed #C5BFB5;
@@ -188,6 +194,15 @@ def apply_theme(app: QApplication) -> None:
             color: #6B665E;
             font-size: 12px;
         }
+        QLabel#WarningTitle {
+            color: #7F2D1A;
+            font-size: 13px;
+            font-weight: 700;
+        }
+        QLabel#WarningBody {
+            color: #5B5147;
+            font-size: 12px;
+        }
         QLabel#UnitLabel {
             color: #6B665E;
             font-size: 12px;
@@ -273,6 +288,15 @@ def apply_theme(app: QApplication) -> None:
             border: 1px solid #D9D3CA;
             border-radius: 10px;
             padding: 3px 8px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        QLabel#RefBadge {
+            background-color: #E8E3DA;
+            color: #6B665E;
+            border: 1px solid #D9D3CA;
+            border-radius: 10px;
+            padding: 2px 6px;
             font-size: 11px;
             font-weight: 600;
         }

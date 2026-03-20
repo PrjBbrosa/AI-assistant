@@ -54,12 +54,67 @@ MATERIAL_LIBRARY: dict[str, dict[str, float] | None] = {
     "自定义": None,
 }
 MATERIAL_OPTIONS: tuple[str, ...] = tuple(MATERIAL_LIBRARY.keys())
+
+MATERIAL_CATEGORY: dict[str, str] = {
+    "45钢": "steel",
+    "40Cr": "steel",
+    "42CrMo": "steel",
+    "QT500-7": "cast_iron",
+    "灰铸铁 HT250": "cast_iron",
+    "铝合金 6061-T6": "aluminum",
+}
+
+SURFACE_CONDITIONS: tuple[str, ...] = ("干摩擦", "轻油润滑", "MoS2 润滑脂", "自定义")
+
+FRICTION_TABLE: dict[tuple[frozenset[str], str], dict[str, float]] = {
+    (frozenset({"steel", "steel"}), "干摩擦"): {"mu_torque": 0.15, "mu_axial": 0.12, "mu_assembly": 0.12},
+    (frozenset({"steel", "steel"}), "轻油润滑"): {"mu_torque": 0.11, "mu_axial": 0.08, "mu_assembly": 0.08},
+    (frozenset({"steel", "steel"}), "MoS2 润滑脂"): {"mu_torque": 0.08, "mu_axial": 0.06, "mu_assembly": 0.06},
+    (frozenset({"steel", "cast_iron"}), "干摩擦"): {"mu_torque": 0.12, "mu_axial": 0.10, "mu_assembly": 0.10},
+    (frozenset({"steel", "cast_iron"}), "轻油润滑"): {"mu_torque": 0.09, "mu_axial": 0.07, "mu_assembly": 0.07},
+    (frozenset({"steel", "cast_iron"}), "MoS2 润滑脂"): {"mu_torque": 0.07, "mu_axial": 0.05, "mu_assembly": 0.05},
+    (frozenset({"steel", "aluminum"}), "干摩擦"): {"mu_torque": 0.12, "mu_axial": 0.10, "mu_assembly": 0.10},
+    (frozenset({"steel", "aluminum"}), "轻油润滑"): {"mu_torque": 0.08, "mu_axial": 0.06, "mu_assembly": 0.06},
+    (frozenset({"steel", "aluminum"}), "MoS2 润滑脂"): {"mu_torque": 0.06, "mu_axial": 0.04, "mu_assembly": 0.04},
+    (frozenset({"cast_iron", "cast_iron"}), "干摩擦"): {"mu_torque": 0.12, "mu_axial": 0.10, "mu_assembly": 0.10},
+    (frozenset({"cast_iron", "cast_iron"}), "轻油润滑"): {"mu_torque": 0.08, "mu_axial": 0.06, "mu_assembly": 0.06},
+    (frozenset({"cast_iron", "cast_iron"}), "MoS2 润滑脂"): {"mu_torque": 0.06, "mu_axial": 0.04, "mu_assembly": 0.04},
+    (frozenset({"cast_iron", "aluminum"}), "干摩擦"): {"mu_torque": 0.10, "mu_axial": 0.08, "mu_assembly": 0.08},
+    (frozenset({"cast_iron", "aluminum"}), "轻油润滑"): {"mu_torque": 0.07, "mu_axial": 0.05, "mu_assembly": 0.05},
+    (frozenset({"cast_iron", "aluminum"}), "MoS2 润滑脂"): {"mu_torque": 0.05, "mu_axial": 0.04, "mu_assembly": 0.04},
+    (frozenset({"aluminum", "aluminum"}), "干摩擦"): {"mu_torque": 0.10, "mu_axial": 0.08, "mu_assembly": 0.08},
+    (frozenset({"aluminum", "aluminum"}), "轻油润滑"): {"mu_torque": 0.07, "mu_axial": 0.05, "mu_assembly": 0.05},
+    (frozenset({"aluminum", "aluminum"}), "MoS2 润滑脂"): {"mu_torque": 0.05, "mu_axial": 0.04, "mu_assembly": 0.04},
+}
+
+CATEGORY_DISPLAY: dict[str, str] = {
+    "steel": "钢",
+    "cast_iron": "铸铁",
+    "aluminum": "铝",
+}
+
+_FRICTION_MU_FIELDS: tuple[str, ...] = (
+    "friction.mu_torque",
+    "friction.mu_axial",
+    "friction.mu_assembly",
+)
+
 ROUGHNESS_PROFILE_FACTORS: dict[str, float | None] = {
     "DIN 7190-1:2017（k=0.4）": 0.4,
     "DIN 7190:2001（k=0.8）": 0.8,
     "自定义k": None,
 }
 ROUGHNESS_PROFILE_OPTIONS: tuple[str, ...] = tuple(ROUGHNESS_PROFILE_FACTORS.keys())
+ROUGHNESS_BATCH_WARNING_TITLE = "批量生产提示：粗糙度会放大压入散差"
+ROUGHNESS_BATCH_WARNING_TEXT = (
+    "批量生产中，压入力突然偏大或偏小，很多时候并不只是公差波动，"
+    "而是配合面机加工状态变化导致有效过盈与装配摩擦同时变化。\n\n"
+    "可优先从以下方向排查：\n"
+    "1. 看 Rz 与压平量是否波动：粗糙峰压平会改变有效过盈，直接影响接触压力与压入力。\n"
+    "2. 不要只看 Ra：波纹度、圆柱度、刀纹方向和局部毛刺，往往比单一粗糙度数字更影响压入散差。\n"
+    "3. 区分是过盈变了还是摩擦变了：若压入力与脱出力一起变化，多半先看有效过盈；若只压入力异常，优先排查润滑、清洁度和表面擦伤。\n"
+    "4. 批量管控优先项：统一机加工参数、Rz 检测口径、润滑方式、压装速度、倒角去毛刺和清洁度。"
+)
 
 
 @dataclass(frozen=True)
@@ -353,6 +408,15 @@ CHAPTERS: list[dict[str, Any]] = [
         "subtitle": "分开输入服役摩擦与装配摩擦，并按 DIN 7190 粗糙度压平修正有效过盈。",
         "fields": [
             FieldSpec(
+                "friction.surface_condition",
+                "表面状态",
+                "-",
+                "配合面润滑状态，与材料配对共同决定推荐摩擦系数。",
+                widget_type="choice",
+                options=SURFACE_CONDITIONS,
+                default="干摩擦",
+            ),
+            FieldSpec(
                 "friction.mu_torque",
                 "扭矩方向摩擦系数 mu_T",
                 "-",
@@ -636,6 +700,10 @@ class InterferenceFitPage(BaseChapterPage):
         self._field_cards: dict[str, QWidget] = {}
         self._widget_hints: dict[QWidget, str] = {}
         self._check_badges: dict[str, QLabel] = {}
+        self.roughness_warning_box: QFrame | None = None
+        self.roughness_warning_text: QLabel | None = None
+        self._ref_badges: dict[str, QLabel] = {}
+        self._friction_ref_values: dict[str, float] = {}
         self._material_links: dict[str, tuple[str, str]] = {
             "materials.shaft_material": ("materials.shaft_e_mpa", "materials.shaft_nu"),
             "materials.hub_material": ("materials.hub_e_mpa", "materials.hub_nu"),
@@ -701,6 +769,7 @@ class InterferenceFitPage(BaseChapterPage):
         self._register_fit_bindings()
         self._register_assembly_bindings()
         self._apply_defaults()
+        self._sync_friction_from_material()
         self._load_sample("interference_case_01.json")
         self._sync_material_inputs()
         self._sync_roughness_factor()
@@ -762,13 +831,43 @@ class InterferenceFitPage(BaseChapterPage):
             row.addWidget(editor, 0, 1)
             row.addWidget(unit, 0, 2)
             row.addWidget(hint, 1, 0, 1, 3)
+            if spec.field_id in _FRICTION_MU_FIELDS:
+                ref_badge = QLabel("", field_card)
+                ref_badge.setObjectName("RefBadge")
+                ref_badge.setVisible(False)
+                row.addWidget(ref_badge, 2, 0, 1, 3)
+                self._ref_badges[spec.field_id] = ref_badge
             form_layout.addWidget(field_card)
             self._field_cards[spec.field_id] = field_card
+
+        if title == "摩擦与粗糙度":
+            form_layout.addWidget(self._build_roughness_warning_card(container))
 
         form_layout.addStretch(1)
         scroll.setWidget(container)
         page_layout.addWidget(scroll, 1)
         return page
+
+    def _build_roughness_warning_card(self, parent: QWidget) -> QFrame:
+        card = QFrame(parent)
+        card.setObjectName("WarningCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setSpacing(6)
+
+        title = QLabel(ROUGHNESS_BATCH_WARNING_TITLE, card)
+        title.setObjectName("WarningTitle")
+        title.setWordWrap(True)
+
+        body = QLabel(ROUGHNESS_BATCH_WARNING_TEXT, card)
+        body.setObjectName("WarningBody")
+        body.setWordWrap(True)
+
+        layout.addWidget(title)
+        layout.addWidget(body)
+        self.roughness_warning_box = card
+        self.roughness_warning_text = body
+        return card
 
     def _create_editor(self, spec: FieldSpec, parent: QWidget) -> QWidget:
         if spec.widget_type == "choice":
@@ -936,6 +1035,18 @@ class InterferenceFitPage(BaseChapterPage):
                 lambda _text, sid=selector_id: self._apply_material_selection(sid)
             )
 
+        # Friction coefficient auto-fill from material pair + surface condition
+        for fid in ("materials.shaft_material", "materials.hub_material", "friction.surface_condition"):
+            combo = self._field_widgets.get(fid)
+            if isinstance(combo, QComboBox):
+                combo.currentTextChanged.connect(lambda _t: self._sync_friction_from_material())
+
+        # Detect manual edits to friction fields
+        for fid in _FRICTION_MU_FIELDS:
+            widget = self._field_widgets.get(fid)
+            if isinstance(widget, QLineEdit):
+                widget.textChanged.connect(lambda _t: self._check_friction_modified())
+
     def _sync_material_inputs(self) -> None:
         for selector_id in self._material_links:
             self._apply_material_selection(selector_id)
@@ -963,6 +1074,100 @@ class InterferenceFitPage(BaseChapterPage):
             return
         e_widget.setText(f"{material['e_mpa']:.0f}")
         nu_widget.setText(f"{material['nu']:.2f}")
+
+    def _sync_friction_from_material(self) -> None:
+        shaft_combo = self._field_widgets.get("materials.shaft_material")
+        hub_combo = self._field_widgets.get("materials.hub_material")
+        surface_combo = self._field_widgets.get("friction.surface_condition")
+        if not all(isinstance(c, QComboBox) for c in (shaft_combo, hub_combo, surface_combo)):
+            return
+
+        cat_shaft = MATERIAL_CATEGORY.get(shaft_combo.currentText().strip())
+        cat_hub = MATERIAL_CATEGORY.get(hub_combo.currentText().strip())
+        surface = surface_combo.currentText().strip()
+
+        if cat_shaft is None or cat_hub is None or surface == "自定义":
+            for fid in _FRICTION_MU_FIELDS:
+                badge = self._ref_badges.get(fid)
+                if badge is not None:
+                    badge.setVisible(False)
+            return
+
+        key = (frozenset({cat_shaft, cat_hub}), surface)
+        entry = FRICTION_TABLE.get(key)
+        if entry is None:
+            for fid in _FRICTION_MU_FIELDS:
+                badge = self._ref_badges.get(fid)
+                if badge is not None:
+                    badge.setVisible(False)
+            return
+
+        cat_a = CATEGORY_DISPLAY.get(cat_shaft, cat_shaft)
+        cat_b = CATEGORY_DISPLAY.get(cat_hub, cat_hub)
+        source_text = f"DIN 7190-1 参考 \u00b7 {cat_a}/{cat_b} \u00b7 {surface}"
+
+        self._friction_ref_values.clear()
+        for fid in _FRICTION_MU_FIELDS:
+            mu_key = fid.split(".")[-1]
+            value = entry[mu_key]
+            self._friction_ref_values[fid] = value
+
+        # Block textChanged signals during batch fill to avoid intermediate badge churn
+        mu_widgets = []
+        for fid in _FRICTION_MU_FIELDS:
+            w = self._field_widgets.get(fid)
+            if isinstance(w, QLineEdit):
+                w.blockSignals(True)
+                mu_widgets.append(w)
+
+        for fid in _FRICTION_MU_FIELDS:
+            mu_key = fid.split(".")[-1]
+            value = self._friction_ref_values[fid]
+            widget = self._field_widgets.get(fid)
+            if isinstance(widget, QLineEdit):
+                widget.setText(f"{value:.2f}")
+            badge = self._ref_badges.get(fid)
+            if badge is not None:
+                badge.setText(source_text)
+                badge.setVisible(True)
+
+        for w in mu_widgets:
+            w.blockSignals(False)
+
+    def _check_friction_modified(self) -> None:
+        if not self._friction_ref_values:
+            return
+        shaft_combo = self._field_widgets.get("materials.shaft_material")
+        hub_combo = self._field_widgets.get("materials.hub_material")
+        surface_combo = self._field_widgets.get("friction.surface_condition")
+        if not all(isinstance(c, QComboBox) for c in (shaft_combo, hub_combo, surface_combo)):
+            return
+        cat_shaft = MATERIAL_CATEGORY.get(shaft_combo.currentText().strip())
+        cat_hub = MATERIAL_CATEGORY.get(hub_combo.currentText().strip())
+        surface = surface_combo.currentText().strip()
+        if cat_shaft is None or cat_hub is None or surface == "自定义":
+            return
+        cat_a = CATEGORY_DISPLAY.get(cat_shaft, cat_shaft)
+        cat_b = CATEGORY_DISPLAY.get(cat_hub, cat_hub)
+        source_text = f"DIN 7190-1 参考 \u00b7 {cat_a}/{cat_b} \u00b7 {surface}"
+
+        for fid in _FRICTION_MU_FIELDS:
+            ref = self._friction_ref_values.get(fid)
+            if ref is None:
+                continue
+            widget = self._field_widgets.get(fid)
+            badge = self._ref_badges.get(fid)
+            if badge is None or not isinstance(widget, QLineEdit):
+                continue
+            try:
+                current = float(widget.text())
+            except (ValueError, TypeError):
+                badge.setText(f"已修改（参考值 {ref}）")
+                continue
+            if abs(current - ref) < 1e-9:
+                badge.setText(source_text)
+            else:
+                badge.setText(f"已修改（参考值 {ref}）")
 
     def _infer_material_preset(self, e_value: Any, nu_value: Any) -> str:
         try:
@@ -1487,6 +1692,11 @@ class InterferenceFitPage(BaseChapterPage):
         legacy_ui_repeated_mode = ui_state.get("advanced.repeated_load_mode")
 
         self._clear()
+        # Default surface condition to "自定义" before restoring fields;
+        # will be overwritten if present in ui_state during the for-loop.
+        sc_widget = self._field_widgets.get("friction.surface_condition")
+        if isinstance(sc_widget, QComboBox):
+            sc_widget.setCurrentText("自定义")
         legacy_repeated_mode = None
         advanced_section = inputs.get("advanced")
         if isinstance(advanced_section, dict):
@@ -1638,6 +1848,9 @@ class InterferenceFitPage(BaseChapterPage):
         self.set_info(f"已加载输入条件：{in_path}")
 
     def _clear(self) -> None:
+        self._friction_ref_values.clear()
+        for badge in self._ref_badges.values():
+            badge.setVisible(False)
         self._apply_defaults()
         self._last_payload = None
         self._last_result = None
