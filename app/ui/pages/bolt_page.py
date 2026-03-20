@@ -193,6 +193,43 @@ ELASTIC_MODULUS_PRESETS: dict[str, str] = {
     "铸铁": "120000",
 }
 
+TIGHTENING_ALPHA_A_RECOMMENDATIONS: dict[str, str] = {
+    "扭矩法": "1.6",
+    "转角法": "1.2",
+    "液压拉伸法": "1.1",
+    "热装法": "1.1",
+}
+
+POSITION_N_RECOMMENDATIONS: dict[str, str] = {
+    "螺栓头端": "1.0",
+    "螺母端": "0.6",
+    "中间": "0.4",
+    "分布式": "0.5",
+}
+
+BEARING_GEOMETRY_PRESETS: dict[str, tuple[str, str]] = {
+    "M3": ("3.4", "6"),
+    "M4": ("4.5", "7"),
+    "M5": ("5.5", "8"),
+    "M6": ("6.6", "10"),
+    "M8": ("9", "13"),
+    "M10": ("11", "18"),
+    "M12": ("13", "22"),
+    "M14": ("15", "24"),
+    "M16": ("17", "27"),
+    "M18": ("20", "30"),
+    "M20": ("22", "34"),
+    "M22": ("24", "36"),
+    "M24": ("26", "39"),
+    "M27": ("30", "44"),
+    "M30": ("33", "48"),
+    "M33": ("36", "54"),
+    "M36": ("39", "58"),
+    "M39": ("42", "63"),
+    "M42": ("45", "68"),
+    "M48": ("52", "75"),
+}
+
 
 CHAPTERS: list[dict[str, Any]] = [
     {
@@ -1121,6 +1158,7 @@ class BoltPage(QWidget):
         pos_w = self._field_widgets.get("introduction.position")
         if pos_w and isinstance(pos_w, QComboBox):
             pos_w.currentTextChanged.connect(self._on_position_changed)
+            self._on_position_changed(pos_w.currentText())
         # 螺纹规格联动
         d_widget = self._field_widgets.get("fastener.d")
         if d_widget and isinstance(d_widget, QComboBox):
@@ -1569,6 +1607,30 @@ class BoltPage(QWidget):
         if widget.hasFocus():
             self.info_label.setText(help_text)
 
+    def _apply_recommended_line_value(self, field_id: str, recommended: str) -> None:
+        widget = self._field_widgets.get(field_id)
+        if not isinstance(widget, QLineEdit):
+            return
+
+        def _same_value(left: str, right: str) -> bool:
+            if left == right:
+                return True
+            try:
+                return float(left) == float(right)
+            except (TypeError, ValueError):
+                return False
+
+        current = widget.text().strip()
+        last_auto = str(widget.property("auto_recommended_value") or "").strip()
+        should_apply = (
+            not current
+            or _same_value(current, recommended)
+            or (last_auto and _same_value(current, last_auto))
+        )
+        if should_apply and current != recommended:
+            widget.setText(recommended)
+        widget.setProperty("auto_recommended_value", recommended)
+
     def _current_check_level(self) -> str:
         level = self.check_level_combo.currentData()
         return str(level) if level else "basic"
@@ -1845,10 +1907,16 @@ class BoltPage(QWidget):
 
     def _on_tightening_method_changed(self, text: str) -> None:
         """拧紧方式变更时更新 αA 字段的 hint/tooltip。"""
+        recommended = TIGHTENING_ALPHA_A_RECOMMENDATIONS.get(text)
+        if recommended is not None:
+            self._apply_recommended_line_value("tightening.alpha_A", recommended)
         self._set_dynamic_field_help("tightening.alpha_A", ALPHA_A_HINTS.get(text, ""))
 
     def _on_position_changed(self, text: str) -> None:
         """载荷导入位置变更时更新 n 字段的 hint/tooltip。"""
+        recommended = POSITION_N_RECOMMENDATIONS.get(text)
+        if recommended is not None:
+            self._apply_recommended_line_value("stiffness.load_introduction_factor_n", recommended)
         self._set_dynamic_field_help(
             "stiffness.load_introduction_factor_n",
             N_POSITION_HINTS.get(text, ""),
@@ -1889,6 +1957,11 @@ class BoltPage(QWidget):
             p_widget.addItem("自定义")
             if entries:
                 p_widget.setCurrentIndex(0)
+            bearing_preset = BEARING_GEOMETRY_PRESETS.get(text)
+            if bearing_preset is not None:
+                inner, outer = bearing_preset
+                self._apply_recommended_line_value("bearing.bearing_d_inner", inner)
+                self._apply_recommended_line_value("bearing.bearing_d_outer", outer)
         p_widget.blockSignals(False)
         self._on_thread_p_changed(p_widget.currentText())
 

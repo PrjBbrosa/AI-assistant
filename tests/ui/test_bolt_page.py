@@ -317,6 +317,54 @@ class BoltPageStateTests(unittest.TestCase):
         self.assertIn("0.5~0.7", n_widget.toolTip())  # type: ignore[attr-defined]
         self.assertIn("0.5~0.7", page._widget_hints[n_widget])  # type: ignore[index]
 
+    def test_tightening_method_updates_alpha_a_recommendation_when_still_auto(self) -> None:
+        page = BoltPage()
+
+        page._field_widgets["assembly.tightening_method"].setCurrentText("转角法")  # type: ignore[attr-defined]
+
+        self.assertEqual(page._field_widgets["tightening.alpha_A"].text(), "1.2")  # type: ignore[attr-defined]
+
+    def test_tightening_method_preserves_manual_alpha_a_override(self) -> None:
+        page = BoltPage()
+
+        page._field_widgets["tightening.alpha_A"].setText("1.45")  # type: ignore[attr-defined]
+        page._field_widgets["assembly.tightening_method"].setCurrentText("转角法")  # type: ignore[attr-defined]
+
+        self.assertEqual(page._field_widgets["tightening.alpha_A"].text(), "1.45")  # type: ignore[attr-defined]
+
+    def test_position_updates_load_introduction_factor_when_still_auto(self) -> None:
+        page = BoltPage()
+
+        page._field_widgets["introduction.position"].setCurrentText("螺母端")  # type: ignore[attr-defined]
+
+        self.assertEqual(page._field_widgets["stiffness.load_introduction_factor_n"].text(), "0.6")  # type: ignore[attr-defined]
+
+    def test_position_preserves_manual_load_introduction_factor(self) -> None:
+        page = BoltPage()
+
+        page._field_widgets["stiffness.load_introduction_factor_n"].setText("0.78")  # type: ignore[attr-defined]
+        page._field_widgets["introduction.position"].setCurrentText("中间")  # type: ignore[attr-defined]
+
+        self.assertEqual(page._field_widgets["stiffness.load_introduction_factor_n"].text(), "0.78")  # type: ignore[attr-defined]
+
+    def test_thread_size_updates_bearing_geometry_when_still_auto(self) -> None:
+        page = BoltPage()
+
+        page._field_widgets["fastener.d"].setCurrentText("M12")  # type: ignore[attr-defined]
+
+        self.assertEqual(page._field_widgets["bearing.bearing_d_inner"].text(), "13")  # type: ignore[attr-defined]
+        self.assertEqual(page._field_widgets["bearing.bearing_d_outer"].text(), "22")  # type: ignore[attr-defined]
+
+    def test_thread_size_preserves_manual_bearing_geometry(self) -> None:
+        page = BoltPage()
+
+        page._field_widgets["bearing.bearing_d_inner"].setText("12")  # type: ignore[attr-defined]
+        page._field_widgets["bearing.bearing_d_outer"].setText("20")  # type: ignore[attr-defined]
+        page._field_widgets["fastener.d"].setCurrentText("M12")  # type: ignore[attr-defined]
+
+        self.assertEqual(page._field_widgets["bearing.bearing_d_inner"].text(), "12")  # type: ignore[attr-defined]
+        self.assertEqual(page._field_widgets["bearing.bearing_d_outer"].text(), "20")  # type: ignore[attr-defined]
+
     def test_manual_stiffness_overrides_default_compliance_values(self) -> None:
         page = BoltPage()
 
