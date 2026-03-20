@@ -1823,6 +1823,7 @@ class InterferenceFitPage(BaseChapterPage):
         self._friction_ref_values.clear()
         self._hide_all_ref_badges()
         self._apply_defaults()
+        self._sync_friction_from_material()
         self._last_payload = None
         self._last_result = None
         self.result_title.setText("尚未执行计算")

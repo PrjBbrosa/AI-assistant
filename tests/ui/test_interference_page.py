@@ -312,6 +312,178 @@ class InterferenceFitPageTests(unittest.TestCase):
         self.assertEqual(page._field_widgets["assembly.method"].currentText(), "force_fit")  # type: ignore[attr-defined]
         self.assertEqual(page._field_widgets["fretting.mode"].currentText(), "on")  # type: ignore[attr-defined]
 
+    def test_roughness_chapter_has_dedicated_batch_warning_box(self) -> None:
+        page = InterferenceFitPage()
+
+        self.assertEqual(page.roughness_warning_box.objectName(), "WarningCard")  # type: ignore[attr-defined]
+
+    def test_roughness_warning_box_mentions_batch_scatter_and_analysis_directions(self) -> None:
+        page = InterferenceFitPage()
+
+        warning_text = page.roughness_warning_text.text()  # type: ignore[attr-defined]
+
+        self.assertIn("批量生产", warning_text)
+        self.assertIn("压入散差", warning_text)
+        self.assertIn("有效过盈", warning_text)
+        self.assertIn("波纹度", warning_text)
+        self.assertIn("润滑", warning_text)
+
+    # ------------------------------------------------------------------
+    # Tasks 7-14: friction-material linkage tests
+    # ------------------------------------------------------------------
+
+    def test_friction_sync_steel_steel_dry(self) -> None:
+        """45钢/45钢 + 干摩擦 → 自动填入 0.15/0.12/0.12，RefBadge 可见且含来源文本。"""
+        page = InterferenceFitPage()
+        page._field_widgets["materials.shaft_material"].setCurrentText("45钢")
+        page._field_widgets["materials.hub_material"].setCurrentText("45钢")
+        page._field_widgets["friction.surface_condition"].setCurrentText("干摩擦")
+
+        self.assertEqual(page._field_widgets["friction.mu_torque"].text(), "0.15")
+        self.assertEqual(page._field_widgets["friction.mu_axial"].text(), "0.12")
+        self.assertEqual(page._field_widgets["friction.mu_assembly"].text(), "0.12")
+
+        badge = page._ref_badges["friction.mu_torque"]
+        self.assertFalse(badge.isHidden())
+        self.assertIn("DIN 7190-1", badge.text())
+        self.assertIn("钢/钢", badge.text())
+
+    def test_friction_ref_badge_modified_on_manual_edit(self) -> None:
+        """手改 mu_torque 后 RefBadge 显示"已修改（参考值 0.15）"。"""
+        page = InterferenceFitPage()
+        page._field_widgets["materials.shaft_material"].setCurrentText("45钢")
+        page._field_widgets["materials.hub_material"].setCurrentText("45钢")
+        page._field_widgets["friction.surface_condition"].setCurrentText("干摩擦")
+
+        page._field_widgets["friction.mu_torque"].setText("0.16")
+
+        badge = page._ref_badges["friction.mu_torque"]
+        self.assertFalse(badge.isHidden())
+        self.assertIn("已修改", badge.text())
+        self.assertIn("0.15", badge.text())
+
+    def test_friction_sync_custom_material_no_autofill(self) -> None:
+        """轴材料切到"自定义"→ RefBadge 隐藏，摩擦字段值不变。"""
+        page = InterferenceFitPage()
+        page._field_widgets["materials.shaft_material"].setCurrentText("45钢")
+        page._field_widgets["materials.hub_material"].setCurrentText("45钢")
+        page._field_widgets["friction.surface_condition"].setCurrentText("干摩擦")
+
+        page._field_widgets["materials.shaft_material"].setCurrentText("自定义")
+
+        self.assertEqual(page._field_widgets["friction.mu_torque"].text(), "0.15")
+        badge = page._ref_badges["friction.mu_torque"]
+        self.assertTrue(badge.isHidden())
+
+    def test_friction_sync_surface_condition_change(self) -> None:
+        """切换表面状态从干摩擦到轻油润滑 → 值更新。"""
+        page = InterferenceFitPage()
+        page._field_widgets["materials.shaft_material"].setCurrentText("45钢")
+        page._field_widgets["materials.hub_material"].setCurrentText("45钢")
+        page._field_widgets["friction.surface_condition"].setCurrentText("干摩擦")
+        self.assertEqual(page._field_widgets["friction.mu_torque"].text(), "0.15")
+
+        page._field_widgets["friction.surface_condition"].setCurrentText("轻油润滑")
+
+        self.assertEqual(page._field_widgets["friction.mu_torque"].text(), "0.11")
+        self.assertEqual(page._field_widgets["friction.mu_axial"].text(), "0.08")
+        self.assertEqual(page._field_widgets["friction.mu_assembly"].text(), "0.08")
+        badge = page._ref_badges["friction.mu_torque"]
+        self.assertIn("DIN 7190-1", badge.text())
+
+    def test_friction_sync_aluminum_aluminum(self) -> None:
+        """铝合金/铝合金 + 干摩擦 → frozenset 相同材料正确查表。"""
+        page = InterferenceFitPage()
+        page._field_widgets["materials.shaft_material"].setCurrentText("铝合金 6061-T6")
+        page._field_widgets["materials.hub_material"].setCurrentText("铝合金 6061-T6")
+        page._field_widgets["friction.surface_condition"].setCurrentText("干摩擦")
+
+        self.assertEqual(page._field_widgets["friction.mu_torque"].text(), "0.10")
+        self.assertEqual(page._field_widgets["friction.mu_axial"].text(), "0.08")
+        self.assertEqual(page._field_widgets["friction.mu_assembly"].text(), "0.08")
+
+    def test_load_legacy_json_no_surface_condition(self) -> None:
+        """加载不含 surface_condition 的旧 JSON → 表面状态默认"自定义"，保留原始摩擦值。"""
+        page = InterferenceFitPage()
+
+        page._apply_input_data(
+            {
+                "inputs": {
+                    "geometry": {"shaft_d_mm": "40", "hub_outer_d_mm": "80", "fit_length_mm": "45"},
+                    "fit": {"delta_min_um": "20", "delta_max_um": "45"},
+                    "materials": {
+                        "shaft_e_mpa": "210000", "shaft_nu": "0.30", "shaft_yield_mpa": "600",
+                        "hub_e_mpa": "210000", "hub_nu": "0.30", "hub_yield_mpa": "320",
+                    },
+                    "friction": {"mu_torque": "0.18", "mu_axial": "0.16", "mu_assembly": "0.14"},
+                    "loads": {
+                        "torque_required_nm": "350", "axial_force_required_n": "0",
+                        "radial_force_required_n": "0", "bending_moment_required_nm": "0",
+                        "application_factor_ka": "1.0",
+                    },
+                }
+            }
+        )
+
+        self.assertEqual(
+            page._field_widgets["friction.surface_condition"].currentText(),
+            "自定义",
+        )
+        self.assertEqual(page._field_widgets["friction.mu_torque"].text(), "0.18")
+        self.assertEqual(page._field_widgets["friction.mu_axial"].text(), "0.16")
+        self.assertEqual(page._field_widgets["friction.mu_assembly"].text(), "0.14")
+        badge = page._ref_badges["friction.mu_torque"]
+        self.assertTrue(badge.isHidden())
+
+    def test_clear_resets_friction_and_shows_ref_badge(self) -> None:
+        """清除参数 → 默认材料+干摩擦触发联动，RefBadge 重新出现。"""
+        page = InterferenceFitPage()
+        page._field_widgets["materials.shaft_material"].setCurrentText("自定义")
+        page._field_widgets["friction.mu_torque"].setText("0.99")
+
+        page._clear()
+
+        self.assertEqual(page._field_widgets["friction.mu_torque"].text(), "0.15")
+        badge = page._ref_badges["friction.mu_torque"]
+        self.assertFalse(badge.isHidden())
+        self.assertIn("DIN 7190-1", badge.text())
+
+    def test_load_json_with_surface_condition(self) -> None:
+        """加载含 surface_condition 的 JSON → 下拉恢复，摩擦值与查表一致。"""
+        page = InterferenceFitPage()
+
+        page._apply_input_data(
+            {
+                "inputs": {
+                    "geometry": {"shaft_d_mm": "40", "hub_outer_d_mm": "80", "fit_length_mm": "45"},
+                    "fit": {"delta_min_um": "20", "delta_max_um": "45"},
+                    "materials": {
+                        "shaft_e_mpa": "210000", "shaft_nu": "0.30", "shaft_yield_mpa": "600",
+                        "hub_e_mpa": "210000", "hub_nu": "0.30", "hub_yield_mpa": "320",
+                    },
+                    "friction": {"mu_torque": "0.11", "mu_axial": "0.08", "mu_assembly": "0.08"},
+                    "loads": {
+                        "torque_required_nm": "350", "axial_force_required_n": "0",
+                        "radial_force_required_n": "0", "bending_moment_required_nm": "0",
+                        "application_factor_ka": "1.0",
+                    },
+                },
+                "ui_state": {
+                    "friction.surface_condition": "轻油润滑",
+                    "materials.shaft_material": "45钢",
+                    "materials.hub_material": "45钢",
+                },
+            }
+        )
+
+        self.assertEqual(
+            page._field_widgets["friction.surface_condition"].currentText(),
+            "轻油润滑",
+        )
+        self.assertEqual(page._field_widgets["friction.mu_torque"].text(), "0.11")
+        self.assertEqual(page._field_widgets["friction.mu_axial"].text(), "0.08")
+        self.assertEqual(page._field_widgets["friction.mu_assembly"].text(), "0.08")
+
 
 if __name__ == "__main__":
     unittest.main()
