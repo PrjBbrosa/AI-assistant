@@ -704,6 +704,7 @@ class InterferenceFitPage(BaseChapterPage):
         self.roughness_warning_text: QLabel | None = None
         self._ref_badges: dict[str, QLabel] = {}
         self._friction_ref_values: dict[str, float] = {}
+        self._friction_source_text: str = ""
         self._material_links: dict[str, tuple[str, str]] = {
             "materials.shaft_material": ("materials.shaft_e_mpa", "materials.shaft_nu"),
             "materials.hub_material": ("materials.hub_e_mpa", "materials.hub_nu"),
@@ -1075,6 +1076,10 @@ class InterferenceFitPage(BaseChapterPage):
         e_widget.setText(f"{material['e_mpa']:.0f}")
         nu_widget.setText(f"{material['nu']:.2f}")
 
+    def _hide_all_ref_badges(self) -> None:
+        for badge in self._ref_badges.values():
+            badge.setVisible(False)
+
     def _sync_friction_from_material(self) -> None:
         shaft_combo = self._field_widgets.get("materials.shaft_material")
         hub_combo = self._field_widgets.get("materials.hub_material")
@@ -1087,70 +1092,37 @@ class InterferenceFitPage(BaseChapterPage):
         surface = surface_combo.currentText().strip()
 
         if cat_shaft is None or cat_hub is None or surface == "自定义":
-            for fid in _FRICTION_MU_FIELDS:
-                badge = self._ref_badges.get(fid)
-                if badge is not None:
-                    badge.setVisible(False)
+            self._hide_all_ref_badges()
             return
 
         key = (frozenset({cat_shaft, cat_hub}), surface)
         entry = FRICTION_TABLE.get(key)
         if entry is None:
-            for fid in _FRICTION_MU_FIELDS:
-                badge = self._ref_badges.get(fid)
-                if badge is not None:
-                    badge.setVisible(False)
+            self._hide_all_ref_badges()
             return
 
         cat_a = CATEGORY_DISPLAY.get(cat_shaft, cat_shaft)
         cat_b = CATEGORY_DISPLAY.get(cat_hub, cat_hub)
-        source_text = f"DIN 7190-1 参考 \u00b7 {cat_a}/{cat_b} \u00b7 {surface}"
+        self._friction_source_text = f"DIN 7190-1 参考 \u00b7 {cat_a}/{cat_b} \u00b7 {surface}"
 
         self._friction_ref_values.clear()
         for fid in _FRICTION_MU_FIELDS:
             mu_key = fid.split(".")[-1]
             value = entry[mu_key]
             self._friction_ref_values[fid] = value
-
-        # Block textChanged signals during batch fill to avoid intermediate badge churn
-        mu_widgets = []
-        for fid in _FRICTION_MU_FIELDS:
-            w = self._field_widgets.get(fid)
-            if isinstance(w, QLineEdit):
-                w.blockSignals(True)
-                mu_widgets.append(w)
-
-        for fid in _FRICTION_MU_FIELDS:
-            mu_key = fid.split(".")[-1]
-            value = self._friction_ref_values[fid]
             widget = self._field_widgets.get(fid)
             if isinstance(widget, QLineEdit):
+                widget.blockSignals(True)
                 widget.setText(f"{value:.2f}")
+                widget.blockSignals(False)
             badge = self._ref_badges.get(fid)
             if badge is not None:
-                badge.setText(source_text)
+                badge.setText(self._friction_source_text)
                 badge.setVisible(True)
-
-        for w in mu_widgets:
-            w.blockSignals(False)
 
     def _check_friction_modified(self) -> None:
         if not self._friction_ref_values:
             return
-        shaft_combo = self._field_widgets.get("materials.shaft_material")
-        hub_combo = self._field_widgets.get("materials.hub_material")
-        surface_combo = self._field_widgets.get("friction.surface_condition")
-        if not all(isinstance(c, QComboBox) for c in (shaft_combo, hub_combo, surface_combo)):
-            return
-        cat_shaft = MATERIAL_CATEGORY.get(shaft_combo.currentText().strip())
-        cat_hub = MATERIAL_CATEGORY.get(hub_combo.currentText().strip())
-        surface = surface_combo.currentText().strip()
-        if cat_shaft is None or cat_hub is None or surface == "自定义":
-            return
-        cat_a = CATEGORY_DISPLAY.get(cat_shaft, cat_shaft)
-        cat_b = CATEGORY_DISPLAY.get(cat_hub, cat_hub)
-        source_text = f"DIN 7190-1 参考 \u00b7 {cat_a}/{cat_b} \u00b7 {surface}"
-
         for fid in _FRICTION_MU_FIELDS:
             ref = self._friction_ref_values.get(fid)
             if ref is None:
@@ -1165,7 +1137,7 @@ class InterferenceFitPage(BaseChapterPage):
                 badge.setText(f"已修改（参考值 {ref}）")
                 continue
             if abs(current - ref) < 1e-9:
-                badge.setText(source_text)
+                badge.setText(self._friction_source_text)
             else:
                 badge.setText(f"已修改（参考值 {ref}）")
 
@@ -1849,8 +1821,7 @@ class InterferenceFitPage(BaseChapterPage):
 
     def _clear(self) -> None:
         self._friction_ref_values.clear()
-        for badge in self._ref_badges.values():
-            badge.setVisible(False)
+        self._hide_all_ref_badges()
         self._apply_defaults()
         self._last_payload = None
         self._last_result = None
