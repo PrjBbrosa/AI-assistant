@@ -51,6 +51,60 @@
 ## Visual/Browser Findings
 - 已完成 VDI 官方页面、eAssistant 手册页面和 PCB 白皮书检索，确认了实现所需的主流程和核心方程
 
+## 2026-03-22 Worm Module Review Findings
+
+### Current State
+- 仓库文档和页面文案都明确：蜗杆模块当前只实现了 `DIN 3975` 几何与基础性能首版，`DIN 3996` / `ISO/TS 14521` 负载能力尚未实现
+- `Load Capacity` 页面是结构占位，不输出真实齿面/齿根校核结果
+- `tests/core/worm/test_calculator.py` 与 `tests/ui/test_worm_page.py` 主要覆盖页面结构与基础几何返回，不覆盖物理链路一致性
+
+### High-Severity Gaps
+- 功率链路不闭合：输入功率、效率、输出扭矩三者不一致
+- 几何约束未闭合：`z1 / q / gamma / a` 可以明显不自洽，但系统只给偏差量，不阻断也不警告
+- 多个关键字段未入模：`worm_face_width_mm`、`wheel_face_width_mm`、`application_factor`、`friction_override`
+- 样例工况本身几何不自洽，仍能正常出结果
+
+### Planned Upgrade Boundary
+- 本轮不做完整 `DIN 3996` / `ISO/TS 14521`
+- 本轮做 `Method B` 风格最小子集：
+  - 几何一致性 warning
+  - 功率/扭矩闭环
+  - 齿面应力
+  - 齿根应力
+  - 扭矩波动
+  - 安全系数
+
+### Source Notes
+- `ISO/TS 14521:2020` 官方预览可确认标准覆盖 `pitting / tooth breakage / temperature` 以及符号：
+  - `σHm` mean contact stress
+  - `τF` tooth-root shear stress
+  - `SH / SF / ST` safety factors
+- 公开研究论文表明：
+  - worm gear 的状态量仍围绕 mean Hertzian contact stress、coefficient of friction、sliding velocity 等量组织
+  - `CuSn12Ni2` 接触强度数据可作为工程初始默认值参考，但不应替代显式输入
+
+### Implementation Notes
+- `core/worm/calculator.py` 现已输出：
+  - `performance.input_power_kw / output_power_kw / input_torque_nm / output_torque_nm`
+  - `load_capacity.forces`
+  - `load_capacity.contact`
+  - `load_capacity.root`
+  - `load_capacity.torque_ripple`
+- `friction_override` 已真正进入效率和损失功率计算
+- `application_factor` 与 `Kv / KHalpha / KHbeta` 已进入设计载荷
+- UI 已显式暴露：
+  - 材料弹性参数
+  - 扭矩波动
+  - 法向压力角
+  - 许用齿面/齿根应力
+  - 载荷系数与目标安全系数
+
+### Remaining Limitations
+- 仍非完整 `DIN 3996 / ISO/TS 14521`
+- 齿面应力为线接触 Hertz 近似
+- 齿根应力为等效悬臂梁近似
+- 当前样例更偏“结构化演示 / 边界工况”，不代表标准 benchmark 全通过工况
+
 ## 2026-03-16 Interference-Fit Review Findings
 
 ### Scope Confirmed

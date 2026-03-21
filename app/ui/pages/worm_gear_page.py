@@ -67,7 +67,7 @@ class FieldSpec:
 
 
 BASIC_SETTINGS_FIELDS = [
-    FieldSpec("meta.note", "项目备注", "-", "当前计算任务简述。", widget_type="text", default="DIN 3975 首版"),
+    FieldSpec("meta.note", "项目备注", "-", "当前计算任务简述。", widget_type="text", default="Method B 最小子集"),
     FieldSpec(
         "load_capacity.enabled",
         "启用 Load Capacity 页",
@@ -81,7 +81,7 @@ BASIC_SETTINGS_FIELDS = [
         "load_capacity.method",
         "校核方法",
         "-",
-        "首版只保留方法选择，不执行真实 3996/ISO/Niemann 公式。",
+        "当前实现为 Method B 风格最小工程子集，保留 DIN 3996 / ISO / Niemann 的命名边界。",
         widget_type="choice",
         options=LOAD_CAPACITY_OPTIONS,
         default="DIN 3996 Method B",
@@ -92,7 +92,7 @@ WORM_GEOMETRY_FIELDS = [
     FieldSpec("geometry.z1", "蜗杆头数 z1", "-", "蜗杆起始头数。", default="2"),
     FieldSpec("geometry.module_mm", "模数 m", "mm", "几何主输入。", default="4.0"),
     FieldSpec("geometry.diameter_factor_q", "直径系数 q", "-", "蜗杆直径系数。", default="10.0"),
-    FieldSpec("geometry.lead_angle_deg", "导程角 gamma", "deg", "蜗杆导程角。", default="20.0"),
+    FieldSpec("geometry.lead_angle_deg", "导程角 gamma", "deg", "蜗杆导程角。默认值与 z1/q 保持自洽。", default="11.31"),
     FieldSpec(
         "geometry.handedness",
         "旋向",
@@ -111,7 +111,7 @@ WHEEL_GEOMETRY_FIELDS = [
 ]
 
 MESH_GEOMETRY_FIELDS = [
-    FieldSpec("geometry.center_distance_mm", "中心距 a", "mm", "蜗杆与蜗轮轴线距离。", default="84.0"),
+    FieldSpec("geometry.center_distance_mm", "中心距 a", "mm", "蜗杆与蜗轮轴线距离。默认值与 m/q/z2 保持自洽。", default="100.0"),
 ]
 
 MATERIAL_FIELDS = [
@@ -133,6 +133,10 @@ MATERIAL_FIELDS = [
         options=("ZCuSn12Ni2", "ZCuSn10P1", "AlCu4Ni2Fe"),
         default="ZCuSn12Ni2",
     ),
+    FieldSpec("materials.worm_e_mpa", "蜗杆弹性模量 E1", "MPa", "Method B 最小子集使用的材料弹性参数。", default="206000"),
+    FieldSpec("materials.worm_nu", "蜗杆泊松比 nu1", "-", "Method B 最小子集使用的材料弹性参数。", default="0.30"),
+    FieldSpec("materials.wheel_e_mpa", "蜗轮弹性模量 E2", "MPa", "Method B 最小子集使用的材料弹性参数。", default="110000"),
+    FieldSpec("materials.wheel_nu", "蜗轮泊松比 nu2", "-", "Method B 最小子集使用的材料弹性参数。", default="0.34"),
 ]
 
 TOLERANCE_FIELDS = [
@@ -145,6 +149,7 @@ OPERATING_FIELDS = [
     FieldSpec("operating.power_kw", "输入功率 P", "kW", "输入轴功率。", default="3.0"),
     FieldSpec("operating.speed_rpm", "输入转速 n", "rpm", "蜗杆轴转速。", default="1450"),
     FieldSpec("operating.application_factor", "使用系数 KA", "-", "工况冲击影响的简化系数。", default="1.25"),
+    FieldSpec("operating.torque_ripple_percent", "扭矩波动", "%", "围绕名义扭矩的峰值波动幅值。", default="0.0"),
     FieldSpec(
         "operating.lubrication",
         "润滑方式",
@@ -165,6 +170,17 @@ ADVANCED_FIELDS = [
         default="",
         placeholder="留空则自动",
     ),
+    FieldSpec("advanced.normal_pressure_angle_deg", "法向压力角 alpha_n", "deg", "力分解与最小齿面/齿根模型的几何参数。", default="20.0"),
+]
+
+LOAD_CAPACITY_PARAMETER_FIELDS = [
+    FieldSpec("load_capacity.allowable_contact_stress_mpa", "许用齿面应力", "MPa", "用于最小齿面安全系数计算。", default="520.0"),
+    FieldSpec("load_capacity.allowable_root_stress_mpa", "许用齿根应力", "MPa", "用于最小齿根安全系数计算。", default="90.0"),
+    FieldSpec("load_capacity.dynamic_factor_kv", "动载系数 Kv", "-", "最小子集中的动载放大系数。", default="1.05"),
+    FieldSpec("load_capacity.transverse_load_factor_kha", "横向载荷系数 KHalpha", "-", "横向载荷分配系数。", default="1.00"),
+    FieldSpec("load_capacity.face_load_factor_khb", "齿宽载荷系数 KHbeta", "-", "齿宽方向载荷分配系数。", default="1.10"),
+    FieldSpec("load_capacity.required_contact_safety", "目标齿面安全系数", "-", "用于通过/不通过判定。", default="1.00"),
+    FieldSpec("load_capacity.required_root_safety", "目标齿根安全系数", "-", "用于通过/不通过判定。", default="1.00"),
 ]
 
 WORM_DIMENSION_FIELDS = [
@@ -191,7 +207,7 @@ class WormGearPage(BaseChapterPage):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(
             title="蜗轮和蜗杆 · DIN 3975",
-            subtitle="首版实现几何与基础性能，Load Capacity 保留 DIN 3996 / ISO / Niemann 骨架。",
+            subtitle="实现 DIN 3975 几何、基础性能和 Method B 风格最小负载能力子集。",
             parent=parent,
         )
         self._field_widgets: dict[str, QWidget] = {}
@@ -227,7 +243,7 @@ class WormGearPage(BaseChapterPage):
         self.btn_clear.clicked.connect(self._clear)
         self.btn_load_1.clicked.connect(lambda: self._load_sample("worm_case_01.json"))
         self.btn_load_2.clicked.connect(lambda: self._load_sample("worm_case_02.json"))
-        self.set_info("按左侧顺序输入 DIN 3975 参数，再执行计算。")
+        self.set_info("按左侧顺序输入 DIN 3975 / Method B 参数，再执行计算。")
 
     def _build_input_steps(self) -> None:
         self.add_chapter(
@@ -237,7 +253,7 @@ class WormGearPage(BaseChapterPage):
         self.add_chapter("几何参数", self._create_geometry_page())
         self.add_chapter(
             "材料与配对",
-            self._create_form_page("材料与配对", "为基础效率和后续 3996 留出材料接口。", MATERIAL_FIELDS),
+            self._create_form_page("材料与配对", "保留材料牌号，同时显式暴露 Method B 最小子集所需的弹性参数。", MATERIAL_FIELDS),
         )
         self.add_chapter(
             "公差与回差",
@@ -245,7 +261,7 @@ class WormGearPage(BaseChapterPage):
         )
         self.add_chapter(
             "工况与润滑",
-            self._create_form_page("工况与润滑", "基础效率、损失功率和热功率估算输入。", OPERATING_FIELDS),
+            self._create_form_page("工况与润滑", "基础效率、损失功率、使用系数和扭矩波动输入。", OPERATING_FIELDS),
         )
 
     def _create_form_page(self, title: str, subtitle: str, fields: list[FieldSpec]) -> QWidget:
@@ -487,21 +503,27 @@ class WormGearPage(BaseChapterPage):
 
         title = QLabel("Load Capacity", page)
         title.setObjectName("SectionTitle")
-        hint = QLabel("保留 DIN 3996 / ISO 14521 / Niemann 的操作位置，但本版不执行真实校核。", page)
+        hint = QLabel("执行 DIN 3996 / ISO 14521 Method B 风格的最小工程子集，输出齿面应力、齿根应力和扭矩波动。", page)
         hint.setObjectName("SectionHint")
         hint.setWordWrap(True)
         self.load_capacity_status = QLabel("DIN 3996 校核尚未开始", page)
         self.load_capacity_status.setObjectName("WaitBadge")
         self.load_capacity_note = QLabel(
-            "当前版本只保存方法选择和相关输入，不输出接触强度、弯曲强度或热负载能力校核结果。",
+            "当前版本输出 Method B 最小子集结果，不替代完整标准实现；所有简化假设都会在结果区显式说明。",
             page,
         )
         self.load_capacity_note.setObjectName("SectionHint")
         self.load_capacity_note.setWordWrap(True)
+        self.load_capacity_metrics = QPlainTextEdit(page)
+        self.load_capacity_metrics.setReadOnly(True)
+        self.load_capacity_metrics.setMinimumHeight(240)
+        self.load_capacity_metrics.setPlainText("尚无 Load Capacity 结果。")
         layout.addWidget(title)
         layout.addWidget(hint)
         layout.addWidget(self.load_capacity_status, 0, Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(self.load_capacity_note)
+        layout.addWidget(self._create_group_input_card("Method B 最小子集参数", LOAD_CAPACITY_PARAMETER_FIELDS, page))
+        layout.addWidget(self.load_capacity_metrics)
         layout.addStretch(1)
         self.add_chapter("Load Capacity", page)
 
@@ -652,9 +674,14 @@ class WormGearPage(BaseChapterPage):
         load_capacity = result["load_capacity"]
         worm_dimensions = geometry["worm_dimensions"]
         wheel_dimensions = geometry["wheel_dimensions"]
+        contact = load_capacity.get("contact", {})
+        root = load_capacity.get("root", {})
+        ripple = load_capacity.get("torque_ripple", {})
+        warnings = load_capacity.get("warnings", [])
+        checks = load_capacity.get("checks", {})
 
-        self.result_title.setText("已完成 DIN 3975 几何与基础性能计算")
-        self.result_summary.setText("当前版本已生成几何结果、基础效率估算和性能曲线；Load Capacity 保持骨架状态。")
+        self.result_title.setText("已完成蜗杆副几何、基础性能与 Method B 最小校核")
+        self.result_summary.setText("当前版本已输出几何结果、效率估算、齿面应力、齿根应力和扭矩波动摘要。")
         self.result_metrics.setPlainText(
             "\n".join(
                 [
@@ -665,8 +692,12 @@ class WormGearPage(BaseChapterPage):
                     f"蜗轮分度圆直径 d2 = {wheel_dimensions['pitch_diameter_mm']:.3f} mm",
                     f"导程角 gamma = {geometry['lead_angle_deg']:.3f} deg",
                     f"效率估算 eta = {performance['efficiency_estimate']:.4f}",
+                    f"输出功率 P2 = {performance['output_power_kw']:.4f} kW",
+                    f"输出扭矩 T2 = {performance['output_torque_nm']:.3f} N·m",
                     f"损失功率 = {performance['power_loss_kw']:.4f} kW",
-                    f"热功率相关值 = {performance['thermal_capacity_kw']:.4f} kW",
+                    f"齿面应力 sigma_Hm = {contact.get('sigma_hm_peak_mpa', 0.0):.3f} MPa",
+                    f"齿根应力 sigma_F = {root.get('sigma_f_peak_mpa', 0.0):.3f} MPa",
+                    f"扭矩波动 peak = {ripple.get('output_torque_peak_nm', 0.0):.3f} N·m",
                 ]
             )
         )
@@ -686,9 +717,29 @@ class WormGearPage(BaseChapterPage):
             "首版保留说明结构与占位图；后续接入真实公差计算与回差算法。",
         )
         self.load_capacity_status.setText(load_capacity["status"])
+        self.load_capacity_metrics.setPlainText(
+            "\n".join(
+                [
+                    f"sigma_Hm,nom = {contact.get('sigma_hm_nominal_mpa', 0.0):.3f} MPa",
+                    f"sigma_Hm,peak = {contact.get('sigma_hm_peak_mpa', 0.0):.3f} MPa",
+                    f"SH_peak = {contact.get('safety_factor_peak', 0.0):.3f}",
+                    f"sigma_F,nom = {root.get('sigma_f_nominal_mpa', 0.0):.3f} MPa",
+                    f"sigma_F,peak = {root.get('sigma_f_peak_mpa', 0.0):.3f} MPa",
+                    f"SF_peak = {root.get('safety_factor_peak', 0.0):.3f}",
+                    f"T2_nom = {ripple.get('output_torque_nominal_nm', 0.0):.3f} N·m",
+                    f"T2_rms = {ripple.get('output_torque_rms_nm', 0.0):.3f} N·m",
+                    f"T2_peak = {ripple.get('output_torque_peak_nm', 0.0):.3f} N·m",
+                    f"几何一致性 = {'通过' if checks.get('geometry_consistent', False) else '存在警告'}",
+                    *[f"warning: {msg}" for msg in warnings],
+                ]
+            )
+        )
         self._refresh_derived_geometry_preview()
-        self.set_overall_status("DIN 3975 已计算", "pass")
-        self.set_info("已完成 DIN 3975 几何与基础性能计算。DIN 3996 仍为延后状态。")
+        if checks.get("contact_ok", False) and checks.get("root_ok", False):
+            self.set_overall_status("Load Capacity 通过", "pass")
+        else:
+            self.set_overall_status("Load Capacity 需复核", "wait")
+        self.set_info("已完成蜗杆副几何、基础性能与 Method B 最小子集计算。")
         self.set_current_chapter(self.chapter_stack.count() - 1)
 
     def _save_input_conditions(self) -> None:
@@ -741,7 +792,7 @@ class WormGearPage(BaseChapterPage):
         self._last_result = None
         self._apply_defaults()
         self.result_title.setText("尚未执行计算")
-        self.result_summary.setText("执行计算后显示 DIN 3975 几何结果、基础性能和 Load Capacity 延后状态。")
+        self.result_summary.setText("执行计算后显示几何、基础性能以及 Method B 最小子集结果。")
         self.result_metrics.setPlainText("尚无结果。")
         self.performance_curve.set_curves(
             load_factor=[],
@@ -753,5 +804,6 @@ class WormGearPage(BaseChapterPage):
         self.geometry_overview.set_display_state("几何总览", "按 DIN 3975 展示蜗杆、蜗轮、中心距与导程角关系。")
         self.tolerance_overview.set_display_state("公差与回差", "展示齿厚、公差带、中心距偏差与回差概念。")
         self.load_capacity_status.setText("DIN 3996 校核尚未开始")
+        self.load_capacity_metrics.setPlainText("尚无 Load Capacity 结果。")
         self.set_overall_status("等待计算", "wait")
-        self.set_info("参数已重置，可重新执行 DIN 3975 计算。")
+        self.set_info("参数已重置，可重新执行蜗杆副计算。")

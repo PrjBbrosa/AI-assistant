@@ -4,7 +4,7 @@
 在保留 VDI 2230 螺栓计算核心的基础上，搭建本地 PySide6 桌面框架并预留多模块入口，支持后续打包为 `.exe`。
 
 ## Current Phase
-Phase 15 complete (Interference-fit hollow-shaft support landed; Phase 10 still in_progress)
+Phase 16 in_progress (Worm load-capacity upgrade and logic remediation)
 
 ## Phases
 ### Phase 1: Requirements & Discovery
@@ -112,6 +112,14 @@ Phase 15 complete (Interference-fit hollow-shaft support landed; Phase 10 still 
 - [x] Run verification and write closeout notes
 - **Status:** complete
 
+### Phase 16: Worm Load-Capacity Upgrade
+- [x] Audit the worm page/core/tests and identify logic gaps
+- [x] Write a worm-load-capacity design spec
+- [x] Write a TDD implementation plan for the upgrade
+- [x] Execute the plan in an isolated workspace
+- [x] Verify worm core/UI regressions and sync docs
+- **Status:** complete
+
 ## Key Questions
 1. 交付形态是 Web 还是本地桌面？（已选本地桌面）
 2. 模块范围是只做螺栓还是全量？（已选“螺栓先做，其余占位”）
@@ -131,6 +139,7 @@ Phase 15 complete (Interference-fit hollow-shaft support landed; Phase 10 still 
 | 本轮新增一次“过盈配合章节深度审查”，先审查再决定是否进入修复 | 用户当前目标是确认 bug / 遗漏 / 逻辑风险，并对照 DIN 案例与同类工具结果 |
 | fretting 下一步按“过盈配合第 5 步增强模块”规划，而不是独立通用页面 | 用户已明确希望 fretting 服务于过盈配合场景，并且首版先给风险等级与建议，不并入主 verdict |
 | 空心轴支持本轮按“兼容当前实心轴基线”的增量方式接入 | 先补齐主模型几何边界，同时避免把 speed / temperature / stepped geometry 一起引入导致范围失控 |
+| 蜗杆模块本轮按“先修逻辑漏洞，再做 Method-B 风格最小负载能力子集”推进 | 用户要求的不只是设计校核，而是要输出齿面应力、齿根应力和扭矩波动等工程结果 |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
@@ -152,3 +161,7 @@ Phase 15 complete (Interference-fit hollow-shaft support landed; Phase 10 still 
 - 空心轴支持 design spec 已写入 `docs/superpowers/specs/2026-03-19-interference-fit-hollow-shaft-design.md`
 - 空心轴支持 implementation plan 已写入 `docs/superpowers/plans/2026-03-19-interference-fit-hollow-shaft.md`
 - 空心轴支持已完成：主模型、UI、报告、repeated-load 适用性和测试均已接入
+- 蜗杆模块 2026-03-22 审查结果显示：当前仅有 `DIN 3975` 几何与基础性能壳，`DIN 3996` 负载能力仍未实现
+- 蜗杆模块本轮 design spec 已写入 `docs/superpowers/specs/2026-03-22-worm-load-capacity-design.md`
+- 蜗杆模块本轮 implementation plan 已写入 `docs/superpowers/plans/2026-03-22-worm-load-capacity.md`
+- 蜗杆模块本轮已完成：功率链路修正、最小 Method B 子集、UI 新参数、样例与回归测试同步

@@ -1,5 +1,34 @@
 # Progress Log
 
+## Session: 2026-03-22
+
+### Phase 16: Worm Load-Capacity Upgrade
+- **Status:** complete
+- **Started:** 2026-03-22
+- Actions taken:
+  - 审查蜗杆模块页面、calculator、样例和测试，确认当前范围仅为 `DIN 3975` 几何与基础性能
+  - 识别出功率链路不闭合、几何一致性缺失、关键字段未入模和 Load Capacity 占位四类高风险问题
+  - 在隔离 worktree `/.worktrees/worm-load-capacity` 中建立执行环境，避免影响主工作区未提交改动
+  - 运行蜗杆模块基线回归：`19 passed`
+  - 编写蜗杆模块升级 design spec 与 implementation plan
+  - 通过 TDD 修复功率链路，并接入 `friction_override`
+  - 新增 Method B 最小子集：载荷、齿面应力、齿根应力、扭矩波动和安全系数
+  - 扩展 UI 字段、Load Capacity 页面、结果摘要和样例
+  - 运行蜗杆 + UI + hertz 定向回归：`30 passed`
+- Files created/modified:
+  - docs/superpowers/specs/2026-03-22-worm-load-capacity-design.md (created)
+  - docs/superpowers/plans/2026-03-22-worm-load-capacity.md (created)
+  - core/worm/calculator.py (updated)
+  - app/ui/pages/worm_gear_page.py (updated)
+  - tests/core/worm/test_calculator.py (updated)
+  - tests/ui/test_worm_page.py (updated)
+  - examples/worm_case_01.json (updated)
+  - examples/worm_case_02.json (updated)
+  - README.md (updated)
+  - task_plan.md (updated)
+  - findings.md (updated)
+  - progress.md (updated)
+
 ## Session: 2026-03-01
 
 ### Phase 1: Requirements & Discovery
