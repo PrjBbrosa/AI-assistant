@@ -167,6 +167,31 @@ class WormGearPageTests(unittest.TestCase):
 
         self.assertGreater(len(page.performance_curve._efficiency), 0)
 
+    def test_page_exposes_method_b_material_and_load_capacity_fields(self) -> None:
+        page = WormGearPage()
+
+        self.assertIn("materials.worm_e_mpa", page._field_widgets)
+        self.assertIn("materials.worm_nu", page._field_widgets)
+        self.assertIn("materials.wheel_e_mpa", page._field_widgets)
+        self.assertIn("materials.wheel_nu", page._field_widgets)
+        self.assertIn("operating.torque_ripple_percent", page._field_widgets)
+        self.assertIn("advanced.normal_pressure_angle_deg", page._field_widgets)
+        self.assertIn("load_capacity.allowable_contact_stress_mpa", page._field_widgets)
+        self.assertIn("load_capacity.allowable_root_stress_mpa", page._field_widgets)
+        self.assertIn("load_capacity.dynamic_factor_kv", page._field_widgets)
+        self.assertIn("load_capacity.face_load_factor_khb", page._field_widgets)
+
+    def test_calculate_renders_stress_and_torque_ripple_outputs(self) -> None:
+        page = WormGearPage()
+
+        page._calculate()
+
+        self.assertIn("最小子集", page.load_capacity_status.text())
+        self.assertIn("齿面应力", page.result_metrics.toPlainText())
+        self.assertIn("齿根应力", page.result_metrics.toPlainText())
+        self.assertIn("扭矩波动", page.result_metrics.toPlainText())
+        self.assertIn("sigma_Hm", page.load_capacity_metrics.toPlainText())
+
 
 class MainWindowWormModuleTests(unittest.TestCase):
     @classmethod
