@@ -74,6 +74,73 @@ def _calculate_scenario_a(
     }
 
 
+def _calculate_scenario_b(
+    smooth_fit: Dict[str, Any],
+    smooth_materials: Dict[str, Any],
+    smooth_roughness: Dict[str, Any],
+    smooth_friction: Dict[str, Any],
+    torque_design_nm: float,
+    axial_design_n: float,
+    slip_safety_min: float,
+    stress_safety_min: float,
+) -> Dict[str, Any]:
+    """Scenario B: smooth-section cylindrical press fit (reuse DIN 7190 Lame)."""
+    from core.interference.calculator import calculate_interference_fit
+
+    l_nominal = _positive(
+        float(_require(smooth_fit, "fit_length_mm", "smooth_fit")),
+        "smooth_fit.fit_length_mm",
+    )
+    relief_groove = float(smooth_fit.get("relief_groove_width_mm", 0.0))
+    if relief_groove < 0:
+        raise InputError("smooth_fit.relief_groove_width_mm 不能为负数")
+    l_fit = l_nominal - relief_groove
+    if l_fit <= 0:
+        raise InputError("退刀槽宽度 >= 配合长度，有效配合长度 <= 0")
+
+    delegate_data = {
+        "geometry": {
+            "shaft_d_mm": float(smooth_fit.get("shaft_d_mm", 0)),
+            "shaft_inner_d_mm": float(smooth_fit.get("shaft_inner_d_mm", 0)),
+            "hub_outer_d_mm": float(smooth_fit.get("hub_outer_d_mm", 0)),
+            "fit_length_mm": l_fit,
+        },
+        "materials": smooth_materials,
+        "fit": {
+            "delta_min_um": float(smooth_fit.get("delta_min_um", 0)),
+            "delta_max_um": float(smooth_fit.get("delta_max_um", 0)),
+        },
+        "roughness": smooth_roughness,
+        "friction": smooth_friction,
+        "loads": {
+            "torque_required_nm": torque_design_nm,
+            "axial_force_required_n": axial_design_n,
+            "application_factor_ka": 1.0,
+        },
+        "checks": {
+            "slip_safety_min": slip_safety_min,
+            "stress_safety_min": stress_safety_min,
+        },
+    }
+    din7190_result = calculate_interference_fit(delegate_data)
+
+    return {
+        "nominal_fit_length_mm": l_nominal,
+        "relief_groove_width_mm": relief_groove,
+        "effective_fit_length_mm": l_fit,
+        "pressure_mpa": din7190_result["pressure_mpa"],
+        "capacity": din7190_result["capacity"],
+        "assembly": din7190_result["assembly"],
+        "stress_mpa": din7190_result["stress_mpa"],
+        "safety": din7190_result["safety"],
+        "checks": din7190_result["checks"],
+        "overall_pass": din7190_result["overall_pass"],
+        "press_force_curve": din7190_result["press_force_curve"],
+        "roughness": din7190_result["roughness"],
+        "messages": din7190_result["messages"],
+    }
+
+
 def calculate_spline_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     """Main entry point for spline interference-fit calculation."""
     mode = str(data.get("mode", "spline_only"))
@@ -97,8 +164,27 @@ def calculate_spline_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     scenario_b = None
     scenario_b_pass = True
     if mode == "combined":
-        # Scenario B -- implemented in Task 3
-        pass
+        smooth_fit = data.get("smooth_fit", {})
+        smooth_materials = data.get("smooth_materials", {})
+        smooth_roughness = data.get("smooth_roughness", {})
+        smooth_friction = data.get("smooth_friction", {})
+        axial_required_n = _positive(
+            float(loads.get("axial_force_required_n", 0.0)),
+            "loads.axial_force_required_n",
+            allow_zero=True,
+        )
+        axial_design_n = axial_required_n * ka
+        slip_safety_min = _positive(
+            float(checks.get("slip_safety_min", 1.5)), "checks.slip_safety_min"
+        )
+        stress_safety_min = _positive(
+            float(checks.get("stress_safety_min", 1.2)), "checks.stress_safety_min"
+        )
+        scenario_b = _calculate_scenario_b(
+            smooth_fit, smooth_materials, smooth_roughness, smooth_friction,
+            torque_design_nm, axial_design_n, slip_safety_min, stress_safety_min,
+        )
+        scenario_b_pass = scenario_b["overall_pass"]
 
     overall_pass = scenario_a["flank_ok"] and scenario_b_pass
 

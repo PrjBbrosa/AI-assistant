@@ -93,3 +93,93 @@ class TestScenarioA:
         del case["loads"]["torque_required_nm"]
         with pytest.raises(InputError, match="torque_required_nm"):
             calculate_spline_fit(case)
+
+
+def make_combined_case() -> dict:
+    """Combined mode: scenario A + scenario B."""
+    return {
+        "mode": "combined",
+        "spline": {
+            "module_mm": 2.0,
+            "tooth_count": 20,
+            "engagement_length_mm": 30.0,
+            "k_alpha": 1.0,
+            "p_allowable_mpa": 100.0,
+        },
+        "smooth_fit": {
+            "shaft_d_mm": 40.0,
+            "shaft_inner_d_mm": 0.0,
+            "hub_outer_d_mm": 80.0,
+            "fit_length_mm": 45.0,
+            "relief_groove_width_mm": 3.0,
+            "delta_min_um": 20.0,
+            "delta_max_um": 45.0,
+        },
+        "smooth_materials": {
+            "shaft_e_mpa": 210000.0,
+            "shaft_nu": 0.30,
+            "shaft_yield_mpa": 600.0,
+            "hub_e_mpa": 210000.0,
+            "hub_nu": 0.30,
+            "hub_yield_mpa": 320.0,
+        },
+        "smooth_roughness": {
+            "shaft_rz_um": 6.3,
+            "hub_rz_um": 6.3,
+        },
+        "smooth_friction": {
+            "mu_torque": 0.14,
+            "mu_axial": 0.14,
+            "mu_assembly": 0.12,
+        },
+        "loads": {
+            "torque_required_nm": 500.0,
+            "axial_force_required_n": 0.0,
+            "application_factor_ka": 1.25,
+        },
+        "checks": {
+            "flank_safety_min": 1.3,
+            "slip_safety_min": 1.5,
+            "stress_safety_min": 1.2,
+        },
+    }
+
+
+class TestScenarioB:
+    def test_combined_mode_has_both_scenarios(self):
+        result = calculate_spline_fit(make_combined_case())
+        assert "scenario_a" in result
+        assert "scenario_b" in result
+
+    def test_scenario_b_pressure_positive(self):
+        result = calculate_spline_fit(make_combined_case())
+        b = result["scenario_b"]
+        assert b["pressure_mpa"]["p_min"] > 0
+        assert b["pressure_mpa"]["p_max"] > b["pressure_mpa"]["p_min"]
+
+    def test_relief_groove_reduces_effective_length(self):
+        result = calculate_spline_fit(make_combined_case())
+        b = result["scenario_b"]
+        assert b["effective_fit_length_mm"] == pytest.approx(42.0)
+
+    def test_scenario_b_torque_capacity(self):
+        result = calculate_spline_fit(make_combined_case())
+        b = result["scenario_b"]
+        assert b["capacity"]["torque_min_nm"] > 0
+
+    def test_scenario_b_slip_safety(self):
+        result = calculate_spline_fit(make_combined_case())
+        b = result["scenario_b"]
+        assert "torque_sf" in b["safety"]
+
+    def test_overall_pass_requires_both(self):
+        case = make_combined_case()
+        case["loads"]["torque_required_nm"] = 50000.0
+        result = calculate_spline_fit(case)
+        assert result["overall_pass"] is False
+
+    def test_spline_only_mode_no_scenario_b(self):
+        case = make_combined_case()
+        case["mode"] = "spline_only"
+        result = calculate_spline_fit(case)
+        assert "scenario_b" not in result
