@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QSizePolicy,
+    QSplitter,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -22,6 +23,7 @@ from app.ui.pages.bolt_page import BoltPage
 from app.ui.pages.hertz_contact_page import HertzContactPage
 from app.ui.pages.interference_fit_page import InterferenceFitPage
 from app.ui.pages.placeholder_page import PlaceholderPage
+from app.ui.pages.spline_fit_page import SplineFitPage
 from app.ui.pages.worm_gear_page import WormGearPage
 
 
@@ -47,15 +49,22 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget(root)
         self.stack.setContentsMargins(0, 0, 0, 0)
 
-        root_layout.addWidget(sidebar, 0)
-        root_layout.addWidget(self.stack, 1)
+        splitter = QSplitter(Qt.Orientation.Horizontal, root)
+        splitter.setHandleWidth(4)
+        splitter.setChildrenCollapsible(False)
+        splitter.addWidget(sidebar)
+        splitter.addWidget(self.stack)
+        splitter.setSizes([243, 1157])
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        root_layout.addWidget(splitter)
 
         self.modules: List[ModuleSpec] = [
             ("螺栓连接", BoltPage(self)),
             ("过盈配合", InterferenceFitPage(self)),
             ("赫兹应力", HertzContactPage(self)),
             ("蜗轮蜗杆设计", WormGearPage(self)),
-            ("花键过盈配合设计", PlaceholderPage("花键过盈配合设计", self)),
+            ("花键过盈配合", SplineFitPage(self)),
             ("材料与标准库", PlaceholderPage("材料与标准库", self)),
         ]
 
@@ -75,7 +84,7 @@ class MainWindow(QMainWindow):
     def _build_sidebar(self) -> QWidget:
         sidebar = QFrame(self)
         sidebar.setObjectName("SidebarPanel")
-        sidebar.setFixedWidth(270)
+        sidebar.setMinimumWidth(160)
 
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(16, 18, 16, 18)
