@@ -64,14 +64,20 @@ class PressForceCurveWidget(QWidget):
         x_min = min(self._x)
         x_max = max(self._x)
         y_min = 0.0
-        y_max = max(max(self._y), 1.0)
+        y_max_raw = max(max(self._y), 1.0)
+        # Auto-scale: use kN when peak force >= 10 kN for readability
+        use_kn = y_max_raw >= 10_000.0
+        y_scale = 0.001 if use_kn else 1.0
+        y_unit = "kN" if use_kn else "N"
+        y_max = y_max_raw * y_scale
 
         def sx(x: float) -> float:
             if x_max <= x_min:
                 return plot.left()
             return plot.left() + (x - x_min) / (x_max - x_min) * plot.width()
 
-        def sy(y: float) -> float:
+        def sy(y_raw: float) -> float:
+            y = y_raw * y_scale
             if y_max <= y_min:
                 return plot.bottom()
             return plot.bottom() - (y - y_min) / (y_max - y_min) * plot.height()
@@ -111,11 +117,12 @@ class PressForceCurveWidget(QWidget):
             painter.drawLine(QPointF(x_tick, plot.bottom()), QPointF(x_tick, plot.bottom() + 4))
             val = x_min + (x_max - x_min) * i / 5.0
             painter.drawText(QRectF(x_tick - 24, plot.bottom() + 6, 48, 14), Qt.AlignmentFlag.AlignCenter, f"{val:.0f}")
+        y_tick_fmt = "{:.1f}" if use_kn else "{:.0f}"
         for i in range(6):
             y_tick = plot.bottom() - plot.height() * i / 5.0
             painter.drawLine(QPointF(plot.left() - 4, y_tick), QPointF(plot.left(), y_tick))
             val = y_min + (y_max - y_min) * i / 5.0
-            painter.drawText(QRectF(plot.left() - 56, y_tick - 7, 50, 14), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, f"{val:.0f}")
+            painter.drawText(QRectF(plot.left() - 56, y_tick - 7, 50, 14), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, y_tick_fmt.format(val))
 
         # Markers for min/max/required interference
         self._draw_marker(painter, sx, plot, self._delta_min, QColor("#4C627A"), "delta_min")
@@ -131,12 +138,14 @@ class PressForceCurveWidget(QWidget):
         painter.save()
         painter.translate(panel.left() + 20, plot.center().y())
         painter.rotate(-90)
-        painter.drawText(QRectF(-plot.height() / 2, -22, plot.height(), 18), Qt.AlignmentFlag.AlignCenter, "压入力 F_press (N)")
+        painter.drawText(QRectF(-plot.height() / 2, -22, plot.height(), 18), Qt.AlignmentFlag.AlignCenter, f"压入力 F_press ({y_unit})")
         painter.restore()
 
         # Values
+        f_max_raw = max(self._y)
+        f_max_label = f"Fmax={f_max_raw * 0.001:,.1f} kN" if use_kn else f"Fmax={f_max_raw:,.0f} N"
         label = (
-            f"Fmax={max(self._y):,.0f} N\n"
+            f"{f_max_label}\n"
             f"delta_min={self._delta_min:.2f} um\n"
             f"delta_max={self._delta_max:.2f} um\n"
             f"delta_req={self._delta_req:.2f} um"

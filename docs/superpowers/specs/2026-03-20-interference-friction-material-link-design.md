@@ -49,6 +49,8 @@ SURFACE_CONDITIONS: tuple[str, ...] = ("干摩擦", "轻油润滑", "MoS2 润滑
 key = (frozenset({category_shaft, category_hub}), surface_condition)
 value = {"mu_torque": float, "mu_axial": float, "mu_assembly": float}
 
+查找键使用 frozenset，因此轴/轮毂顺序无关——steel/cast_iron 同时匹配"钢轴+铸铁毂"和"铸铁轴+钢毂"。
+
 DIN 7190-1:2017 表 3 中值，通用经验值，不区分纵压/横装：
 
 | 配对 | 表面状态 | mu_torque | mu_axial | mu_assembly |
@@ -84,23 +86,24 @@ FieldSpec(
     "表面状态",
     "-",
     "配合面润滑状态，与材料配对共同决定推荐摩擦系数。",
+    mapping=None,  # 不参与计算 payload
     widget_type="choice",
     options=SURFACE_CONDITIONS,
     default="干摩擦",
 )
 ```
 
-mapping=None，不参与计算 payload。
-
 ### RefBadge 内联标签
 
 在 mu_torque、mu_axial、mu_assembly 三个字段卡片中，hint 行下方新增一个 QLabel：
 
 - ObjectName: "RefBadge"
-- 样式: 复用 WaitBadge 暖灰配色（#E8E3DA bg, #6B665E text），字体 10px
+- 样式: 复用 WaitBadge 暖灰配色（#E8E3DA bg, #6B665E text），与 WaitBadge 一致的 border-radius 和 font-weight
 - 查表命中时: 显示 `DIN 7190-1 参考 · 钢/钢 · 干摩擦`
 - 用户手改后: 显示 `已修改（参考值 0.15）`
 - 无法查表时: 隐藏
+- 存储: `_ref_badges: dict[str, QLabel]`，key 为 field_id（mu_torque/mu_axial/mu_assembly），在章节页构建时创建
+- 布局: 在字段卡片 QGridLayout 的 row 2, column 0-2（hint 行下方），`row.addWidget(ref_badge, 2, 0, 1, 3)`
 
 ### RefBadge QSS（theme.py 新增）
 
@@ -109,9 +112,10 @@ QLabel#RefBadge {
     background-color: #E8E3DA;
     color: #6B665E;
     border: 1px solid #D9D3CA;
-    border-radius: 8px;
+    border-radius: 10px;
     padding: 2px 6px;
-    font-size: 10px;
+    font-size: 11px;
+    font-weight: 600;
 }
 ```
 
@@ -134,12 +138,24 @@ QLabel#RefBadge {
 6. 命中 → 填入三个摩擦字段，记录 `_friction_ref_values`，更新 RefBadge 显示来源
 7. 未命中 → 隐藏 RefBadge，不动字段值
 
+### 信号注册
+
+在 `_register_material_bindings()` 末尾追加三条 `currentTextChanged` 连接：
+- `materials.shaft_material` → `_sync_friction_from_material`
+- `materials.hub_material` → `_sync_friction_from_material`
+- `friction.surface_condition` → `_sync_friction_from_material`
+
+（轴/轮毂材料的 currentTextChanged 已连接 `_apply_material_selection`，再追加一条连接到新方法即可，Qt 允许同一信号连接多个槽。）
+
 ### "已修改"检测
 
-- 查表填入后记录 `_friction_ref_values: dict[str, float]`
-- 三个摩擦字段的 textChanged 连接检查函数
+- `__init__` 中初始化 `_friction_ref_values: dict[str, float] = {}`
+- 查表填入后更新 `_friction_ref_values`
+- 三个摩擦字段的 textChanged 连接 `_check_friction_modified` 检查函数
+- 比较方式：将字段文本 parse 为 float，与参考值做数值比较（epsilon=1e-9），避免 "0.150" vs "0.15" 的字符串误判
 - 当前值 ≠ 参考值 → RefBadge 文本变为 `已修改（参考值 X）`
 - 当前值 = 参考值 → RefBadge 恢复 DIN 来源文本
+- parse 失败（非法输入）→ 视为"已修改"
 
 ### 材料类别中文标签
 
@@ -153,7 +169,19 @@ CATEGORY_DISPLAY: dict[str, str] = {
 }
 ```
 
+## 清除行为
+
+调用 `_clear()` 时：
+- `friction.surface_condition` 随 `_apply_defaults()` 重置为 "干摩擦"
+- `_friction_ref_values` 清空为 `{}`
+- 所有 RefBadge 隐藏
+- `_apply_defaults()` 完成后，材料下拉也会恢复默认值，由 `currentTextChanged` 触发 `_sync_friction_from_material()`，自动重新查表填入
+
 ## 加载兼容性
+
+### 保存
+
+`friction.surface_condition` 的 `mapping=None`，因此通过 `build_form_snapshot` 自动持久化到 `ui_state` 区段（与 `roughness.profile`、`fit.mode` 等 mapping=None 字段一致）。
 
 ### 加载输入条件 / 测试案例
 
@@ -182,4 +210,6 @@ CATEGORY_DISPLAY: dict[str, str] = {
 3. 切换表面状态到轻油润滑 → 字段更新，RefBadge 恢复来源文本
 4. 切换轴材料到"自定义" → RefBadge 隐藏，摩擦字段值不变
 5. 加载不含 surface_condition 的旧 JSON → 表面状态默认"自定义"，摩擦值保持 JSON 原值
-6. 加载含 surface_condition 的新 JSON → 下拉恢复，联动正确触发
+6. 加载含 surface_condition 的新 JSON → 下拉恢复，联动正确触发，验证最终摩擦值与查表结果一致
+7. 铝合金/铝合金 + 干摩擦 → 验证 frozenset 相同材料配对正确查表
+8. 清除参数 → RefBadge 隐藏后重新出现（因为默认材料+干摩擦会重新触发联动）

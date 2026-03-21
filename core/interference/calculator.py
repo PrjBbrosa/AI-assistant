@@ -199,7 +199,8 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     hollow_shaft = d_inner > 0.0
     geometry_factor = (d_outer * d_outer + d * d) / (d_outer * d_outer - d * d)
     shaft_compliance_factor = _hollow_shaft_compliance_factor(bore_ratio, nu_shaft)
-    c_shaft = radius / e_shaft * (1.0 - nu_shaft * nu_shaft) * shaft_compliance_factor
+    # DIN 7190-1: C_i = (1 - ν) for solid shaft; compliance_factor handles hollow shaft scaling
+    c_shaft = radius / e_shaft * (1.0 - nu_shaft) * shaft_compliance_factor
     c_hub = radius / e_hub * (geometry_factor + nu_hub)
     c_total = c_shaft + c_hub
     if c_total <= 0:

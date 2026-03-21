@@ -219,7 +219,7 @@ class InterferenceFitCalculatorTests(unittest.TestCase):
         result_low = calculate_interference_fit(base)
 
         stricter = make_case()
-        stricter["loads"]["torque_required_nm"] = 870.0
+        stricter["loads"]["torque_required_nm"] = 1000.0
         stricter["checks"] = {
             "slip_safety_min": 1.5,
             "stress_safety_min": 1.2,
@@ -239,8 +239,8 @@ class InterferenceFitCalculatorTests(unittest.TestCase):
 
     def test_combined_torque_and_axial_usage_can_fail_overall_even_if_single_checks_pass(self) -> None:
         data = make_case()
-        data["loads"]["torque_required_nm"] = 50.0
-        data["loads"]["axial_force_required_n"] = 24000.0
+        data["loads"]["torque_required_nm"] = 300.0
+        data["loads"]["axial_force_required_n"] = 22000.0
         data["checks"] = {
             "slip_safety_min": 1.2,
             "stress_safety_min": 1.2,

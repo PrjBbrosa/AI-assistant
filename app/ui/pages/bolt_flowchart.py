@@ -24,6 +24,8 @@ R_STEPS: list[dict[str, Any]] = [
      "check_key": "fatigue_ok", "visibility": "fatigue"},
     {"id": "r7", "title": "R7 支承面",    "has_check": True,
      "check_key": "bearing_pressure_ok"},
+    {"id": "r8", "title": "R8 螺纹脱扣",  "has_check": True,
+     "check_key": "thread_strip_ok"},
 ]
 
 
@@ -57,6 +59,9 @@ R_STEP_FIELDS: dict[str, list[str]] = {
             "intermediate.FM_max", "fastener.Rp02", "operating.load_cycles"],
     "r7": ["intermediate.FM_max", "bearing.bearing_d_inner",
             "bearing.bearing_d_outer", "bearing.p_G_allow"],
+    "r8": ["thread_strip.m_eff", "thread_strip.tau_BM", "thread_strip.tau_BS",
+            "thread_strip.safety_required", "intermediate.FM_max",
+            "intermediate.phi_n", "loads.FA_max"],
 }
 
 
@@ -190,6 +195,7 @@ class FlowchartNavWidget(QWidget):
         stresses = result.get("stresses_mpa", {})
         forces = result.get("forces", {})
         fatigue = result.get("fatigue", {})
+        strip = result.get("thread_strip", {})
 
         summaries = {
             0: f"φ={inter.get('phi', 0):.4f}  φn={inter.get('phi_n', 0):.4f}",
@@ -201,6 +207,10 @@ class FlowchartNavWidget(QWidget):
             6: f"σ_a={fatigue.get('sigma_a', 0):.1f} ≤ {fatigue.get('sigma_a_allow', 0):.1f} MPa",
             7: f"p_B={stresses.get('p_bearing', 0):.0f} ≤ {stresses.get('p_G_allow', 0):.0f} MPa"
                if "p_bearing" in stresses else "未设置许用压强",
+            8: (
+                f"S_strip={strip.get('strip_safety', 0):.2f} ≥ "
+                f"{strip.get('strip_safety_required', 0):.2f}"
+            ) if strip else "未提供脱扣参数",
         }
 
         for i, node in enumerate(self._nodes):
@@ -440,6 +450,7 @@ class RStepDetailPage(QFrame):
         stresses = result.get("stresses_mpa", {})
         forces = result.get("forces", {})
         fatigue = result.get("fatigue", {})
+        strip = result.get("thread_strip", {})
 
         if step_id == "r0":
             return (
@@ -531,6 +542,21 @@ class RStepDetailPage(QFrame):
                 f"p_B       = FM,max/A_bearing = {stresses.get('p_bearing', 0):.1f} MPa\n"
                 f"p_allow   = {stresses.get('p_G_allow', 0):.0f} MPa\n"
                 f"判据: p_B ≤ p_allow{note_line}"
+            )
+        if step_id == "r8":
+            if not strip:
+                return "未提供有效旋合深度 m_eff，R8 已跳过。"
+            r8_note = result.get("r8_note", "")
+            note_line = f"\n{r8_note}" if r8_note else ""
+            return (
+                f"A_SB      = π×d3×m_eff×C1 = {strip.get('A_SB_mm2', 0):.1f} mm²\n"
+                f"A_SM      = π×d×m_eff×C3  = {strip.get('A_SM_mm2', 0):.1f} mm²\n"
+                f"F_strip,B = A_SB×τ_BS = {strip.get('F_strip_bolt_N', 0):,.0f} N\n"
+                f"F_strip,M = A_SM×τ_BM = {strip.get('F_strip_nut_N', 0):,.0f} N\n"
+                f"F_bolt,max = FM,max + φn×FA = {strip.get('F_bolt_max_N', 0):,.0f} N\n"
+                f"S_strip   = min(F_strip,B, F_strip,M)/F_bolt,max = {strip.get('strip_safety', 0):.2f}\n"
+                f"S_req     = {strip.get('strip_safety_required', 0):.2f}\n"
+                f"判据: S_strip ≥ S_req{note_line}"
             )
         return "—"
 

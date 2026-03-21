@@ -1284,6 +1284,7 @@ class BoltPage(QWidget):
             "两者之间的转换取决于摩擦，摩擦的不确定性由 αA 来描述。\n"
             "所以：控制好摩擦 → 减小 αA → 提高螺栓利用率 → 用更小的螺栓满足需求。"
         )
+        guide_layout.addWidget(guide_text)
         guide_text.setVisible(False)
 
         def _toggle():
@@ -1292,6 +1293,10 @@ class BoltPage(QWidget):
             toggle_btn.setText(
                 "  收起新手指南  " if visible else "  新手指南：装配参数到底在说什么？  "
             )
+            guide_layout.invalidate()
+            guide_card.adjustSize()
+            container.adjustSize()
+            container.updateGeometry()
 
         toggle_btn.clicked.connect(_toggle)
 

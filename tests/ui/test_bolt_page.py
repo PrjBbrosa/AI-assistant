@@ -165,6 +165,13 @@ class BoltPageStateTests(unittest.TestCase):
         self.assertIn("σ_vm_work", calc_text)
         self.assertIn("判据: σ_vm_work ≤ σ_allow", calc_text)
 
+    def test_flowchart_includes_optional_r8_thread_strip_step(self) -> None:
+        page = BoltPage()
+
+        titles = [node.title_label.text() for node in page.flowchart_nav._nodes]  # type: ignore[attr-defined]
+
+        self.assertIn("R8 螺纹脱扣", titles)
+
     def test_repeated_calculation_does_not_duplicate_r_step_input_echo(self) -> None:
         page = BoltPage()
         r_page = page._r_pages[0]
@@ -191,6 +198,38 @@ class BoltPageStateTests(unittest.TestCase):
         self.assertIn("1.05~1.15", page._widget_hints[alpha_widget])  # type: ignore[index]
         self.assertIn("0.5~0.7", n_widget.toolTip())  # type: ignore[attr-defined]
         self.assertIn("0.5~0.7", page._widget_hints[n_widget])  # type: ignore[index]
+
+    def test_assembly_guide_expands_into_a_readable_card(self) -> None:
+        page = BoltPage()
+        for i in range(page.chapter_list.count()):
+            if "装配属性" in page.chapter_list.item(i).text():
+                page.chapter_list.setCurrentRow(i)
+                break
+
+        page.resize(1400, 900)
+        page.show()
+        self.app.processEvents()
+
+        guide_button = next(
+            widget
+            for widget in page.findChildren(type(page.btn_help_guide))
+            if "新手指南" in widget.text()
+        )
+        guide_card = guide_button.parentWidget()
+        guide_text = next(
+            widget
+            for widget in guide_card.findChildren(type(page.info_label))
+            if widget.objectName() == "SectionHint" and "拧紧方式" in widget.text()
+        )
+
+        collapsed_height = guide_card.height()
+        guide_button.click()
+        self.app.processEvents()
+
+        self.assertFalse(guide_text.isHidden())
+        self.assertGreater(guide_card.height(), collapsed_height + 100)
+        self.assertGreater(guide_text.width(), 400)
+        self.assertGreater(guide_text.height(), 200)
 
     def test_manual_stiffness_overrides_default_compliance_values(self) -> None:
         page = BoltPage()

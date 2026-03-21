@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QSplitter,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -55,14 +56,14 @@ class BaseChapterPage(QWidget):
         self.actions_layout.addLayout(self.right_actions_layout)
         root.addWidget(actions)
 
-        content = QHBoxLayout()
-        content.setSpacing(12)
-        root.addLayout(content, 1)
+        content_splitter = QSplitter(Qt.Orientation.Horizontal, self)
+        content_splitter.setHandleWidth(4)
+        content_splitter.setChildrenCollapsible(False)
+        root.addWidget(content_splitter, 1)
 
         nav_card = QFrame(self)
         nav_card.setObjectName("Card")
-        nav_card.setMinimumWidth(220)
-        nav_card.setMaximumWidth(320)
+        nav_card.setMinimumWidth(140)
         nav_layout = QVBoxLayout(nav_card)
         nav_layout.setContentsMargins(12, 12, 12, 12)
         nav_layout.setSpacing(8)
@@ -72,11 +73,14 @@ class BaseChapterPage(QWidget):
         self.chapter_list.setObjectName("ChapterList")
         nav_layout.addWidget(self.nav_title_label)
         nav_layout.addWidget(self.chapter_list, 1)
-        content.addWidget(nav_card, 0)
+        content_splitter.addWidget(nav_card)
         self._chapter_step_index = 0
 
         self.chapter_stack = QStackedWidget(self)
-        content.addWidget(self.chapter_stack, 1)
+        content_splitter.addWidget(self.chapter_stack)
+        content_splitter.setSizes([198, 1000])
+        content_splitter.setStretchFactor(0, 0)
+        content_splitter.setStretchFactor(1, 1)
 
         footer = QFrame(self)
         footer.setObjectName("Card")
