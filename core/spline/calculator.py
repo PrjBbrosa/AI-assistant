@@ -26,6 +26,16 @@ def _positive(value: float, name: str, allow_zero: bool = False) -> float:
     return value
 
 
+def _positive_int(value: Any, name: str) -> int:
+    numeric = float(value)
+    if not numeric.is_integer():
+        raise InputError(f"{name} 必须为整数，当前值 {value}")
+    integer = int(numeric)
+    if integer <= 0:
+        raise InputError(f"{name} 必须 > 0，当前值 {value}")
+    return integer
+
+
 def _calculate_scenario_a(
     spline: Dict[str, Any],
     torque_design_nm: float,
@@ -33,7 +43,7 @@ def _calculate_scenario_a(
 ) -> Dict[str, Any]:
     """Scenario A: involute spline tooth flank bearing stress check."""
     m = _positive(float(_require(spline, "module_mm", "spline")), "spline.module_mm")
-    z = int(_require(spline, "tooth_count", "spline"))
+    z = _positive_int(_require(spline, "tooth_count", "spline"), "spline.tooth_count")
     L = _positive(
         float(_require(spline, "engagement_length_mm", "spline")),
         "spline.engagement_length_mm",
@@ -81,6 +91,7 @@ def _calculate_scenario_b(
     smooth_friction: Dict[str, Any],
     torque_design_nm: float,
     axial_design_n: float,
+    application_factor_ka: float,
     slip_safety_min: float,
     stress_safety_min: float,
 ) -> Dict[str, Any]:
@@ -138,6 +149,12 @@ def _calculate_scenario_b(
         "press_force_curve": din7190_result["press_force_curve"],
         "roughness": din7190_result["roughness"],
         "messages": din7190_result["messages"],
+        "design_loads": {
+            "torque_design_nm": torque_design_nm,
+            "axial_design_n": axial_design_n,
+            "application_factor_ka": application_factor_ka,
+            "delegated_application_factor_ka": 1.0,
+        },
     }
 
 
@@ -182,7 +199,7 @@ def calculate_spline_fit(data: Dict[str, Any]) -> Dict[str, Any]:
         )
         scenario_b = _calculate_scenario_b(
             smooth_fit, smooth_materials, smooth_roughness, smooth_friction,
-            torque_design_nm, axial_design_n, slip_safety_min, stress_safety_min,
+            torque_design_nm, axial_design_n, ka, slip_safety_min, stress_safety_min,
         )
         scenario_b_pass = scenario_b["overall_pass"]
 
@@ -194,6 +211,8 @@ def calculate_spline_fit(data: Dict[str, Any]) -> Dict[str, Any]:
             f"齿面承压安全系数 {scenario_a['flank_safety']:.2f}"
             f" < 最小要求 {flank_safety_min}，齿面承载不足。"
         )
+    if scenario_b is not None:
+        warnings.extend(f"场景 B: {message}" for message in scenario_b.get("messages", []))
 
     result: Dict[str, Any] = {
         "inputs_echo": data,

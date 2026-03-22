@@ -332,6 +332,20 @@ class SplineFitPage(BaseChapterPage):
         if isinstance(lc_combo, QComboBox):
             lc_combo.currentTextChanged.connect(self._on_load_condition_changed)
 
+        shaft_material_combo = self._widgets.get("smooth_materials.shaft_material")
+        if isinstance(shaft_material_combo, QComboBox):
+            shaft_material_combo.currentTextChanged.connect(
+                lambda text: self._on_material_changed("smooth_materials.shaft", text)
+            )
+            self._on_material_changed("smooth_materials.shaft", shaft_material_combo.currentText())
+
+        hub_material_combo = self._widgets.get("smooth_materials.hub_material")
+        if isinstance(hub_material_combo, QComboBox):
+            hub_material_combo.currentTextChanged.connect(
+                lambda text: self._on_material_changed("smooth_materials.hub", text)
+            )
+            self._on_material_changed("smooth_materials.hub", hub_material_combo.currentText())
+
         self.set_info(SPLINE_SCOPE_DISCLAIMER)
 
     def _build_chapter_page(self, chapter: dict) -> QWidget:
@@ -434,6 +448,18 @@ class SplineFitPage(BaseChapterPage):
             w = self._widgets.get("spline.p_allowable_mpa")
             if isinstance(w, QLineEdit):
                 w.setText(str(p_zul))
+
+    def _on_material_changed(self, field_prefix: str, material_name: str) -> None:
+        material = MATERIAL_LIBRARY.get(material_name)
+        if material is None:
+            return
+
+        e_widget = self._widgets.get(f"{field_prefix}_e_mpa")
+        nu_widget = self._widgets.get(f"{field_prefix}_nu")
+        if isinstance(e_widget, QLineEdit):
+            e_widget.setText(str(material["e_mpa"]))
+        if isinstance(nu_widget, QLineEdit):
+            nu_widget.setText(str(material["nu"]))
 
     def _get_value(self, field_id: str) -> str:
         w = self._widgets.get(field_id)

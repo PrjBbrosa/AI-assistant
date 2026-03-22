@@ -42,10 +42,28 @@ class TestSplineFitPage:
         texts = self._label_texts(page)
         assert "场景 A - 花键齿面承压（简化）" in texts
 
+    def test_material_choice_autofills_elastic_properties(self, app):
+        page = SplineFitPage()
+        shaft_material = page._widgets["smooth_materials.shaft_material"]
+        shaft_nu = page._widgets["smooth_materials.shaft_nu"]
+        hub_material = page._widgets["smooth_materials.hub_material"]
+        hub_nu = page._widgets["smooth_materials.hub_nu"]
+
+        shaft_material.setCurrentText("40Cr")
+        hub_material.setCurrentText("42CrMo")
+
+        assert shaft_nu.text() == "0.29"
+        assert hub_nu.text() == "0.29"
+
     def test_calculate_with_defaults(self, app):
         page = SplineFitPage()
         page._on_calculate()
         assert page.overall_badge.objectName() in ("PassBadge", "FailBadge")
+
+    def test_default_combined_case_surfaces_scenario_b_failure_reason(self, app):
+        page = SplineFitPage()
+        page._on_calculate()
+        assert "扭矩与轴向力联合作用超出当前最小过盈能力" in page.info_label.text()
 
     def test_mode_switch_hides_smooth_fields(self, app):
         page = SplineFitPage()

@@ -94,6 +94,12 @@ class TestScenarioA:
         with pytest.raises(InputError, match="torque_required_nm"):
             calculate_spline_fit(case)
 
+    def test_non_integer_tooth_count_raises(self):
+        case = make_scenario_a_case()
+        case["spline"]["tooth_count"] = 20.5
+        with pytest.raises(InputError, match="tooth_count"):
+            calculate_spline_fit(case)
+
 
 def make_combined_case() -> dict:
     """Combined mode: scenario A + scenario B."""
@@ -183,3 +189,14 @@ class TestScenarioB:
         case["mode"] = "spline_only"
         result = calculate_spline_fit(case)
         assert "scenario_b" not in result
+
+    def test_scenario_b_messages_are_promoted_to_top_level(self):
+        result = calculate_spline_fit(make_combined_case())
+        assert any("扭矩与轴向力联合作用超出当前最小过盈能力" in msg for msg in result["messages"])
+
+    def test_scenario_b_keeps_outer_design_load_trace(self):
+        result = calculate_spline_fit(make_combined_case())
+        trace = result["scenario_b"]["design_loads"]
+        assert trace["application_factor_ka"] == pytest.approx(1.25)
+        assert trace["torque_design_nm"] == pytest.approx(625.0)
+        assert trace["delegated_application_factor_ka"] == pytest.approx(1.0)
