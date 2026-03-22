@@ -48,6 +48,14 @@ LOAD_CONDITION_P_ZUL: dict[str, float] = {
     "固定连接，脉动载荷，调质钢": 60.0,
     "固定连接，脉动载荷，渗碳淬火": 80.0,
 }
+GEOMETRY_MODE_OPTIONS: tuple[str, ...] = (
+    "公开/图纸尺寸",
+    "近似推导（仅预估）",
+)
+GEOMETRY_MODE_MAP: dict[str, str] = {
+    "公开/图纸尺寸": "reference_dimensions",
+    "近似推导（仅预估）": "approximate",
+}
 
 MATERIAL_LIBRARY: dict[str, dict[str, float] | None] = {
     "45钢": {"e_mpa": 210000.0, "nu": 0.30},
@@ -115,31 +123,63 @@ CHAPTERS: list[dict[str, Any]] = [
     },
     {
         "title": "花键几何",
-        "subtitle": "渐开线花键 (DIN 5480) 参数，alpha=30 deg 固定。",
+        "subtitle": "渐开线花键 (DIN 5480) 优先使用公开目录/图纸尺寸；近似模式仅用于预估。",
         "fields": [
+            FieldSpec(
+                "spline.geometry_mode", "几何输入模式", "-",
+                "优先使用公开目录、图纸或实测尺寸；近似模式只适合简化预校核。",
+                mapping=("spline", "geometry_mode"),
+                widget_type="choice",
+                options=GEOMETRY_MODE_OPTIONS,
+                default="公开/图纸尺寸",
+            ),
             FieldSpec(
                 "spline.module_mm", "模数 m", "mm",
                 "渐开线花键模数。",
                 mapping=("spline", "module_mm"),
-                default="2.0", placeholder="例如 1.25, 2.0",
+                default="1.25", placeholder="例如 0.8, 1.25",
             ),
             FieldSpec(
                 "spline.tooth_count", "齿数 z", "-",
                 "花键齿数，最小 6。",
                 mapping=("spline", "tooth_count"),
-                default="20", placeholder="例如 20, 30",
+                default="10", placeholder="例如 10, 16",
+            ),
+            FieldSpec(
+                "spline.reference_diameter_mm", "参考直径 d_B", "mm",
+                "DIN 5480 基于参考直径；公开样例可用 W/N 15 x 1.25 x 10。",
+                mapping=("spline", "reference_diameter_mm"),
+                default="15.0", placeholder="例如 15",
+            ),
+            FieldSpec(
+                "spline.tip_diameter_shaft_mm", "轴齿顶圆 d_a1", "mm",
+                "优先使用目录或图纸尺寸。公开样例 W15x1.25x10 约为 14.75 mm。",
+                mapping=("spline", "tip_diameter_shaft_mm"),
+                default="14.75", placeholder="例如 14.75",
+            ),
+            FieldSpec(
+                "spline.root_diameter_shaft_mm", "轴齿根圆 d_f1", "mm",
+                "优先使用目录或图纸尺寸。公开样例 W15x1.25x10 约为 12.1 mm。",
+                mapping=("spline", "root_diameter_shaft_mm"),
+                default="12.1", placeholder="例如 12.1",
+            ),
+            FieldSpec(
+                "spline.tip_diameter_hub_mm", "内花键齿顶圆 d_a2", "mm",
+                "优先使用目录或图纸尺寸。公开样例 N15x1.25x10 约为 12.5 mm。",
+                mapping=("spline", "tip_diameter_hub_mm"),
+                default="12.5", placeholder="例如 12.5",
             ),
             FieldSpec(
                 "spline.engagement_length_mm", "有效啮合长度 L", "mm",
                 "花键齿面轴向有效接触长度。",
                 mapping=("spline", "engagement_length_mm"),
-                default="30.0", placeholder="例如 30",
+                default="40.0", placeholder="例如 25, 40",
             ),
             FieldSpec(
                 "spline.k_alpha", "载荷分布系数 K_alpha", "-",
-                "过盈配合取 1.0~1.2；间隙配合取 1.5~2.0。",
+                "Niemann 推荐值与公差/磨合有关；轻滑移配合通常高于过盈固定连接。",
                 mapping=("spline", "k_alpha"),
-                default="1.0", placeholder="过盈配合建议 1.0",
+                default="1.3", placeholder="例如 1.1~2.0",
             ),
             FieldSpec(
                 "spline.load_condition", "载荷工况", "-",
@@ -484,6 +524,9 @@ class SplineFitPage(BaseChapterPage):
                 raw = self._get_value(spec.field_id)
                 if not raw:
                     continue
+                if spec.field_id == "spline.geometry_mode":
+                    payload[section][key] = GEOMETRY_MODE_MAP.get(raw, "approximate")
+                    continue
                 try:
                     payload[section][key] = float(raw)
                 except ValueError:
@@ -514,9 +557,11 @@ class SplineFitPage(BaseChapterPage):
         a_badge.style().unpolish(a_badge)
         a_badge.style().polish(a_badge)
         a_detail.setText(
+            f"参考直径 d_B = {a['geometry']['reference_diameter_mm']:.2f} mm, "
             f"齿面压力 p = {a['flank_pressure_mpa']:.1f} MPa, "
             f"许用 p_zul = {a['p_allowable_mpa']:.0f} MPa, "
-            f"安全系数 S = {a['flank_safety']:.2f}"
+            f"安全系数 S = {a['flank_safety']:.2f}, "
+            f"结果级别 = {a['overall_verdict_level']}"
         )
 
         b_badge = self._result_labels["b_badge"]
@@ -544,9 +589,11 @@ class SplineFitPage(BaseChapterPage):
             b_detail.setText("仅花键模式，光滑段过盈校核已跳过。")
 
         if result["overall_pass"]:
-            self.set_overall_status("ALL PASS", "pass")
+            status_text = "PRECHECK PASS" if result.get("overall_verdict_level") == "simplified_precheck" else "ALL PASS"
+            self.set_overall_status(status_text, "pass")
         else:
-            self.set_overall_status("FAIL", "fail")
+            status_text = "PRECHECK FAIL" if result.get("overall_verdict_level") == "simplified_precheck" else "FAIL"
+            self.set_overall_status(status_text, "fail")
 
         msgs = result.get("messages", [])
         self.set_info("\n".join(msgs) if msgs else "校核完成。")

@@ -1,0 +1,18 @@
+{
+  "mode": "spline_only",
+  "spline": {
+    "geometry_mode": "approximate",
+    "module_mm": 2.0,
+    "tooth_count": 20,
+    "engagement_length_mm": 30.0,
+    "k_alpha": 1.0,
+    "p_allowable_mpa": 100.0
+  },
+  "loads": {
+    "torque_required_nm": 500.0,
+    "application_factor_ka": 1.25
+  },
+  "checks": {
+    "flank_safety_min": 1.3
+  }
+}

@@ -2,6 +2,38 @@
 
 ## Session: 2026-03-22
 
+### Phase 18: Spline Fit Engineering Hardening Execution
+- **Status:** in_progress
+- Actions taken:
+  - 在隔离 worktree `/.worktrees/spline-fit-hardening` 中执行整改
+  - 完成 Stage A / Task 1：文案降级、UI disclaimer、历史报告补充说明
+  - 完成 Stage A / Task 2：场景 B warning 上浮、材料联动、整数齿数校验、设计载荷 trace
+  - 开始为 Stage B 搜索公开权威来源，确认几何与强度链需要依赖 DIN Media + eAssistant + FVA + 标准件目录组合
+  - 完成 Stage B 第一轮落地：
+    - 引入 `reference_dimensions` 与 `approximate` 两种几何模式
+    - 用公开小规格样例 `W/N 15 x 1.25 x 10` 建立 geometry benchmark
+    - 在 UI 中新增参考直径与显式尺寸输入
+    - 将场景 A verdict 语义降级为 `simplified_precheck`
+    - 新增公开来源文档与样例 JSON
+  - 运行 spline 定向回归：`34 passed`
+  - 运行 `examples/spline_case_01.json` smoke：`overall_pass=True`, `overall_verdict_level=simplified_precheck`
+  - 运行全仓回归：`235 passed`
+  - 完成复审结论：模块定位更新为“可追溯的 simplified precheck”，不升格为正式工程校核候选
+- Files created/modified:
+  - app/ui/pages/spline_fit_page.py (updated)
+  - core/spline/calculator.py (updated)
+  - core/spline/geometry.py (updated)
+  - tests/ui/test_spline_fit_page.py (updated)
+  - tests/core/spline/test_calculator.py (updated)
+  - tests/core/spline/test_geometry.py (updated)
+  - docs/reports/2026-03-22-spline-interference-fit-module.md (updated)
+  - docs/references/2026-03-22-spline-fit-sources.md (created)
+  - examples/spline_case_01.json (created)
+  - examples/spline_case_02.json (created)
+  - findings.md (updated)
+  - task_plan.md (updated)
+  - progress.md (updated)
+
 ### Phase 16: Worm Load-Capacity Upgrade
 - **Status:** complete
 - **Started:** 2026-03-22

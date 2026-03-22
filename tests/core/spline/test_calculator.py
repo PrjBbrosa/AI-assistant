@@ -12,6 +12,7 @@ def make_scenario_a_case() -> dict:
     return {
         "mode": "spline_only",
         "spline": {
+            "geometry_mode": "approximate",
             "module_mm": 2.0,
             "tooth_count": 20,
             "engagement_length_mm": 30.0,
@@ -42,6 +43,35 @@ class TestScenarioA:
         geo = result["scenario_a"]["geometry"]
         assert geo["reference_diameter_mm"] == pytest.approx(40.0)
         assert geo["effective_tooth_height_mm"] == pytest.approx(2.0)
+        assert geo["geometry_source"] == "approximation_from_module_and_tooth_count"
+
+    def test_public_catalog_geometry_can_be_used_for_precheck(self):
+        case = {
+            "mode": "spline_only",
+            "spline": {
+                "geometry_mode": "reference_dimensions",
+                "module_mm": 1.25,
+                "tooth_count": 10,
+                "reference_diameter_mm": 15.0,
+                "tip_diameter_shaft_mm": 14.75,
+                "root_diameter_shaft_mm": 12.1,
+                "tip_diameter_hub_mm": 12.5,
+                "engagement_length_mm": 40.0,
+                "k_alpha": 1.3,
+                "p_allowable_mpa": 100.0,
+            },
+            "loads": {
+                "torque_required_nm": 50.0,
+                "application_factor_ka": 1.25,
+            },
+            "checks": {
+                "flank_safety_min": 1.3,
+            },
+        }
+        result = calculate_spline_fit(case)
+        assert result["scenario_a"]["geometry"]["reference_diameter_mm"] == pytest.approx(15.0)
+        assert result["scenario_a"]["geometry"]["geometry_source"] == "explicit_reference_dimensions"
+        assert result["scenario_a"]["overall_verdict_level"] == "simplified_precheck"
 
     def test_high_torque_fails(self):
         case = make_scenario_a_case()
@@ -106,6 +136,7 @@ def make_combined_case() -> dict:
     return {
         "mode": "combined",
         "spline": {
+            "geometry_mode": "approximate",
             "module_mm": 2.0,
             "tooth_count": 20,
             "engagement_length_mm": 30.0,

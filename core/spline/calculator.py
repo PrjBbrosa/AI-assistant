@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict
 
-from .geometry import derive_involute_geometry
+from .geometry import GeometryError, derive_involute_geometry
 
 
 class InputError(ValueError):
@@ -55,8 +55,28 @@ def _calculate_scenario_a(
         float(_require(spline, "p_allowable_mpa", "spline")),
         "spline.p_allowable_mpa",
     )
+    geometry_mode = str(spline.get("geometry_mode", "approximate")).strip() or "approximate"
+    if geometry_mode not in {"approximate", "reference_dimensions"}:
+        raise InputError("spline.geometry_mode 必须是 approximate 或 reference_dimensions")
 
-    geo = derive_involute_geometry(module_mm=m, tooth_count=z)
+    def _optional_float(key: str) -> float | None:
+        value = spline.get(key)
+        if value in (None, ""):
+            return None
+        return float(value)
+
+    try:
+        geo = derive_involute_geometry(
+            module_mm=m,
+            tooth_count=z,
+            reference_diameter_mm=_optional_float("reference_diameter_mm"),
+            tip_diameter_shaft_mm=_optional_float("tip_diameter_shaft_mm"),
+            root_diameter_shaft_mm=_optional_float("root_diameter_shaft_mm"),
+            tip_diameter_hub_mm=_optional_float("tip_diameter_hub_mm"),
+            allow_approximation=(geometry_mode == "approximate"),
+        )
+    except GeometryError as exc:
+        raise InputError(str(exc)) from exc
     h_w = geo["effective_tooth_height_mm"]
     d_m = geo["mean_diameter_mm"]
 
@@ -69,9 +89,18 @@ def _calculate_scenario_a(
 
     flank_sf = p_zul / p_flank if p_flank > 0 else math.inf
     flank_ok = flank_sf >= flank_safety_min
+    messages = list(geo.get("messages", []))
+    not_covered_checks = [
+        "齿根弯曲强度",
+        "剪切承载",
+        "内花键胀裂/轮毂局部强度",
+        "磨损与寿命",
+        "完整公差/变位/齿侧间隙链",
+    ]
 
     return {
         "geometry": geo,
+        "geometry_mode": geometry_mode,
         "engagement_length_mm": L,
         "k_alpha": k_alpha,
         "p_allowable_mpa": p_zul,
@@ -81,6 +110,13 @@ def _calculate_scenario_a(
         "flank_safety": flank_sf,
         "flank_safety_min": flank_safety_min,
         "flank_ok": flank_ok,
+        "messages": messages,
+        "model_assumptions": [
+            "齿面平均承压简化模型",
+            "仅作为 simplified_precheck，不替代 DIN 5466 / DIN 6892 完整校核",
+        ],
+        "not_covered_checks": not_covered_checks,
+        "overall_verdict_level": "simplified_precheck",
     }
 
 
@@ -206,6 +242,7 @@ def calculate_spline_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     overall_pass = scenario_a["flank_ok"] and scenario_b_pass
 
     warnings: list[str] = []
+    warnings.extend(f"场景 A: {message}" for message in scenario_a.get("messages", []))
     if not scenario_a["flank_ok"]:
         warnings.append(
             f"齿面承压安全系数 {scenario_a['flank_safety']:.2f}"
@@ -224,6 +261,7 @@ def calculate_spline_fit(data: Dict[str, Any]) -> Dict[str, Any]:
         },
         "scenario_a": scenario_a,
         "overall_pass": overall_pass,
+        "overall_verdict_level": scenario_a["overall_verdict_level"],
         "messages": warnings,
     }
     if scenario_b is not None:
