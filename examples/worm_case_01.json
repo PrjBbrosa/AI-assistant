@@ -11,20 +11,17 @@
     "lead_angle_deg": 11.31,
     "handedness": "左旋",
     "worm_face_width_mm": 36.0,
-    "wheel_face_width_mm": 30.0
+    "wheel_face_width_mm": 30.0,
+    "x1": 0.0,
+    "x2": 0.0
   },
   "materials": {
-    "worm_material": "20CrMnTi",
-    "wheel_material": "ZCuSn12Ni2",
-    "worm_e_mpa": 206000.0,
+    "worm_material": "37CrS4",
+    "wheel_material": "PA66",
+    "worm_e_mpa": 210000.0,
     "worm_nu": 0.3,
-    "wheel_e_mpa": 110000.0,
-    "wheel_nu": 0.34
-  },
-  "tolerance": {
-    "tooth_thickness_allowance": 0.0,
-    "center_distance_allowance": 0.0,
-    "normal_backlash": 0.1
+    "wheel_e_mpa": 3000.0,
+    "wheel_nu": 0.38
   },
   "operating": {
     "power_kw": 3.0,
@@ -40,8 +37,8 @@
   "load_capacity": {
     "enabled": true,
     "method": "DIN 3996 Method B",
-    "allowable_contact_stress_mpa": 520.0,
-    "allowable_root_stress_mpa": 90.0,
+    "allowable_contact_stress_mpa": 42.0,
+    "allowable_root_stress_mpa": 55.0,
     "dynamic_factor_kv": 1.05,
     "transverse_load_factor_kha": 1.0,
     "face_load_factor_khb": 1.1,

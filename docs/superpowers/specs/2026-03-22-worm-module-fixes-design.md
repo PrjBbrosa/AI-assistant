@@ -62,12 +62,19 @@ New geometry inputs:
 - `geometry.x2` (wheel profile shift, default 0.0)
 
 Formula changes:
-- Pitch diameters return to standard definition: `d1 = q * m`, `d2 = z2 * m`
+- **Reference pitch diameters** (standard definition): `d1 = q * m`, `d2 = z2 * m`.
+  **Replaces** the existing `pitch_diameter_wheel_mm = 2*a - d1` derivation (line 115). The old center-distance-based derivation is no longer used.
 - Tip diameters: `da1 = d1 + 2m(1 + x1)`, `da2 = d2 + 2m(1 + x2)`
 - Root diameters: `df1 = d1 - 2m(1.2 - x1)`, `df2 = d2 - 2m(1.2 - x2)`
 - Theoretical working center distance: `a_w = m(q + z2)/2 + (x1 + x2) * m`
 - User's `center_distance_mm` compared against `a_w` for consistency warning
-- Tooth height for root stress: `h = m * (2.2 + x2 - x1)`
+- **Force/stress calculations use reference pitch diameters** `d1`, `d2` (not working pitch diameters).
+  This is consistent with DIN 3975 convention where tangential force `Ft2 = 2000*T2/d2` references the standard pitch circle.
+  The profile shift changes the tooth geometry (tip/root/height) but the reference circle remains `z*m`.
+- Tooth height for root stress bending lever arm: `h = m * (2.2 + x1 - x2)`.
+  This represents the depth of the worm tooth penetrating into the wheel:
+  worm addendum `ha1 = m(1+x1)` + wheel dedendum `hf2 = m(1.2-x2)` = `m(2.2 + x1 - x2)`.
+  A larger worm addendum (positive x1) or smaller wheel dedendum (negative x2) increases the lever arm.
 
 ### 1.3 Thermal Capacity Fix (#1)
 
@@ -79,6 +86,9 @@ thermal_capacity_kw = power_loss_kw
 ```
 
 Performance curve: `p_thermal_i = p_loss_i` (was `power_kw * factor + p_loss_i * 0.55`).
+
+`WormPerformanceCurveWidget` curve label should be updated from "热容量" to "损失功率"
+if applicable, since the semantic meaning has changed.
 
 ### 1.4 Lead Angle Self-Consistency (#17)
 
@@ -92,9 +102,13 @@ Output includes both `lead_angle_input_deg` and `lead_angle_calc_deg`.
 
 ### 1.5 `enabled` Flag (#5)
 
+The `enabled` guard must be placed *before* parsing load capacity parameter fields
+(`dynamic_factor_kv`, `allowable_contact_stress_mpa`, etc.), so that disabled mode
+does not require those fields to be present or valid.
+
 When `load_capacity.enabled == False`:
-- Skip all load capacity calculations
-- Return `{"enabled": false, "status": "未启用", "checks": {}, "forces": {}, "contact": {}, "root": {}}`
+- Skip all load capacity calculations (early return from that code block)
+- Return `{"enabled": false, "status": "未启用", "checks": {}, "forces": {}, "contact": {}, "root": {}, "torque_ripple": {}, "factors": {}, "warnings": [], "assumptions": []}`
 
 ### 1.6 Method Label (#10)
 
@@ -108,7 +122,9 @@ Add to assumptions list.
 | `z1`, `z2` | Must be positive integer (`z != int(z)` → reject) | InputError |
 | `lead_angle_deg` | `0 < γ ≤ 45` | InputError |
 | `diameter_factor_q` | Not in `{6,7,8,9,10,11,12,14,17,20}` → warning (non-blocking) | geometry_warnings |
-| `friction_override` | `0.01 ≤ μ ≤ 0.30` (replaces `_fraction`) | InputError |
+| `friction_override` | `0.01 ≤ μ ≤ 0.30` (new dedicated range check) | InputError |
+
+Note: `_fraction()` helper is retained for efficiency clamping (line 147) where it is still correct.
 
 ### 1.8 Assumptions Documentation (#2, #3, #4, #15, #16, #18)
 
@@ -145,6 +161,11 @@ New method `_on_material_changed()`:
 
 Material combo always overwrites elastic/allowable fields on change (material switch = new physical object).
 
+**Signal connection timing**: `_on_material_changed()` must be connected *after* `_apply_defaults()` completes,
+to avoid cascading updates during initialization. In `_apply_input_data()`, block signals on material combos
+(or use a guard flag) while restoring saved values, so that user-customized elastic/allowable values from
+saved inputs are not overwritten by the material-change handler.
+
 ### 2.2 Load Capacity Enable/Disable (#9)
 
 Connect `load_capacity.enabled` combo's `currentTextChanged`:
@@ -166,14 +187,18 @@ if spec.field_id == "load_capacity.enabled":
 Connect `btn_save.clicked` → `_export_report()`:
 - If `_last_result is None`: show warning "请先执行计算"
 - Otherwise: format result as readable text, save via `QFileDialog.getSaveFileName` as `.txt`
+- Report format: reuse the same text as `result_metrics` + `load_capacity_metrics` combined,
+  prefixed with a header line containing project note and timestamp
 
 ### 2.5 Remove Tolerance Page (#21)
 
 - Delete `TOLERANCE_FIELDS` constant
 - Delete "公差与回差" chapter from `_build_input_steps`
 - Remove `self.tolerance_overview` (WormToleranceOverviewWidget) from graphics page
+- Remove `self.tolerance_overview.set_display_state(...)` calls in `_calculate()` (~line 715) and `_clear()` (~line 805)
+- Remove `WormToleranceOverviewWidget` import
 - Chapter count: 8 → 7
-- Chapter indices shift down by 1 for everything after the removed chapter
+- Chapter indices shift: graphics page 5→4, Load Capacity 6→5, results 7→6
 
 ### 2.6 Profile Shift Fields
 

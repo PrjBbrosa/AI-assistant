@@ -33,7 +33,6 @@ from app.ui.input_condition_store import (
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.widgets.worm_geometry_overview import WormGeometryOverviewWidget
 from app.ui.widgets.worm_performance_curve import WormPerformanceCurveWidget
-from app.ui.widgets.worm_tolerance_overview import WormToleranceOverviewWidget
 from core.worm.calculator import InputError, calculate_worm_geometry
 
 
@@ -81,7 +80,7 @@ BASIC_SETTINGS_FIELDS = [
         "load_capacity.method",
         "校核方法",
         "-",
-        "当前实现为 Method B 风格最小工程子集，保留 DIN 3996 / ISO / Niemann 的命名边界。",
+        "当前版本各方法计算逻辑相同，仅作标记用途。",
         widget_type="choice",
         options=LOAD_CAPACITY_OPTIONS,
         default="DIN 3996 Method B",
@@ -103,11 +102,13 @@ WORM_GEOMETRY_FIELDS = [
         default="右旋",
     ),
     FieldSpec("geometry.worm_face_width_mm", "蜗杆齿宽 b1", "mm", "蜗杆工作齿宽。", default="32.0"),
+    FieldSpec("geometry.x1", "蜗杆变位系数 x1", "-", "蜗杆齿形变位系数。", default="0.0"),
 ]
 
 WHEEL_GEOMETRY_FIELDS = [
     FieldSpec("geometry.z2", "蜗轮齿数 z2", "-", "蜗轮总齿数。", default="40"),
     FieldSpec("geometry.wheel_face_width_mm", "蜗轮齿宽 b2", "mm", "蜗轮工作齿宽。", default="28.0"),
+    FieldSpec("geometry.x2", "蜗轮变位系数 x2", "-", "蜗轮齿形变位系数。塑料蜗轮常用大正变位。", default="0.0"),
 ]
 
 MESH_GEOMETRY_FIELDS = [
@@ -121,8 +122,8 @@ MATERIAL_FIELDS = [
         "-",
         "例如渗碳钢。",
         widget_type="choice",
-        options=("20CrMnTi", "16MnCr5", "42CrMo"),
-        default="20CrMnTi",
+        options=("37CrS4",),
+        default="37CrS4",
     ),
     FieldSpec(
         "materials.wheel_material",
@@ -130,19 +131,13 @@ MATERIAL_FIELDS = [
         "-",
         "例如锡青铜。",
         widget_type="choice",
-        options=("ZCuSn12Ni2", "ZCuSn10P1", "AlCu4Ni2Fe"),
-        default="ZCuSn12Ni2",
+        options=("PA66", "PA66+GF30"),
+        default="PA66",
     ),
-    FieldSpec("materials.worm_e_mpa", "蜗杆弹性模量 E1", "MPa", "Method B 最小子集使用的材料弹性参数。", default="206000"),
+    FieldSpec("materials.worm_e_mpa", "蜗杆弹性模量 E1", "MPa", "Method B 最小子集使用的材料弹性参数。", default="210000"),
     FieldSpec("materials.worm_nu", "蜗杆泊松比 nu1", "-", "Method B 最小子集使用的材料弹性参数。", default="0.30"),
-    FieldSpec("materials.wheel_e_mpa", "蜗轮弹性模量 E2", "MPa", "Method B 最小子集使用的材料弹性参数。", default="110000"),
-    FieldSpec("materials.wheel_nu", "蜗轮泊松比 nu2", "-", "Method B 最小子集使用的材料弹性参数。", default="0.34"),
-]
-
-TOLERANCE_FIELDS = [
-    FieldSpec("tolerance.tooth_thickness_allowance", "齿厚公差带", "mm", "齿厚/齿槽相关允许偏差记录项。", default="0.00"),
-    FieldSpec("tolerance.center_distance_allowance", "中心距偏差", "mm", "装配中心距允许偏差。", default="0.00"),
-    FieldSpec("tolerance.normal_backlash", "法向回差 j", "mm", "回差记录项。", default="0.10"),
+    FieldSpec("materials.wheel_e_mpa", "蜗轮弹性模量 E2", "MPa", "Method B 最小子集使用的材料弹性参数。", default="3000"),
+    FieldSpec("materials.wheel_nu", "蜗轮泊松比 nu2", "-", "Method B 最小子集使用的材料弹性参数。", default="0.38"),
 ]
 
 OPERATING_FIELDS = [
@@ -174,8 +169,8 @@ ADVANCED_FIELDS = [
 ]
 
 LOAD_CAPACITY_PARAMETER_FIELDS = [
-    FieldSpec("load_capacity.allowable_contact_stress_mpa", "许用齿面应力", "MPa", "用于最小齿面安全系数计算。", default="520.0"),
-    FieldSpec("load_capacity.allowable_root_stress_mpa", "许用齿根应力", "MPa", "用于最小齿根安全系数计算。", default="90.0"),
+    FieldSpec("load_capacity.allowable_contact_stress_mpa", "许用齿面应力", "MPa", "用于最小齿面安全系数计算。", default="42.0"),
+    FieldSpec("load_capacity.allowable_root_stress_mpa", "许用齿根应力", "MPa", "用于最小齿根安全系数计算。", default="55.0"),
     FieldSpec("load_capacity.dynamic_factor_kv", "动载系数 Kv", "-", "最小子集中的动载放大系数。", default="1.05"),
     FieldSpec("load_capacity.transverse_load_factor_kha", "横向载荷系数 KHalpha", "-", "横向载荷分配系数。", default="1.00"),
     FieldSpec("load_capacity.face_load_factor_khb", "齿宽载荷系数 KHbeta", "-", "齿宽方向载荷分配系数。", default="1.10"),
@@ -236,11 +231,15 @@ class WormGearPage(BaseChapterPage):
         self._build_load_capacity_step()
         self._build_results_step()
         self._apply_defaults()
+        self._field_widgets["load_capacity.enabled"].currentTextChanged.connect(self._on_lc_enabled_changed)
+        self._field_widgets["materials.worm_material"].currentTextChanged.connect(lambda: self._on_material_changed())
+        self._field_widgets["materials.wheel_material"].currentTextChanged.connect(lambda: self._on_material_changed())
         self.set_current_chapter(0)
         self.btn_save_inputs.clicked.connect(self._save_input_conditions)
         self.btn_load_inputs.clicked.connect(self._load_input_conditions)
         self.btn_calculate.clicked.connect(self._calculate)
         self.btn_clear.clicked.connect(self._clear)
+        self.btn_save.clicked.connect(self._export_report)
         self.btn_load_1.clicked.connect(lambda: self._load_sample("worm_case_01.json"))
         self.btn_load_2.clicked.connect(lambda: self._load_sample("worm_case_02.json"))
         self.set_info("按左侧顺序输入 DIN 3975 / Method B 参数，再执行计算。")
@@ -254,10 +253,6 @@ class WormGearPage(BaseChapterPage):
         self.add_chapter(
             "材料与配对",
             self._create_form_page("材料与配对", "保留材料牌号，同时显式暴露 Method B 最小子集所需的弹性参数。", MATERIAL_FIELDS),
-        )
-        self.add_chapter(
-            "公差与回差",
-            self._create_form_page("公差与回差", "先保留 manual 风格的输入与说明，图示首版为高质量占位图。", TOLERANCE_FIELDS),
         )
         self.add_chapter(
             "工况与润滑",
@@ -467,7 +462,7 @@ class WormGearPage(BaseChapterPage):
 
         title = QLabel("图形与曲线", page)
         title.setObjectName("SectionTitle")
-        hint = QLabel("几何图和公差图先用高质量占位图，性能曲线在接入计算后展示真实结果。", page)
+        hint = QLabel("几何图先用高质量占位图，性能曲线在接入计算后展示真实结果。", page)
         hint.setObjectName("SectionHint")
         hint.setWordWrap(True)
         layout.addWidget(title)
@@ -483,10 +478,8 @@ class WormGearPage(BaseChapterPage):
         body.setSpacing(10)
 
         self.geometry_overview = WormGeometryOverviewWidget(container)
-        self.tolerance_overview = WormToleranceOverviewWidget(container)
         self.performance_curve = WormPerformanceCurveWidget(container)
         body.addWidget(self.geometry_overview)
-        body.addWidget(self.tolerance_overview)
         body.addWidget(self.performance_curve)
         body.addStretch(1)
 
@@ -522,7 +515,8 @@ class WormGearPage(BaseChapterPage):
         layout.addWidget(hint)
         layout.addWidget(self.load_capacity_status, 0, Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(self.load_capacity_note)
-        layout.addWidget(self._create_group_input_card("Method B 最小子集参数", LOAD_CAPACITY_PARAMETER_FIELDS, page))
+        self._lc_params_card = self._create_group_input_card("Method B 最小子集参数", LOAD_CAPACITY_PARAMETER_FIELDS, page)
+        layout.addWidget(self._lc_params_card)
         layout.addWidget(self.load_capacity_metrics)
         layout.addStretch(1)
         self.add_chapter("Load Capacity", page)
@@ -572,6 +566,8 @@ class WormGearPage(BaseChapterPage):
         return build_form_snapshot(self._field_specs.values(), self._read_widget_value)
 
     def _apply_input_data(self, data: dict[str, Any]) -> None:
+        self._field_widgets["materials.worm_material"].blockSignals(True)
+        self._field_widgets["materials.wheel_material"].blockSignals(True)
         ui_state_data = data.get("ui_state")
         ui_state = ui_state_data if isinstance(ui_state_data, dict) else {}
         inputs_data = data.get("inputs")
@@ -590,14 +586,17 @@ class WormGearPage(BaseChapterPage):
                 value = section_data[key]
             widget = self._field_widgets[spec.field_id]
             if spec.widget_type == "choice":
-                text = "启用" if spec.field_id == "load_capacity.enabled" and bool(value) else str(value)
-                if spec.field_id == "load_capacity.enabled" and str(value) == "关闭":
-                    text = "关闭"
+                if spec.field_id == "load_capacity.enabled":
+                    text = "启用" if value in (True, "启用", "true") else "关闭"
+                else:
+                    text = str(value)
                 index = widget.findText(text)  # type: ignore[attr-defined]
                 if index >= 0:
                     widget.setCurrentIndex(index)  # type: ignore[attr-defined]
             else:
                 widget.setText(str(value))  # type: ignore[attr-defined]
+        self._field_widgets["materials.worm_material"].blockSignals(False)
+        self._field_widgets["materials.wheel_material"].blockSignals(False)
         self._refresh_derived_geometry_preview()
 
     def _build_payload(self) -> dict[str, Any]:
@@ -621,6 +620,29 @@ class WormGearPage(BaseChapterPage):
             section, key = spec.field_id.split(".", 1)
             payload.setdefault(section, {})[key] = value
         return payload
+
+    def _on_material_changed(self) -> None:
+        from core.worm.calculator import MATERIAL_ELASTIC_HINTS, MATERIAL_ALLOWABLE_HINTS, MATERIAL_FRICTION_HINTS
+        worm_mat = self._field_widgets["materials.worm_material"].currentText()
+        wheel_mat = self._field_widgets["materials.wheel_material"].currentText()
+        worm_hints = MATERIAL_ELASTIC_HINTS.get(worm_mat, {})
+        wheel_hints = MATERIAL_ELASTIC_HINTS.get(wheel_mat, {})
+        allowable_hints = MATERIAL_ALLOWABLE_HINTS.get(wheel_mat, {})
+        if worm_hints:
+            self._field_widgets["materials.worm_e_mpa"].setText(str(worm_hints["e_mpa"]))
+            self._field_widgets["materials.worm_nu"].setText(str(worm_hints["nu"]))
+        if wheel_hints:
+            self._field_widgets["materials.wheel_e_mpa"].setText(str(wheel_hints["e_mpa"]))
+            self._field_widgets["materials.wheel_nu"].setText(str(wheel_hints["nu"]))
+        if allowable_hints:
+            self._field_widgets["load_capacity.allowable_contact_stress_mpa"].setText(str(allowable_hints["contact_mpa"]))
+            self._field_widgets["load_capacity.allowable_root_stress_mpa"].setText(str(allowable_hints["root_mpa"]))
+        default_mu = MATERIAL_FRICTION_HINTS.get((worm_mat, wheel_mat), 0.20)
+        self._field_widgets["advanced.friction_override"].setPlaceholderText(f"留空则自动 \u03bc={default_mu:.2f}")
+        self._refresh_derived_geometry_preview()
+
+    def _on_lc_enabled_changed(self, text: str) -> None:
+        self._lc_params_card.setVisible(text == "启用")
 
     def _refresh_derived_geometry_preview(self) -> None:
         try:
@@ -712,10 +734,6 @@ class WormGearPage(BaseChapterPage):
             "几何总览",
             f"i={geometry['ratio']:.2f}，a={geometry['center_distance_mm']:.1f} mm，gamma={geometry['lead_angle_deg']:.1f} deg",
         )
-        self.tolerance_overview.set_display_state(
-            "公差与回差",
-            "首版保留说明结构与占位图；后续接入真实公差计算与回差算法。",
-        )
         self.load_capacity_status.setText(load_capacity["status"])
         self.load_capacity_metrics.setPlainText(
             "\n".join(
@@ -741,6 +759,26 @@ class WormGearPage(BaseChapterPage):
             self.set_overall_status("Load Capacity 需复核", "wait")
         self.set_info("已完成蜗杆副几何、基础性能与 Method B 最小子集计算。")
         self.set_current_chapter(self.chapter_stack.count() - 1)
+
+    def _export_report(self) -> None:
+        if self._last_result is None:
+            QMessageBox.warning(self, "无结果", "请先执行计算。")
+            return
+        from datetime import datetime
+        from PySide6.QtWidgets import QFileDialog
+        note = self._last_result.get("inputs_echo", {}).get("meta", {}).get("note", "")
+        header = f"蜗杆副计算报告 \u2014 {note}\n生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n{'=' * 60}\n\n"
+        body = self.result_metrics.toPlainText() + "\n\n" + self.load_capacity_metrics.toPlainText()
+        path, _ = QFileDialog.getSaveFileName(self, "导出结果说明", "worm_report.txt", "文本文件 (*.txt)")
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(header + body)
+        except OSError as exc:
+            QMessageBox.critical(self, "导出失败", f"导出结果失败：{exc}")
+            return
+        self.set_info(f"结果已导出：{path}")
 
     def _save_input_conditions(self) -> None:
         out_path = choose_save_input_conditions_path(
@@ -802,7 +840,6 @@ class WormGearPage(BaseChapterPage):
             current_index=-1,
         )
         self.geometry_overview.set_display_state("几何总览", "按 DIN 3975 展示蜗杆、蜗轮、中心距与导程角关系。")
-        self.tolerance_overview.set_display_state("公差与回差", "展示齿厚、公差带、中心距偏差与回差概念。")
         self.load_capacity_status.setText("DIN 3996 校核尚未开始")
         self.load_capacity_metrics.setPlainText("尚无 Load Capacity 结果。")
         self.set_overall_status("等待计算", "wait")

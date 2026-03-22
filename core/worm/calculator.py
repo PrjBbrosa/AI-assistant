@@ -36,30 +36,27 @@ def _nu(value: float, name: str) -> float:
     return value
 
 
+STANDARD_Q_VALUES = {6, 7, 8, 9, 10, 11, 12, 14, 17, 20}
+
 MATERIAL_FRICTION_HINTS = {
-    ("20CrMnTi", "ZCuSn12Ni2"): 0.055,
-    ("16MnCr5", "ZCuSn12Ni2"): 0.055,
-    ("42CrMo", "ZCuSn12Ni2"): 0.060,
+    ("37CrS4", "PA66"):      0.18,
+    ("37CrS4", "PA66+GF30"): 0.22,
 }
 
 MATERIAL_ELASTIC_HINTS = {
-    "20CrMnTi": {"e_mpa": 206000.0, "nu": 0.30},
-    "16MnCr5": {"e_mpa": 206000.0, "nu": 0.30},
-    "42CrMo": {"e_mpa": 210000.0, "nu": 0.29},
-    "ZCuSn12Ni2": {"e_mpa": 110000.0, "nu": 0.34},
-    "ZCuSn10P1": {"e_mpa": 105000.0, "nu": 0.34},
-    "AlCu4Ni2Fe": {"e_mpa": 128000.0, "nu": 0.33},
+    "37CrS4":     {"e_mpa": 210000.0, "nu": 0.30},
+    "PA66":       {"e_mpa":   3000.0, "nu": 0.38},
+    "PA66+GF30":  {"e_mpa":  10000.0, "nu": 0.36},
 }
 
 MATERIAL_ALLOWABLE_HINTS = {
-    "ZCuSn12Ni2": {"contact_mpa": 520.0, "root_mpa": 90.0},
-    "ZCuSn10P1": {"contact_mpa": 480.0, "root_mpa": 85.0},
-    "AlCu4Ni2Fe": {"contact_mpa": 430.0, "root_mpa": 80.0},
+    "PA66":       {"contact_mpa": 42.0, "root_mpa": 55.0},
+    "PA66+GF30":  {"contact_mpa": 58.0, "root_mpa": 70.0},
 }
 
 
 def _estimate_friction(worm_material: str, wheel_material: str) -> float:
-    return MATERIAL_FRICTION_HINTS.get((worm_material, wheel_material), 0.065)
+    return MATERIAL_FRICTION_HINTS.get((worm_material, wheel_material), 0.20)
 
 
 def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -72,6 +69,10 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
 
     z1 = _positive(float(_require(geometry, "z1", "geometry")), "geometry.z1")
     z2 = _positive(float(_require(geometry, "z2", "geometry")), "geometry.z2")
+    if z1 != int(z1):
+        raise InputError(f"z1 必须为正整数，当前值 {z1}")
+    if z2 != int(z2):
+        raise InputError(f"z2 必须为正整数，当前值 {z2}")
     module_mm = _positive(float(_require(geometry, "module_mm", "geometry")), "geometry.module_mm")
     center_distance_mm = _positive(
         float(_require(geometry, "center_distance_mm", "geometry")),
@@ -85,6 +86,8 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
         float(_require(geometry, "lead_angle_deg", "geometry")),
         "geometry.lead_angle_deg",
     )
+    if lead_angle_deg > 45:
+        raise InputError(f"导程角必须 <= 45 deg，当前值 {lead_angle_deg}")
 
     power_kw = _positive(float(_require(operating, "power_kw", "operating")), "operating.power_kw")
     speed_rpm = _positive(float(_require(operating, "speed_rpm", "operating")), "operating.speed_rpm")
@@ -100,28 +103,32 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
 
     worm_material = str(materials.get("worm_material", "钢制蜗杆")).strip() or "钢制蜗杆"
     wheel_material = str(materials.get("wheel_material", "青铜蜗轮")).strip() or "青铜蜗轮"
-    worm_elastic_defaults = MATERIAL_ELASTIC_HINTS.get(worm_material, {"e_mpa": 206000.0, "nu": 0.30})
-    wheel_elastic_defaults = MATERIAL_ELASTIC_HINTS.get(wheel_material, {"e_mpa": 110000.0, "nu": 0.34})
-    wheel_allowable_defaults = MATERIAL_ALLOWABLE_HINTS.get(wheel_material, {"contact_mpa": 520.0, "root_mpa": 90.0})
+    worm_elastic_defaults = MATERIAL_ELASTIC_HINTS.get(worm_material, {"e_mpa": 210000.0, "nu": 0.30})
+    wheel_elastic_defaults = MATERIAL_ELASTIC_HINTS.get(wheel_material, {"e_mpa": 3000.0, "nu": 0.38})
+    wheel_allowable_defaults = MATERIAL_ALLOWABLE_HINTS.get(wheel_material, {"contact_mpa": 42.0, "root_mpa": 55.0})
 
     worm_e_mpa = _positive(float(materials.get("worm_e_mpa", worm_elastic_defaults["e_mpa"])), "materials.worm_e_mpa")
     worm_nu = _nu(float(materials.get("worm_nu", worm_elastic_defaults["nu"])), "materials.worm_nu")
     wheel_e_mpa = _positive(float(materials.get("wheel_e_mpa", wheel_elastic_defaults["e_mpa"])), "materials.wheel_e_mpa")
     wheel_nu = _nu(float(materials.get("wheel_nu", wheel_elastic_defaults["nu"])), "materials.wheel_nu")
 
+    x1 = float(geometry.get("x1", 0.0))
+    x2 = float(geometry.get("x2", 0.0))
+
     ratio = z2 / z1
-    lead_angle_rad = math.radians(lead_angle_deg)
+    lead_angle_rad = math.radians(lead_angle_deg)  # user input, for comparison only
+    lead_angle_calc_rad = math.atan(z1 / diameter_factor_q)  # self-consistent value
+    lead_angle_calc_deg = math.degrees(lead_angle_calc_rad)
+    lead_angle_delta_deg = lead_angle_deg - lead_angle_calc_deg
     pitch_diameter_worm_mm = diameter_factor_q * module_mm
-    pitch_diameter_wheel_mm = max(1e-6, 2.0 * center_distance_mm - pitch_diameter_worm_mm)
-    theoretical_center_distance_mm = module_mm * (diameter_factor_q + z2) / 2.0
+    pitch_diameter_wheel_mm = z2 * module_mm
+    theoretical_center_distance_mm = module_mm * (diameter_factor_q + z2) / 2.0 + (x1 + x2) * module_mm
     center_distance_delta_mm = center_distance_mm - theoretical_center_distance_mm
-    lead_angle_implied_deg = math.degrees(math.atan(z1 / diameter_factor_q))
-    lead_angle_delta_deg = lead_angle_deg - lead_angle_implied_deg
-    worm_tip_diameter_mm = pitch_diameter_worm_mm + 2.0 * module_mm
-    worm_root_diameter_mm = max(1e-6, pitch_diameter_worm_mm - 2.4 * module_mm)
-    wheel_tip_diameter_mm = pitch_diameter_wheel_mm + 2.0 * module_mm
-    wheel_root_diameter_mm = max(1e-6, pitch_diameter_wheel_mm - 2.4 * module_mm)
-    lead_mm = math.pi * pitch_diameter_worm_mm * math.tan(lead_angle_rad)
+    worm_tip_diameter_mm = pitch_diameter_worm_mm + 2.0 * module_mm * (1.0 + x1)
+    worm_root_diameter_mm = max(1e-6, pitch_diameter_worm_mm - 2.0 * module_mm * (1.2 - x1))
+    wheel_tip_diameter_mm = pitch_diameter_wheel_mm + 2.0 * module_mm * (1.0 + x2)
+    wheel_root_diameter_mm = max(1e-6, pitch_diameter_wheel_mm - 2.0 * module_mm * (1.2 - x2))
+    lead_mm = math.pi * pitch_diameter_worm_mm * math.tan(lead_angle_calc_rad)
     axial_pitch_mm = lead_mm / z1
     worm_face_width_mm = _positive(
         float(geometry.get("worm_face_width_mm", 8.0 * module_mm)),
@@ -142,19 +149,159 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     if friction_override in ("", None):
         friction_mu = _estimate_friction(worm_material, wheel_material)
     else:
-        friction_mu = _fraction(float(friction_override), "advanced.friction_override")
-    efficiency_estimate = math.tan(lead_angle_rad) / math.tan(lead_angle_rad + math.atan(friction_mu))
+        friction_mu = float(friction_override)
+        if not (0.01 <= friction_mu <= 0.30):
+            raise InputError(f"摩擦系数覆盖值必须在 0.01~0.30 范围内，当前值 {friction_mu}")
+    efficiency_estimate = math.tan(lead_angle_calc_rad) / math.tan(lead_angle_calc_rad + math.atan(friction_mu))
     efficiency_estimate = _fraction(min(0.98, max(0.30, efficiency_estimate)), "performance.efficiency_estimate")
 
     output_power_kw = power_kw * efficiency_estimate
     power_loss_kw = power_kw - output_power_kw
     output_torque_nm = 9550.0 * output_power_kw / max(wheel_speed_rpm, 1e-6)
-    thermal_capacity_kw = power_kw + power_loss_kw * 0.55
+    thermal_capacity_kw = power_loss_kw
     normal_pressure_angle_deg = _positive(
         float(advanced.get("normal_pressure_angle_deg", 20.0)),
         "advanced.normal_pressure_angle_deg",
     )
     normal_pressure_angle_rad = math.radians(normal_pressure_angle_deg)
+
+    # Geometry consistency warnings (needed by both enabled and disabled paths)
+    geometry_warnings: list[str] = []
+    if diameter_factor_q not in STANDARD_Q_VALUES:
+        geometry_warnings.append(f"直径系数 q={diameter_factor_q} 不在 DIN 标准推荐序列内。")
+    if abs(lead_angle_delta_deg) > 0.5:
+        geometry_warnings.append(
+            f"导程角与 z1/q 不一致：输入 gamma={lead_angle_deg:.2f} deg，推导值 {lead_angle_calc_deg:.2f} deg。"
+        )
+    if abs(center_distance_delta_mm) > max(0.25 * module_mm, 0.5):
+        geometry_warnings.append(
+            f"中心距与理论中心距偏差较大：a-a_th={center_distance_delta_mm:.3f} mm。"
+        )
+
+    # Tooth geometry (needed for wheel_dimensions output regardless of LC enabled)
+    tooth_height_mm = module_mm * (2.2 + x1 - x2)
+    tooth_height_mm = max(tooth_height_mm, 1e-6)
+
+    # Performance curve
+    curve_points = 25
+    load_factors: list[float] = []
+    efficiency_curve: list[float] = []
+    power_loss_curve: list[float] = []
+    thermal_capacity_curve: list[float] = []
+    current_index = 0
+    closest_delta = float("inf")
+    for idx in range(curve_points):
+        factor = 0.4 + 0.9 * idx / (curve_points - 1)
+        load_factors.append(factor)
+        eta_i = max(0.25, min(0.98, efficiency_estimate - 0.06 * (factor - 1.0) ** 2))
+        input_power_i = power_kw * factor
+        output_power_i = input_power_i * eta_i
+        p_loss_i = input_power_i - output_power_i
+        p_thermal_i = p_loss_i
+        efficiency_curve.append(eta_i)
+        power_loss_curve.append(p_loss_i)
+        thermal_capacity_curve.append(p_thermal_i)
+        if abs(factor - 1.0) < closest_delta:
+            closest_delta = abs(factor - 1.0)
+            current_index = idx
+
+    # Common output sections (geometry, performance, curve)
+    geometry_out: Dict[str, Any] = {
+        "ratio": ratio,
+        "module_mm": module_mm,
+        "center_distance_mm": center_distance_mm,
+        "theoretical_center_distance_mm": theoretical_center_distance_mm,
+        "center_distance_delta_mm": center_distance_delta_mm,
+        "pitch_diameter_worm_mm": pitch_diameter_worm_mm,
+        "pitch_diameter_wheel_mm": pitch_diameter_wheel_mm,
+        "lead_angle_deg": lead_angle_calc_deg,
+        "lead_angle_input_deg": lead_angle_deg,
+        "lead_angle_calc_deg": lead_angle_calc_deg,
+        "lead_angle_delta_deg": lead_angle_delta_deg,
+        "worm_speed_rpm": speed_rpm,
+        "wheel_speed_rpm": wheel_speed_rpm,
+        "worm_dimensions": {
+            "pitch_diameter_mm": pitch_diameter_worm_mm,
+            "tip_diameter_mm": worm_tip_diameter_mm,
+            "root_diameter_mm": worm_root_diameter_mm,
+            "lead_mm": lead_mm,
+            "axial_pitch_mm": axial_pitch_mm,
+            "pitch_line_speed_mps": worm_pitch_line_speed_mps,
+            "face_width_mm": worm_face_width_mm,
+        },
+        "wheel_dimensions": {
+            "pitch_diameter_mm": pitch_diameter_wheel_mm,
+            "tip_diameter_mm": wheel_tip_diameter_mm,
+            "root_diameter_mm": wheel_root_diameter_mm,
+            "pitch_line_speed_mps": wheel_pitch_line_speed_mps,
+            "tooth_height_mm": tooth_height_mm,
+            "face_width_mm": wheel_face_width_mm,
+        },
+        "mesh_dimensions": {
+            "ratio": ratio,
+            "center_distance_mm": center_distance_mm,
+            "theoretical_center_distance_mm": theoretical_center_distance_mm,
+            "center_distance_delta_mm": center_distance_delta_mm,
+            "worm_speed_rpm": speed_rpm,
+            "wheel_speed_rpm": wheel_speed_rpm,
+            "input_torque_nm": input_torque_nm,
+            "output_torque_nm": output_torque_nm,
+        },
+        "consistency": {
+            "lead_angle_calc_deg": lead_angle_calc_deg,
+            "lead_angle_delta_deg": lead_angle_delta_deg,
+            "center_distance_delta_mm": center_distance_delta_mm,
+            "warnings": geometry_warnings,
+        },
+    }
+    performance_out: Dict[str, Any] = {
+        "input_power_kw": power_kw,
+        "output_power_kw": output_power_kw,
+        "input_torque_nm": input_torque_nm,
+        "worm_pitch_line_speed_mps": worm_pitch_line_speed_mps,
+        "efficiency_estimate": efficiency_estimate,
+        "power_loss_kw": power_loss_kw,
+        "thermal_capacity_kw": thermal_capacity_kw,
+        "output_torque_nm": output_torque_nm,
+        "friction_mu": friction_mu,
+        "application_factor": application_factor,
+    }
+    curve_out: Dict[str, Any] = {
+        "load_factor": load_factors,
+        "efficiency": efficiency_curve,
+        "power_loss_kw": power_loss_curve,
+        "thermal_capacity_kw": thermal_capacity_curve,
+        "current_load_factor": 1.0,
+        "current_index": current_index,
+        "current_efficiency": efficiency_estimate,
+        "current_power_loss_kw": power_loss_kw,
+        "current_thermal_capacity_kw": thermal_capacity_kw,
+    }
+
+    # ---- Load capacity: enabled flag guard ----
+    lc_enabled = bool(load_capacity.get("enabled", False))
+
+    if not lc_enabled:
+        return {
+            "inputs_echo": data,
+            "geometry": geometry_out,
+            "performance": performance_out,
+            "curve": curve_out,
+            "load_capacity": {
+                "enabled": False,
+                "status": "未启用",
+                "checks": {},
+                "forces": {},
+                "contact": {},
+                "root": {},
+                "torque_ripple": {},
+                "factors": {},
+                "warnings": [],
+                "assumptions": [],
+            },
+        }
+
+    # ---- Load capacity parameters (only parsed when enabled) ----
     dynamic_factor_kv = _positive(float(load_capacity.get("dynamic_factor_kv", 1.0)), "load_capacity.dynamic_factor_kv")
     transverse_load_factor_kha = _positive(
         float(load_capacity.get("transverse_load_factor_kha", 1.0)),
@@ -196,9 +343,9 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     tangential_force_wheel_rms_n = 2000.0 * output_torque_rms_nm / max(pitch_diameter_wheel_mm, 1e-6)
     tangential_force_wheel_min_n = 2000.0 * output_torque_min_nm / max(pitch_diameter_wheel_mm, 1e-6)
 
-    sin_gamma = max(math.sin(lead_angle_rad), 1e-6)
+    sin_gamma = max(math.sin(lead_angle_calc_rad), 1e-6)
     cos_alpha_n = max(math.cos(normal_pressure_angle_rad), 1e-6)
-    tan_gamma = max(math.tan(lead_angle_rad), 1e-6)
+    tan_gamma = max(math.tan(lead_angle_calc_rad), 1e-6)
     radial_factor = math.tan(normal_pressure_angle_rad) / sin_gamma
     normal_force_n = tangential_force_wheel_n / (cos_alpha_n * sin_gamma)
     normal_force_peak_n = tangential_force_wheel_peak_n / (cos_alpha_n * sin_gamma)
@@ -216,7 +363,6 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     equivalent_modulus_mpa = 1.0 / (((1.0 - worm_nu * worm_nu) / worm_e_mpa) + ((1.0 - wheel_nu * wheel_nu) / wheel_e_mpa))
     contact_length_mm = max(1e-6, min(worm_face_width_mm, wheel_face_width_mm))
     equivalent_radius_mm = 1.0 / ((2.0 / pitch_diameter_worm_mm) + (2.0 / pitch_diameter_wheel_mm))
-    tooth_height_mm = 2.25 * module_mm
     tooth_root_thickness_mm = max(1.25 * module_mm, 1e-6)
 
     def _mean_hertz_stress(normal_force_value_n: float) -> float:
@@ -236,16 +382,6 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     sigma_f_rms_mpa = _root_stress(design_tangential_force_rms_n)
     sigma_f_peak_mpa = _root_stress(design_tangential_force_peak_n)
 
-    geometry_warnings: list[str] = []
-    if abs(lead_angle_delta_deg) > 0.5:
-        geometry_warnings.append(
-            f"导程角与 z1/q 不一致：输入 gamma={lead_angle_deg:.2f} deg，推导值 {lead_angle_implied_deg:.2f} deg。"
-        )
-    if abs(center_distance_delta_mm) > max(0.25 * module_mm, 0.5):
-        geometry_warnings.append(
-            f"中心距与理论中心距偏差较大：a-a_th={center_distance_delta_mm:.3f} mm。"
-        )
-
     contact_safety_factor_nominal = allowable_contact_stress_mpa / max(sigma_hm_nominal_mpa, 1e-6)
     contact_safety_factor_peak = allowable_contact_stress_mpa / max(sigma_hm_peak_mpa, 1e-6)
     root_safety_factor_nominal = allowable_root_stress_mpa / max(sigma_f_nominal_mpa, 1e-6)
@@ -253,109 +389,20 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     contact_ok = contact_safety_factor_peak >= required_contact_safety
     root_ok = root_safety_factor_peak >= required_root_safety
 
-    curve_points = 25
-    load_factors: list[float] = []
-    efficiency_curve: list[float] = []
-    power_loss_curve: list[float] = []
-    thermal_capacity_curve: list[float] = []
-    current_index = 0
-    closest_delta = float("inf")
-    for idx in range(curve_points):
-        factor = 0.4 + 0.9 * idx / (curve_points - 1)
-        load_factors.append(factor)
-        eta_i = max(0.25, min(0.98, efficiency_estimate - 0.06 * (factor - 1.0) ** 2))
-        input_power_i = power_kw * factor
-        output_power_i = input_power_i * eta_i
-        p_loss_i = input_power_i - output_power_i
-        p_thermal_i = power_kw * factor + p_loss_i * 0.55
-        efficiency_curve.append(eta_i)
-        power_loss_curve.append(p_loss_i)
-        thermal_capacity_curve.append(p_thermal_i)
-        if abs(factor - 1.0) < closest_delta:
-            closest_delta = abs(factor - 1.0)
-            current_index = idx
-
     method = str(load_capacity.get("method", "DIN 3996 Method B"))
 
     return {
         "inputs_echo": data,
-        "geometry": {
-            "ratio": ratio,
-            "module_mm": module_mm,
-            "center_distance_mm": center_distance_mm,
-            "theoretical_center_distance_mm": theoretical_center_distance_mm,
-            "center_distance_delta_mm": center_distance_delta_mm,
-            "pitch_diameter_worm_mm": pitch_diameter_worm_mm,
-            "pitch_diameter_wheel_mm": pitch_diameter_wheel_mm,
-            "lead_angle_deg": lead_angle_deg,
-            "lead_angle_implied_deg": lead_angle_implied_deg,
-            "lead_angle_delta_deg": lead_angle_delta_deg,
-            "worm_speed_rpm": speed_rpm,
-            "wheel_speed_rpm": wheel_speed_rpm,
-            "worm_dimensions": {
-                "pitch_diameter_mm": pitch_diameter_worm_mm,
-                "tip_diameter_mm": worm_tip_diameter_mm,
-                "root_diameter_mm": worm_root_diameter_mm,
-                "lead_mm": lead_mm,
-                "axial_pitch_mm": axial_pitch_mm,
-                "pitch_line_speed_mps": worm_pitch_line_speed_mps,
-                "face_width_mm": worm_face_width_mm,
-            },
-            "wheel_dimensions": {
-                "pitch_diameter_mm": pitch_diameter_wheel_mm,
-                "tip_diameter_mm": wheel_tip_diameter_mm,
-                "root_diameter_mm": wheel_root_diameter_mm,
-                "pitch_line_speed_mps": wheel_pitch_line_speed_mps,
-                "tooth_height_mm": tooth_height_mm,
-                "face_width_mm": wheel_face_width_mm,
-            },
-            "mesh_dimensions": {
-                "ratio": ratio,
-                "center_distance_mm": center_distance_mm,
-                "theoretical_center_distance_mm": theoretical_center_distance_mm,
-                "center_distance_delta_mm": center_distance_delta_mm,
-                "worm_speed_rpm": speed_rpm,
-                "wheel_speed_rpm": wheel_speed_rpm,
-                "input_torque_nm": input_torque_nm,
-                "output_torque_nm": output_torque_nm,
-            },
-            "consistency": {
-                "lead_angle_implied_deg": lead_angle_implied_deg,
-                "lead_angle_delta_deg": lead_angle_delta_deg,
-                "center_distance_delta_mm": center_distance_delta_mm,
-                "warnings": geometry_warnings,
-            },
-        },
-        "performance": {
-            "input_power_kw": power_kw,
-            "output_power_kw": output_power_kw,
-            "input_torque_nm": input_torque_nm,
-            "worm_pitch_line_speed_mps": worm_pitch_line_speed_mps,
-            "efficiency_estimate": efficiency_estimate,
-            "power_loss_kw": power_loss_kw,
-            "thermal_capacity_kw": thermal_capacity_kw,
-            "output_torque_nm": output_torque_nm,
-            "friction_mu": friction_mu,
-            "application_factor": application_factor,
-        },
-        "curve": {
-            "load_factor": load_factors,
-            "efficiency": efficiency_curve,
-            "power_loss_kw": power_loss_curve,
-            "thermal_capacity_kw": thermal_capacity_curve,
-            "current_load_factor": 1.0,
-            "current_index": current_index,
-            "current_efficiency": efficiency_estimate,
-            "current_power_loss_kw": power_loss_kw,
-            "current_thermal_capacity_kw": thermal_capacity_kw,
-        },
+        "geometry": geometry_out,
+        "performance": performance_out,
+        "curve": curve_out,
         "load_capacity": {
-            "enabled": bool(load_capacity.get("enabled", False)),
+            "enabled": True,
             "method": method,
             "status": (
-                f"{method} 最小子集校核通过"
+                f"{method} 最小子集校核通过（当前版本各方法计算逻辑相同，仅作标记）"
                 if contact_ok and root_ok and not geometry_warnings
-                else f"{method} 最小子集已计算（存在警告或不通过项）"
+                else f"{method} 最小子集已计算（存在警告或不通过项）（当前版本各方法计算逻辑相同，仅作标记）"
             ),
             "warnings": geometry_warnings,
             "factors": {
@@ -419,8 +466,13 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
             },
             "assumptions": [
                 "当前结果为 Method B 风格最小工程子集，不是完整 DIN 3996 / ISO/TS 14521。",
-                "齿面应力采用线接触 Hertz 近似。",
+                "齿形假设：ZK 型（锥面砂轮展成）。",
+                "齿面应力采用线接触 Hertz 近似，等效曲率半径基于分度圆简化（未考虑蜗轮凹面修正）。",
+                "接触长度取 min(b1, b2)，未考虑包角影响。",
                 "齿根应力采用等效悬臂梁近似。",
+                "蜗轮齿顶/齿根高系数与蜗杆相同（含变位修正），未单独处理间隙系数。",
+                "钢-塑料配对，许用应力为常温干态工程经验值。",
+                "当前版本各方法计算逻辑相同，仅作标记用途。",
             ],
         },
     }

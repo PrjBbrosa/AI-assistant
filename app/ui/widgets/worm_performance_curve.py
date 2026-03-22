@@ -58,7 +58,7 @@ class WormPerformanceCurveWidget(QWidget):
             if len(self._load_factor) < 2:
                 painter.setPen(QPen(QColor("#6B665E"), 1.0))
                 painter.setFont(QFont("Avenir Next", 10))
-                painter.drawText(panel, Qt.AlignmentFlag.AlignCenter, "执行计算后显示效率 / 损失功率 / 热功率曲线")
+                painter.drawText(panel, Qt.AlignmentFlag.AlignCenter, "执行计算后显示效率 / 损失功率曲线")
                 return
 
             chart_top = panel.top() + 48
@@ -66,7 +66,7 @@ class WormPerformanceCurveWidget(QWidget):
             charts = [
                 (QRectF(panel.left() + 18, chart_top + chart_height * 0, panel.width() - 36, chart_height - 10), self._efficiency, QColor("#C55A11"), "效率 eta"),
                 (QRectF(panel.left() + 18, chart_top + chart_height * 1, panel.width() - 36, chart_height - 10), self._power_loss_kw, QColor("#2563EB"), "损失功率 P_loss"),
-                (QRectF(panel.left() + 18, chart_top + chart_height * 2, panel.width() - 36, chart_height - 10), self._thermal_capacity_kw, QColor("#2F855A"), "热功率 P_th"),
+                (QRectF(panel.left() + 18, chart_top + chart_height * 2, panel.width() - 36, chart_height - 10), self._thermal_capacity_kw, QColor("#2F855A"), "损失功率 (热负荷)"),
             ]
             for rect, values, color, label in charts:
                 self._draw_chart(painter, rect, values, color, label)
