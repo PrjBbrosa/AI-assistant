@@ -2,6 +2,42 @@
 
 ## Session: 2026-03-22
 
+### Phase 18: Spline Fit Engineering Hardening Execution
+- **Status:** complete
+- **Started:** 2026-03-22
+- Actions taken:
+  - 在隔离 worktree `/.worktrees/spline-fit-hardening` 中执行 Stage A / Stage B，避免污染主工作区既有未提交改动
+  - 完成 UI/结果语义降级，把场景 A 固定为“简化预校核”，并补齐 disclaimer / warning / trace
+  - 修复场景 B 顶层失败原因透传、材料回填 `E` / `nu`、齿数整数校验等工程可用性问题
+  - 引入参考直径驱动的花键显式几何输入，并保留近似模式 fallback 与警告
+  - 基于公开来源补入 `W/N 15 x 1.25 x 10` 小规格 benchmark、来源整理与样例
+  - 完成定向与全量回归后，将整改结果合回 `main`
+- Files created/modified:
+  - core/spline/geometry.py (updated)
+  - core/spline/calculator.py (updated)
+  - app/ui/pages/spline_fit_page.py (updated)
+  - tests/core/spline/test_geometry.py (updated)
+  - tests/core/spline/test_calculator.py (updated)
+  - tests/ui/test_spline_fit_page.py (updated)
+  - docs/references/2026-03-22-spline-fit-sources.md (created)
+  - examples/spline_case_01.json (updated)
+  - examples/spline_case_02.json (updated)
+
+### Phase 17: Spline Fit Deep Review & Remediation Planning
+- **Status:** complete
+- **Started:** 2026-03-22
+- Actions taken:
+  - 审查 `app/ui/pages/spline_fit_page.py`、`core/spline/calculator.py`、`core/spline/geometry.py` 与相关测试
+  - 识别出花键模块当前的核心问题不在“代码能否运行”，而在场景 A 建模边界与 UI 语义过度承诺
+  - 交叉参考公开 DIN 5480 / eAssistant / spline 论文资料，确认当前 `m + z` 自推几何不能视为标准几何
+  - 运行 spline 模块定向回归：`23 passed`
+  - 编写 superpowers 风格整改计划，分为 Stage A（立即去风险）与 Stage B（标准化重构）
+- Files created/modified:
+  - docs/superpowers/plans/2026-03-22-spline-fit-engineering-hardening.md (created)
+  - task_plan.md (updated)
+  - findings.md (updated)
+  - progress.md (updated)
+
 ### Phase 16: Worm Load-Capacity Upgrade
 - **Status:** complete
 - **Started:** 2026-03-22

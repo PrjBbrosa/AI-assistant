@@ -51,6 +51,7 @@ MATERIAL_LIBRARY: dict[str, dict[str, float] | None] = {
     "QT500-7": {"e_mpa": 170000.0, "nu": 0.28},
     "灰铸铁 HT250": {"e_mpa": 120000.0, "nu": 0.26},
     "铝合金 6061-T6": {"e_mpa": 69000.0, "nu": 0.33},
+    "压铸铝 AlSi9Cu3": {"e_mpa": 71000.0, "nu": 0.33},
     "自定义": None,
 }
 MATERIAL_OPTIONS: tuple[str, ...] = tuple(MATERIAL_LIBRARY.keys())
@@ -62,35 +63,43 @@ MATERIAL_CATEGORY: dict[str, str] = {
     "QT500-7": "cast_iron",
     "灰铸铁 HT250": "cast_iron",
     "铝合金 6061-T6": "aluminum",
+    "压铸铝 AlSi9Cu3": "alsi9cu3",
 }
 
-SURFACE_CONDITIONS: tuple[str, ...] = ("干摩擦", "轻油润滑", "MoS2 润滑脂", "自定义")
+SURFACE_CONDITIONS: tuple[str, ...] = ("干摩擦", "轻油润滑", "自定义")
 
 FRICTION_TABLE: dict[tuple[frozenset[str], str], dict[str, float]] = {
+    # 钢-钢 (DIN 7190-1 参考)
     (frozenset({"steel", "steel"}), "干摩擦"): {"mu_torque": 0.15, "mu_axial": 0.12, "mu_assembly": 0.12},
     (frozenset({"steel", "steel"}), "轻油润滑"): {"mu_torque": 0.11, "mu_axial": 0.08, "mu_assembly": 0.08},
-    (frozenset({"steel", "steel"}), "MoS2 润滑脂"): {"mu_torque": 0.08, "mu_axial": 0.06, "mu_assembly": 0.06},
+    # 钢-铸铁 (DIN 7190-1 参考)
     (frozenset({"steel", "cast_iron"}), "干摩擦"): {"mu_torque": 0.12, "mu_axial": 0.10, "mu_assembly": 0.10},
     (frozenset({"steel", "cast_iron"}), "轻油润滑"): {"mu_torque": 0.09, "mu_axial": 0.07, "mu_assembly": 0.07},
-    (frozenset({"steel", "cast_iron"}), "MoS2 润滑脂"): {"mu_torque": 0.07, "mu_axial": 0.05, "mu_assembly": 0.05},
+    # 钢-铝 (DIN 7190-1 参考)
     (frozenset({"steel", "aluminum"}), "干摩擦"): {"mu_torque": 0.12, "mu_axial": 0.10, "mu_assembly": 0.10},
     (frozenset({"steel", "aluminum"}), "轻油润滑"): {"mu_torque": 0.08, "mu_axial": 0.06, "mu_assembly": 0.06},
-    (frozenset({"steel", "aluminum"}), "MoS2 润滑脂"): {"mu_torque": 0.06, "mu_axial": 0.04, "mu_assembly": 0.04},
+    # 钢-压铸铝 AlSi9Cu3 (经验值)
+    (frozenset({"steel", "alsi9cu3"}), "干摩擦"): {"mu_torque": 0.15, "mu_axial": 0.15, "mu_assembly": 0.15},
+    (frozenset({"steel", "alsi9cu3"}), "轻油润滑"): {"mu_torque": 0.125, "mu_axial": 0.125, "mu_assembly": 0.125},
+    # 铸铁-铸铁 (DIN 7190-1 参考)
     (frozenset({"cast_iron", "cast_iron"}), "干摩擦"): {"mu_torque": 0.12, "mu_axial": 0.10, "mu_assembly": 0.10},
     (frozenset({"cast_iron", "cast_iron"}), "轻油润滑"): {"mu_torque": 0.08, "mu_axial": 0.06, "mu_assembly": 0.06},
-    (frozenset({"cast_iron", "cast_iron"}), "MoS2 润滑脂"): {"mu_torque": 0.06, "mu_axial": 0.04, "mu_assembly": 0.04},
+    # 铸铁-铝 (DIN 7190-1 参考)
     (frozenset({"cast_iron", "aluminum"}), "干摩擦"): {"mu_torque": 0.10, "mu_axial": 0.08, "mu_assembly": 0.08},
     (frozenset({"cast_iron", "aluminum"}), "轻油润滑"): {"mu_torque": 0.07, "mu_axial": 0.05, "mu_assembly": 0.05},
-    (frozenset({"cast_iron", "aluminum"}), "MoS2 润滑脂"): {"mu_torque": 0.05, "mu_axial": 0.04, "mu_assembly": 0.04},
+    # 铝-铝 (DIN 7190-1 参考)
     (frozenset({"aluminum", "aluminum"}), "干摩擦"): {"mu_torque": 0.10, "mu_axial": 0.08, "mu_assembly": 0.08},
     (frozenset({"aluminum", "aluminum"}), "轻油润滑"): {"mu_torque": 0.07, "mu_axial": 0.05, "mu_assembly": 0.05},
-    (frozenset({"aluminum", "aluminum"}), "MoS2 润滑脂"): {"mu_torque": 0.05, "mu_axial": 0.04, "mu_assembly": 0.04},
+    # 压铸铝 AlSi9Cu3 自配对 (经验值)
+    (frozenset({"alsi9cu3", "alsi9cu3"}), "干摩擦"): {"mu_torque": 0.20, "mu_axial": 0.20, "mu_assembly": 0.20},
+    (frozenset({"alsi9cu3", "alsi9cu3"}), "轻油润滑"): {"mu_torque": 0.175, "mu_axial": 0.175, "mu_assembly": 0.175},
 }
 
 CATEGORY_DISPLAY: dict[str, str] = {
     "steel": "钢",
     "cast_iron": "铸铁",
     "aluminum": "铝",
+    "alsi9cu3": "压铸铝 AlSi9Cu3",
 }
 
 _FRICTION_MU_FIELDS: tuple[str, ...] = (
@@ -1103,7 +1112,11 @@ class InterferenceFitPage(BaseChapterPage):
 
         cat_a = CATEGORY_DISPLAY.get(cat_shaft, cat_shaft)
         cat_b = CATEGORY_DISPLAY.get(cat_hub, cat_hub)
-        self._friction_source_text = f"DIN 7190-1 参考 \u00b7 {cat_a}/{cat_b} \u00b7 {surface}"
+        # AlSi9Cu3 配对标注为经验值，其余标注 DIN 7190-1
+        if "alsi9cu3" in {cat_shaft, cat_hub}:
+            self._friction_source_text = f"经验值 \u00b7 {cat_a}/{cat_b} \u00b7 {surface}"
+        else:
+            self._friction_source_text = f"DIN 7190-1 参考 \u00b7 {cat_a}/{cat_b} \u00b7 {surface}"
 
         self._friction_ref_values.clear()
         for fid in _FRICTION_MU_FIELDS:

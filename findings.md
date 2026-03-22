@@ -419,3 +419,57 @@
   - `high-risk` -> `enabled=True`, `applicable=True`, `risk_level=high`, `overall_pass=True`
   - `legacy-switch` -> legacy advanced 开关仍可启用 fretting
   - `not-applicable` -> `risk_level=not_applicable`, 原因会写入 notes
+
+## 2026-03-22 Spline Fit Review Findings (Pre-Hardening Audit)
+
+### Current State
+- 模块标题与文案当前写成“花键过盈配合”，但场景 A 计算实质上只是“扭矩 -> 齿面平均承压”的简化估算
+- 场景 B 复用现有圆柱面过盈链路，模型边界相对清晰
+- 单元测试与 UI 测试全部通过，但主要覆盖“实现自洽”，没有对公开标准尺寸/benchmark 做对标
+
+### High-Severity Gaps
+- 场景 A 没有建立过盈量、公差、齿侧间隙、装配或接触刚度模型，不能按“花键过盈配合”理解
+- `core/spline/geometry.py` 采用 `d = m * z`、`d_a1 = m * (z + 1)` 等简化推导，不符合 DIN 5480 以参考直径/变位为核心的建模方式
+- `tests/core/spline/test_geometry.py` 把 `30x1.25x22` 典型规格直接断言为 `27.5 mm` 参考直径，说明当前测试在强化错误假设
+- 场景 A 只做单一承压式，没有把更多失效模式和清晰的 load distribution trace 纳入输出
+
+### Medium-Severity Gaps
+- 顶层 `messages` 没有并入 `scenario_b.messages`，导致 UI fail 时解释不完整
+- 材料选择提示声称会自动填充 `E` / `nu`，但当前页面没有真正连接该联动
+- `tooth_count` 当前会从 float 静默截断成 int，工程输入边界不够严谨
+
+### Recommended Strategy
+- Stage A：先做“立即去风险”整改，把模块降级为“简化预校核”并补齐 trace / warning / 联动
+- Stage B：再做“标准化重构”，重建 DIN 5480 风格几何输入和 benchmark 闭环
+- 在 Stage B 完成前，不把该模块作为正式工程校核工具交付
+
+### Verification Notes
+- 已运行：
+  - `QT_QPA_PLATFORM=offscreen python3 -m pytest tests/core/spline/test_geometry.py tests/core/spline/test_calculator.py tests/ui/test_spline_fit_page.py -q`
+- 结果：
+  - `23 passed`
+- 额外脚本验证：
+  - 默认 combined case 中场景 A 通过、场景 B 因最小过盈能力不足而失败
+  - `scenario_b.messages` 当前存在，但不会进入 UI 顶层说明
+
+## 2026-03-22 Spline Fit Hardening Closeout
+
+### Resolved In This Round
+- 模块标题与 UI 语义已从“花键过盈配合”降级为“花键连接校核”，并明确声明场景 A 仅为简化预校核
+- 场景 B 的失败原因已并入顶层 `messages`，页面可直接看到 fail 原因
+- 材料选择现已真实回填 `E` / `nu`
+- `tooth_count` 非整数输入现会报错，不再静默截断
+- 场景 A 已支持参考直径驱动的显式几何输入，并保留近似模式 warning
+- 已加入公开小规格 benchmark：`W/N 15 x 1.25 x 10`
+
+### Remaining Boundary
+- 当前模块可作为“可追溯的简化预校核”使用，但仍不能作为正式 `DIN 5480 / DIN 6892` 工程签发校核
+- 场景 A 尚未完整覆盖公差/变位解析、完整分载因子链、齿根/剪切/胀裂等失效模式
+
+### Verification Evidence
+- 定向回归：
+  - `QT_QPA_PLATFORM=offscreen python3 -m pytest tests/core/spline tests/ui/test_spline_fit_page.py -q`
+  - `34 passed`
+- 全量回归：
+  - `QT_QPA_PLATFORM=offscreen python3 -m pytest -q`
+  - `235 passed`

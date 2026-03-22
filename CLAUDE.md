@@ -36,7 +36,6 @@ app/
       hertz_input_diagram.py
       press_force_curve.py
       worm_geometry_overview.py
-      worm_tolerance_overview.py
       worm_performance_curve.py
 docs/                  # 计算说明与设计文档
   vdi2230-calculation-spec.md
