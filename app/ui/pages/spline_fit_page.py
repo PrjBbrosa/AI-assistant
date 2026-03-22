@@ -56,6 +56,11 @@ MATERIAL_LIBRARY: dict[str, dict[str, float] | None] = {
     "自定义": None,
 }
 
+SPLINE_SCOPE_DISCLAIMER = (
+    "花键部分当前仅提供齿面平均承压的简化预校核，"
+    "不替代 DIN 5480 / DIN 6892 工程校核。"
+)
+
 SMOOTH_FIT_FIELD_IDS: list[str] = [
     "smooth_fit.shaft_d_mm", "smooth_fit.shaft_inner_d_mm",
     "smooth_fit.hub_outer_d_mm", "smooth_fit.fit_length_mm",
@@ -286,7 +291,7 @@ CHAPTERS: list[dict[str, Any]] = [
     },
     {
         "title": "计算结果",
-        "subtitle": "场景 A（齿面承压）+ 场景 B（光滑段过盈）独立校核结果。",
+        "subtitle": "场景 A（简化预校核）+ 场景 B（光滑段过盈）独立校核结果。",
         "fields": [],
     },
 ]
@@ -299,8 +304,8 @@ class SplineFitPage(BaseChapterPage):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(
-            "花键过盈配合",
-            "渐开线花键 (DIN 5480) 齿面承压 + 光滑段圆柱过盈 (DIN 7190)",
+            "花键连接校核",
+            "花键齿面承压（简化预校核）+ 光滑段圆柱过盈 (DIN 7190)",
             parent,
         )
 
@@ -326,6 +331,8 @@ class SplineFitPage(BaseChapterPage):
         lc_combo = self._widgets.get("spline.load_condition")
         if isinstance(lc_combo, QComboBox):
             lc_combo.currentTextChanged.connect(self._on_load_condition_changed)
+
+        self.set_info(SPLINE_SCOPE_DISCLAIMER)
 
     def _build_chapter_page(self, chapter: dict) -> QWidget:
         scroll = QScrollArea()
@@ -384,7 +391,15 @@ class SplineFitPage(BaseChapterPage):
         return card
 
     def _build_result_chapter(self, layout: QVBoxLayout) -> None:
-        for scenario, title in [("a", "场景 A - 齿面承压"), ("b", "场景 B - 光滑段过盈")]:
+        disclaimer = QLabel(SPLINE_SCOPE_DISCLAIMER)
+        disclaimer.setObjectName("SectionHint")
+        disclaimer.setWordWrap(True)
+        layout.addWidget(disclaimer)
+
+        for scenario, title in [
+            ("a", "场景 A - 花键齿面承压（简化）"),
+            ("b", "场景 B - 光滑段圆柱过盈"),
+        ]:
             card = QFrame()
             card.setObjectName("Card")
             card_layout = QVBoxLayout(card)

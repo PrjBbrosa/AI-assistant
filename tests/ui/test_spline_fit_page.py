@@ -1,5 +1,5 @@
 import pytest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLabel
 
 from app.ui.pages.spline_fit_page import SMOOTH_FIT_FIELD_IDS, SplineFitPage
 
@@ -13,13 +13,34 @@ def app():
 
 
 class TestSplineFitPage:
+    @staticmethod
+    def _label_texts(page: SplineFitPage) -> list[str]:
+        return [label.text() for label in page.findChildren(QLabel)]
+
     def test_page_creates_without_error(self, app):
         page = SplineFitPage()
         assert page is not None
 
+    def test_header_uses_connection_check_wording(self, app):
+        page = SplineFitPage()
+        texts = self._label_texts(page)
+        assert "花键连接校核" in texts
+        assert "花键过盈配合" not in texts
+
+    def test_page_shows_engineering_scope_disclaimer(self, app):
+        page = SplineFitPage()
+        texts = self._label_texts(page)
+        assert any("简化预校核" in text for text in texts)
+        assert any("不替代 DIN 5480 / DIN 6892 工程校核" in text for text in texts)
+
     def test_chapter_count(self, app):
         page = SplineFitPage()
         assert page.chapter_stack.count() == 5
+
+    def test_result_card_marks_scenario_a_as_simplified(self, app):
+        page = SplineFitPage()
+        texts = self._label_texts(page)
+        assert "场景 A - 花键齿面承压（简化）" in texts
 
     def test_calculate_with_defaults(self, app):
         page = SplineFitPage()
