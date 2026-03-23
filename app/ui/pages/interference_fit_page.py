@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import importlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +12,7 @@ from typing import Any
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QLabel,
@@ -1855,9 +1857,28 @@ class InterferenceFitPage(BaseChapterPage):
             return
 
         default_path = EXAMPLES_DIR / "interference_fit_report.pdf"
-        out_path = export_report_lines(self, "导出结果说明", default_path, self._build_report_lines())
-        if out_path is not None:
-            self.set_info(f"结果说明已导出: {out_path}")
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "导出校核报告", str(default_path),
+            "PDF Files (*.pdf);;Word Files (*.docx);;Text Files (*.txt);;All Files (*)",
+        )
+        if not file_path:
+            return
+        out_path = Path(file_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        suffix = out_path.suffix.lower()
+        if suffix == ".pdf":
+            try:
+                mod = importlib.import_module("app.ui.report_pdf_interference")
+                mod.generate_interference_report(out_path, self._last_payload, self._last_result)
+            except Exception:
+                from app.ui.report_export import _export_pdf
+                _export_pdf(out_path, self._build_report_lines())
+        elif suffix == ".docx":
+            from app.ui.report_export import _export_docx
+            _export_docx(out_path, self._build_report_lines())
+        else:
+            out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
+        self.set_info(f"校核报告已导出: {out_path}")
 
     def _build_report_lines(self) -> list[str]:
         assert self._last_result is not None
