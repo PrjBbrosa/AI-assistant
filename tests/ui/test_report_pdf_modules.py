@@ -103,3 +103,134 @@ class TestInterferenceRecommendations:
         result["checks"]["hub_stress_ok"] = False
         recs = build_interference_recommendations(result)
         assert len(recs) == 2
+
+
+# ---------------------------------------------------------------------------
+# Spline PDF report tests
+# ---------------------------------------------------------------------------
+
+def _spline_only_payload():
+    return {
+        "spline": {"module_mm": 2.0, "tooth_count": 26, "engagement_length_mm": 30,
+                    "k_alpha": 1.0, "p_allowable_mpa": 100},
+        "loads": {"torque_nm": 200, "application_factor_ka": 1.25},
+    }
+
+
+def _spline_only_result():
+    return {
+        "mode": "spline_only", "overall_pass": True,
+        "overall_verdict_level": "simplified_precheck",
+        "loads": {"torque_required_nm": 200, "torque_design_nm": 250,
+                  "application_factor_ka": 1.25},
+        "scenario_a": {
+            "geometry": {"reference_diameter_mm": 52.0, "effective_tooth_height_mm": 1.8,
+                         "mean_diameter_mm": 51.1, "messages": []},
+            "geometry_mode": "approximate", "engagement_length_mm": 30, "k_alpha": 1.0,
+            "p_allowable_mpa": 100, "flank_pressure_mpa": 45.2, "torque_capacity_nm": 553,
+            "torque_design_nm": 250, "flank_safety": 2.21, "flank_safety_min": 1.0,
+            "flank_ok": True, "messages": [], "model_assumptions": ["simplified precheck"],
+            "not_covered_checks": ["fatigue"],
+            "overall_verdict_level": "simplified_precheck",
+        },
+        "messages": [],
+    }
+
+
+def _combined_result():
+    return {
+        "mode": "combined", "overall_pass": True,
+        "overall_verdict_level": "simplified_precheck",
+        "loads": {"torque_required_nm": 200, "torque_design_nm": 250,
+                  "application_factor_ka": 1.25},
+        "scenario_a": {
+            "geometry": {"reference_diameter_mm": 52.0, "effective_tooth_height_mm": 1.8,
+                         "mean_diameter_mm": 51.1, "messages": []},
+            "geometry_mode": "approximate", "engagement_length_mm": 30, "k_alpha": 1.0,
+            "p_allowable_mpa": 100, "flank_pressure_mpa": 45.2, "torque_capacity_nm": 553,
+            "torque_design_nm": 250, "flank_safety": 2.21, "flank_safety_min": 1.0,
+            "flank_ok": True, "messages": [], "model_assumptions": [],
+            "not_covered_checks": [],
+            "overall_verdict_level": "simplified_precheck",
+        },
+        "scenario_b": {
+            "nominal_fit_length_mm": 35, "relief_groove_width_mm": 5,
+            "effective_fit_length_mm": 30,
+            "pressure_mpa": {"p_min": 20.0, "p_mean": 30.0, "p_max": 40.0,
+                             "p_required": 15.0, "p_required_total": 18.0},
+            "capacity": {"torque_min_nm": 600, "torque_mean_nm": 900,
+                         "torque_max_nm": 1200, "axial_min_n": 8000,
+                         "axial_mean_n": 12000, "axial_max_n": 16000},
+            "assembly": {"press_force_min_n": 30000, "press_force_mean_n": 45000,
+                         "press_force_max_n": 60000},
+            "stress_mpa": {"shaft_vm_min": 30, "shaft_vm_mean": 45, "shaft_vm_max": 60,
+                           "hub_vm_min": 40, "hub_vm_mean": 60, "hub_vm_max": 80},
+            "safety": {"torque_sf": 2.4, "axial_sf": 3.2, "combined_sf": 2.0,
+                       "shaft_sf": 5.8, "hub_sf": 3.1, "slip_safety_min": 2.0,
+                       "stress_safety_min": 3.1},
+            "checks": {"torque_ok": True, "axial_ok": True, "combined_ok": True,
+                       "gaping_ok": True, "fit_range_ok": True,
+                       "shaft_stress_ok": True, "hub_stress_ok": True},
+            "overall_pass": True,
+            "messages": [],
+        },
+        "messages": [],
+    }
+
+
+class TestSplinePdfReport:
+    def test_spline_only_report(self, tmp_path):
+        from app.ui.report_pdf_spline import generate_spline_report
+        out = tmp_path / "spline_only.pdf"
+        generate_spline_report(out, _spline_only_payload(), _spline_only_result())
+        assert out.exists() and out.stat().st_size > 1000
+
+    def test_combined_report(self, tmp_path):
+        from app.ui.report_pdf_spline import generate_spline_report
+        payload = _spline_only_payload()
+        payload["smooth_fit"] = {"delta_min_um": 20, "delta_max_um": 40}
+        generate_spline_report(out := tmp_path / "spline_combined.pdf",
+                               payload, _combined_result())
+        assert out.exists() and out.stat().st_size > 1000
+
+    def test_with_messages(self, tmp_path):
+        from app.ui.report_pdf_spline import generate_spline_report
+        result = _spline_only_result()
+        result["messages"] = ["齿面压力接近许用值", "建议复核啮合长度"]
+        out = tmp_path / "spline_warnings.pdf"
+        generate_spline_report(out, _spline_only_payload(), result)
+        assert out.exists() and out.stat().st_size > 1000
+
+    def test_fail_report(self, tmp_path):
+        from app.ui.report_pdf_spline import generate_spline_report
+        result = _spline_only_result()
+        result["overall_pass"] = False
+        result["scenario_a"]["flank_ok"] = False
+        out = tmp_path / "spline_fail.pdf"
+        generate_spline_report(out, _spline_only_payload(), result)
+        assert out.exists() and out.stat().st_size > 1000
+
+
+class TestSplineRecommendations:
+    def test_all_pass(self):
+        from app.ui.report_pdf_spline import build_spline_recommendations
+        result = _spline_only_result()
+        recs = build_spline_recommendations(result)
+        assert len(recs) == 1
+        assert "通过" in recs[0]
+
+    def test_flank_fail(self):
+        from app.ui.report_pdf_spline import build_spline_recommendations
+        result = _spline_only_result()
+        result["scenario_a"]["flank_ok"] = False
+        recs = build_spline_recommendations(result)
+        assert len(recs) == 1
+        assert "齿面" in recs[0]
+
+    def test_combined_failures(self):
+        from app.ui.report_pdf_spline import build_spline_recommendations
+        result = _combined_result()
+        result["scenario_b"]["checks"]["torque_ok"] = False
+        result["scenario_b"]["checks"]["hub_stress_ok"] = False
+        recs = build_spline_recommendations(result)
+        assert len(recs) == 2

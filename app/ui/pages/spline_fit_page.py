@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+import datetime as dt
+import importlib
 import math
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QScrollArea,
     QVBoxLayout,
     QWidget,
@@ -353,8 +358,14 @@ class SplineFitPage(BaseChapterPage):
         self._field_cards: dict[str, QWidget] = {}
         self._result_labels: dict[str, QLabel] = {}
 
+        self._last_result: dict | None = None
+        self._last_payload: dict | None = None
+
         calc_btn = self.add_action_button("计算", primary=True)
         calc_btn.clicked.connect(self._on_calculate)
+
+        export_btn = self.add_action_button("导出报告")
+        export_btn.clicked.connect(self._save_report)
 
         for chapter in CHAPTERS:
             page = self._build_chapter_page(chapter)
@@ -542,6 +553,8 @@ class SplineFitPage(BaseChapterPage):
             self.set_info(str(exc))
             return
 
+        self._last_payload = payload
+        self._last_result = result
         self._display_result(result)
 
     def _display_result(self, result: dict) -> None:
@@ -597,3 +610,67 @@ class SplineFitPage(BaseChapterPage):
 
         msgs = result.get("messages", [])
         self.set_info("\n".join(msgs) if msgs else "校核完成。")
+
+    def _save_report(self) -> None:
+        if self._last_result is None or self._last_payload is None:
+            QMessageBox.information(self, "无结果", "请先执行计算。")
+            return
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "导出校核报告", "spline_report.pdf",
+            "PDF Files (*.pdf);;Text Files (*.txt);;All Files (*)",
+        )
+        if not file_path:
+            return
+        out_path = Path(file_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        suffix = out_path.suffix.lower()
+        if suffix == ".pdf":
+            try:
+                mod = importlib.import_module("app.ui.report_pdf_spline")
+                mod.generate_spline_report(out_path, self._last_payload, self._last_result)
+            except Exception:
+                out_path = out_path.with_suffix(".txt")
+                out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
+        else:
+            out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
+        self.set_info(f"报告已导出: {out_path}")
+
+    def _build_report_lines(self) -> list[str]:
+        assert self._last_result is not None
+        result = self._last_result
+        a = result["scenario_a"]
+        loads = result.get("loads", {})
+        lines = [
+            "花键连接校核报告",
+            f"生成时间: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"模式: {result.get('mode', 'spline_only')}",
+            f"总体结论: {'通过' if result['overall_pass'] else '不通过'}",
+            f"结果级别: {result.get('overall_verdict_level', '')}",
+            "",
+            "=== 场景 A: 花键齿面承压 ===",
+            f"参考直径 d_B = {a['geometry']['reference_diameter_mm']:.2f} mm",
+            f"有效齿高 h_w = {a['geometry']['effective_tooth_height_mm']:.2f} mm",
+            f"平均直径 d_m = {a['geometry']['mean_diameter_mm']:.2f} mm",
+            f"齿面压力 p = {a['flank_pressure_mpa']:.2f} MPa",
+            f"许用齿面压力 p_zul = {a['p_allowable_mpa']:.1f} MPa",
+            f"安全系数 S = {a['flank_safety']:.2f}",
+            f"扭矩容量 T_cap = {a['torque_capacity_nm']:.1f} N*m",
+            f"设计扭矩 T_d = {loads.get('torque_design_nm', 0):.1f} N*m",
+            f"结果: {'通过' if a['flank_ok'] else '不通过'}",
+        ]
+        b = result.get("scenario_b")
+        if b is not None:
+            bp = b["pressure_mpa"]
+            cap = b["capacity"]
+            sf = b["safety"]
+            lines.extend([
+                "",
+                "=== 场景 B: 光滑段圆柱过盈 ===",
+                f"有效配合长度 = {b['effective_fit_length_mm']:.1f} mm",
+                f"面压 p_min/mean/max = {bp['p_min']:.2f} / {bp['p_mean']:.2f} / {bp['p_max']:.2f} MPa",
+                f"扭矩容量 min/mean/max = {cap['torque_min_nm']:.1f} / {cap['torque_mean_nm']:.1f} / {cap['torque_max_nm']:.1f} N*m",
+                f"扭矩安全系数 = {sf['torque_sf']:.2f}",
+                f"联合安全系数 = {sf['combined_sf']:.2f}",
+                f"结果: {'通过' if b['overall_pass'] else '不通过'}",
+            ])
+        return lines
