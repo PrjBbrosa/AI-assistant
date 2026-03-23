@@ -65,18 +65,18 @@ class TestSplineFitPage:
         page._on_calculate()
         assert "扭矩与轴向力联合作用超出当前最小过盈能力" in page.info_label.text()
 
-    def test_mode_switch_hides_smooth_fields(self, app):
+    def test_mode_switch_disables_smooth_fields(self, app):
         page = SplineFitPage()
         mode_combo = page._widgets["mode"]
-        # Switch to "仅花键" — smooth_fit fields should be hidden
+        # Switch to "仅花键" — smooth_fit fields should be disabled (AutoCalcCard)
         mode_combo.setCurrentText("仅花键")
         for fid in SMOOTH_FIT_FIELD_IDS:
             card = page._field_cards.get(fid)
             if card:
-                assert card.isHidden(), f"{fid} should be hidden in spline-only mode"
-        # Switch back to "联合" — smooth_fit fields should be visible
+                assert card.objectName() == "AutoCalcCard", f"{fid} should be AutoCalcCard in spline-only mode"
+        # Switch back to "联合" — smooth_fit fields should be enabled (SubCard)
         mode_combo.setCurrentText("联合")
         for fid in SMOOTH_FIT_FIELD_IDS:
             card = page._field_cards.get(fid)
             if card:
-                assert not card.isHidden(), f"{fid} should be visible in combined mode"
+                assert card.objectName() == "SubCard", f"{fid} should be SubCard in combined mode"

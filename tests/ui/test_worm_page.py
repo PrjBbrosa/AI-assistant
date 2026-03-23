@@ -177,16 +177,16 @@ class WormGearPageTests(unittest.TestCase):
         self.assertEqual(page._field_widgets["load_capacity.allowable_contact_stress_mpa"].text(), "58.0")
         self.assertEqual(page._field_widgets["load_capacity.allowable_root_stress_mpa"].text(), "70.0")
 
-    def test_load_capacity_disabled_hides_params_card(self) -> None:
+    def test_load_capacity_disabled_shows_autocalc_style(self) -> None:
         page = WormGearPage()
         page._field_widgets["load_capacity.enabled"].setCurrentText("关闭")
-        self.assertTrue(page._lc_params_card.isHidden())
+        self.assertEqual(page._lc_params_card.objectName(), "AutoCalcCard")
 
-    def test_load_capacity_enabled_shows_params_card(self) -> None:
+    def test_load_capacity_enabled_shows_subcard_style(self) -> None:
         page = WormGearPage()
         page._field_widgets["load_capacity.enabled"].setCurrentText("关闭")
         page._field_widgets["load_capacity.enabled"].setCurrentText("启用")
-        self.assertFalse(page._lc_params_card.isHidden())
+        self.assertEqual(page._lc_params_card.objectName(), "SubCard")
 
     def test_load_json_with_enabled_false_sets_combo_to_disabled(self) -> None:
         page = WormGearPage()

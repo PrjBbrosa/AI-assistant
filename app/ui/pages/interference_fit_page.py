@@ -780,6 +780,7 @@ class InterferenceFitPage(BaseChapterPage):
         self._register_roughness_binding()
         self._register_fit_bindings()
         self._register_assembly_bindings()
+        self._register_fretting_bindings()
         self._apply_defaults()
         self._sync_friction_from_material()
         self._load_sample("interference_case_01.json")
@@ -787,6 +788,7 @@ class InterferenceFitPage(BaseChapterPage):
         self._sync_roughness_factor()
         self._sync_fit_mode_fields()
         self._sync_assembly_fields()
+        self._sync_fretting_fields()
 
     def eventFilter(self, watched, event):  # noqa: N802
         if watched in self._widget_hints and event.type() in (QEvent.Type.FocusIn, QEvent.Type.Enter):
@@ -1224,6 +1226,24 @@ class InterferenceFitPage(BaseChapterPage):
         if isinstance(nominal, QLineEdit):
             nominal.textChanged.connect(lambda _text: self._sync_assembly_fields())
 
+    def _set_card_disabled(self, field_id: str, disabled: bool) -> None:
+        """Toggle a field card between normal SubCard and disabled AutoCalcCard style."""
+        card = self._field_cards.get(field_id)
+        if card is None:
+            return
+        card.setObjectName("AutoCalcCard" if disabled else "SubCard")
+        card.style().unpolish(card)
+        card.style().polish(card)
+        # Also propagate to child widgets so QSS descendant selectors take effect
+        for child in card.findChildren(QWidget):
+            child.style().unpolish(child)
+            child.style().polish(child)
+        widget = self._field_widgets.get(field_id)
+        if isinstance(widget, QLineEdit):
+            widget.setReadOnly(disabled)
+        elif isinstance(widget, QComboBox):
+            widget.setEnabled(not disabled)
+
     def _sync_assembly_fields(self) -> None:
         selector = self._field_widgets.get(self._assembly_method_field)
         if not isinstance(selector, QComboBox):
@@ -1235,6 +1255,7 @@ class InterferenceFitPage(BaseChapterPage):
         clearance_mode = self._field_widgets.get(self._assembly_clearance_mode_field)
         if isinstance(clearance_mode, QComboBox):
             clearance_mode.setEnabled(use_shrink)
+        self._set_card_disabled(self._assembly_clearance_mode_field, not use_shrink)
         clearance_direct = (
             isinstance(clearance_mode, QComboBox)
             and clearance_mode.currentText().strip() == "direct_value"
@@ -1245,7 +1266,8 @@ class InterferenceFitPage(BaseChapterPage):
             if not isinstance(widget, QLineEdit):
                 continue
             if field_id == "assembly.clearance_um":
-                widget.setReadOnly(not use_shrink or not clearance_direct)
+                disabled = not use_shrink or not clearance_direct
+                self._set_card_disabled(field_id, disabled)
                 if use_shrink and not clearance_direct:
                     nominal_widget = self._field_widgets.get(self._fit_nominal_field)
                     if isinstance(nominal_widget, QLineEdit):
@@ -1255,12 +1277,23 @@ class InterferenceFitPage(BaseChapterPage):
                         except ValueError:
                             pass
             else:
-                widget.setReadOnly(not use_shrink)
+                self._set_card_disabled(field_id, not use_shrink)
 
         for field_id in self._assembly_force_fields:
-            widget = self._field_widgets.get(field_id)
-            if isinstance(widget, QLineEdit):
-                widget.setReadOnly(not use_force)
+            self._set_card_disabled(field_id, not use_force)
+
+    def _register_fretting_bindings(self) -> None:
+        mode_widget = self._field_widgets.get(self._fretting_mode_field)
+        if isinstance(mode_widget, QComboBox):
+            mode_widget.currentTextChanged.connect(lambda _: self._sync_fretting_fields())
+
+    def _sync_fretting_fields(self) -> None:
+        mode_widget = self._field_widgets.get(self._fretting_mode_field)
+        enabled = isinstance(mode_widget, QComboBox) and mode_widget.currentText() == "on"
+        for field_id in self._fretting_field_ids:
+            if field_id == self._fretting_mode_field:
+                continue
+            self._set_card_disabled(field_id, not enabled)
 
     def _sync_fit_mode_fields(self) -> None:
         selector = self._field_widgets.get(self._fit_mode_field)
@@ -1271,18 +1304,12 @@ class InterferenceFitPage(BaseChapterPage):
         use_preferred = mode == "优选配合"
 
         for field_id in self._fit_delta_fields:
-            widget = self._field_widgets.get(field_id)
-            if isinstance(widget, QLineEdit):
-                widget.setReadOnly(use_deviations or use_preferred)
+            self._set_card_disabled(field_id, use_deviations or use_preferred)
 
         for field_id in self._fit_deviation_fields:
-            widget = self._field_widgets.get(field_id)
-            if isinstance(widget, QLineEdit):
-                widget.setReadOnly(not use_deviations)
+            self._set_card_disabled(field_id, not use_deviations)
 
-        preferred = self._field_widgets.get(self._fit_preferred_field)
-        if isinstance(preferred, QComboBox):
-            preferred.setEnabled(use_preferred)
+        self._set_card_disabled(self._fit_preferred_field, not use_preferred)
 
         if not use_deviations and not use_preferred:
             return
@@ -1306,7 +1333,8 @@ class InterferenceFitPage(BaseChapterPage):
                     hub_lower_um=raw_values["fit.hub_lower_deviation_um"],
                 )
             else:
-                if not isinstance(preferred, QComboBox):
+                preferred_widget = self._field_widgets.get(self._fit_preferred_field)
+                if not isinstance(preferred_widget, QComboBox):
                     return
                 nominal_widget = self._field_widgets.get(self._fit_nominal_field)
                 if not isinstance(nominal_widget, QLineEdit):
@@ -1315,7 +1343,7 @@ class InterferenceFitPage(BaseChapterPage):
                 if raw_nominal == "":
                     return
                 derived = derive_interference_from_preferred_fit(
-                    fit_name=preferred.currentText().strip(),
+                    fit_name=preferred_widget.currentText().strip(),
                     nominal_diameter_mm=float(raw_nominal),
                 )
         except (InputError, ValueError):

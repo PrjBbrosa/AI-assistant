@@ -643,7 +643,30 @@ class WormGearPage(BaseChapterPage):
         self._refresh_derived_geometry_preview()
 
     def _on_lc_enabled_changed(self, text: str) -> None:
-        self._lc_params_card.setVisible(text == "启用")
+        disabled = text != "启用"
+        style_name = "AutoCalcCard" if disabled else "SubCard"
+        self._lc_params_card.setObjectName(style_name)
+        self._lc_params_card.style().unpolish(self._lc_params_card)
+        self._lc_params_card.style().polish(self._lc_params_card)
+        for child in self._lc_params_card.findChildren(QFrame):
+            child.setObjectName(style_name)
+            child.style().unpolish(child)
+            child.style().polish(child)
+        for child in self._lc_params_card.findChildren(QWidget):
+            child.style().unpolish(child)
+            child.style().polish(child)
+        for spec_id in (
+            "load_capacity.allowable_contact_stress_mpa",
+            "load_capacity.allowable_root_stress_mpa",
+            "load_capacity.dynamic_factor_kv",
+            "load_capacity.transverse_load_factor_kha",
+            "load_capacity.face_load_factor_khb",
+            "load_capacity.required_contact_safety",
+            "load_capacity.required_root_safety",
+        ):
+            widget = self._field_widgets.get(spec_id)
+            if isinstance(widget, QLineEdit):
+                widget.setReadOnly(disabled)
 
     def _refresh_derived_geometry_preview(self) -> None:
         try:

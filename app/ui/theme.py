@@ -133,6 +133,11 @@ def apply_theme(app: QApplication) -> None:
         QFrame#AutoCalcCard QLabel#SectionHint {
             color: #6B7D8E;
         }
+        QFrame#AutoCalcCard QComboBox {
+            background-color: #E5EBF2;
+            color: #3A4F63;
+            border: 1px solid #C4CDD6;
+        }
         QFrame#ProcessNode {
             background-color: #EDF1F5;
             border: 1px solid #C4CDD6;

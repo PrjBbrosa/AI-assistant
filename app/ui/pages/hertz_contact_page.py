@@ -537,13 +537,28 @@ class HertzContactPage(BaseChapterPage):
             return False
         return mode_widget.currentText() == "点接触"
 
+    def _set_card_disabled(self, field_id: str, disabled: bool) -> None:
+        """Toggle a field card between normal SubCard and disabled AutoCalcCard style."""
+        card = self._field_cards.get(field_id)
+        if card is None:
+            return
+        card.setObjectName("AutoCalcCard" if disabled else "SubCard")
+        card.style().unpolish(card)
+        card.style().polish(card)
+        for child in card.findChildren(QWidget):
+            child.style().unpolish(child)
+            child.style().polish(child)
+        widget = self._field_widgets.get(field_id)
+        if isinstance(widget, QLineEdit):
+            widget.setReadOnly(disabled)
+        elif isinstance(widget, QComboBox):
+            widget.setEnabled(not disabled)
+
     def _apply_mode_visibility(self) -> None:
         point_mode = self._is_point_mode()
         for field_id in self._line_only_fields:
-            card = self._field_cards.get(field_id)
-            if card is not None:
-                card.setVisible(not point_mode)
-        self.set_info("当前为点接触模型，线接触长度 L 已隐藏。" if point_mode else "当前为线接触模型，已显示长度 L 输入。")
+            self._set_card_disabled(field_id, point_mode)
+        self.set_info("当前为点接触模型，线接触长度 L 不参与计算。" if point_mode else "当前为线接触模型，已显示长度 L 输入。")
 
     def _safe_float(self, field_id: str, default: float) -> float:
         widget = self._field_widgets.get(field_id)

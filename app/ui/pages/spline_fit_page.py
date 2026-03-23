@@ -482,16 +482,29 @@ class SplineFitPage(BaseChapterPage):
             self._result_labels[f"{scenario}_detail"] = detail
             layout.addWidget(card)
 
+    def _set_card_disabled(self, field_id: str, disabled: bool) -> None:
+        """Toggle a field card between normal SubCard and disabled AutoCalcCard style."""
+        card = self._field_cards.get(field_id)
+        if card is None:
+            return
+        card.setObjectName("AutoCalcCard" if disabled else "SubCard")
+        card.style().unpolish(card)
+        card.style().polish(card)
+        for child in card.findChildren(QWidget):
+            child.style().unpolish(child)
+            child.style().polish(child)
+        widget = self._widgets.get(field_id)
+        if isinstance(widget, QLineEdit):
+            widget.setReadOnly(disabled)
+        elif isinstance(widget, QComboBox):
+            widget.setEnabled(not disabled)
+
     def _on_mode_changed(self, text: str) -> None:
         is_combined = (text == "联合")
         for fid in SMOOTH_FIT_FIELD_IDS:
-            card = self._field_cards.get(fid)
-            if card:
-                card.setVisible(is_combined)
+            self._set_card_disabled(fid, not is_combined)
         for fid in ("checks.slip_safety_min", "checks.stress_safety_min"):
-            card = self._field_cards.get(fid)
-            if card:
-                card.setVisible(is_combined)
+            self._set_card_disabled(fid, not is_combined)
 
     def _on_load_condition_changed(self, text: str) -> None:
         p_zul = LOAD_CONDITION_P_ZUL.get(text)

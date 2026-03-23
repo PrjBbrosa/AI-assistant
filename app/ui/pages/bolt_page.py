@@ -691,7 +691,7 @@ CHAPTERS: list[dict[str, Any]] = [
     },
     {
         "id": "thread_strip",
-        "title": "螺纹脱扣校核 (R8)",
+        "title": "螺纹脱扣校核",
         "subtitle": "检查螺纹是否会被拉滑丝",
         "fields": [
             FieldSpec(
@@ -740,7 +740,7 @@ CHECK_LABELS = {
     "thermal_loss_ok": "温度损失影响校核",
     "fatigue_ok": "疲劳校核（简化 Goodman）",
     "bearing_pressure_ok": "支承面压强校核（R7）",
-    "thread_strip_ok": "螺纹脱扣校核（R8）",
+    "thread_strip_ok": "螺纹脱扣校核",
 }
 
 CHECK_LEVELS: tuple[tuple[str, str], ...] = (
@@ -1138,7 +1138,12 @@ class BoltPage(QWidget):
         self.calc_mode_combo.addItem("设计模式 — 由 FK_req 反推 FM_min", "design")
         self.calc_mode_combo.addItem("校核模式 — 使用已知 FM_min", "verify")
         mode_layout_inner.addWidget(self.calc_mode_combo)
-        self.mode_desc_label = QLabel("设计模式：由 FK_req 反推 FM_min，R3 自动满足。", mode_card)
+        self.mode_desc_label = QLabel(
+            "设计模式：由 FK_req 反推 FM_min，R3 自动满足。\n\n"
+            "FK_req（所需夹紧力）：为保证密封、防滑等功能，螺栓连接在工作状态下至少需要维持的夹紧力。\n"
+            "FM_min（最小装配预紧力）：拧紧时螺栓实际需要施加的最小预紧力，考虑了工作载荷、嵌入松弛、热膨胀等损失后，仍能满足 FK_req。",
+            mode_card,
+        )
         self.mode_desc_label.setObjectName("SectionHint")
         self.mode_desc_label.setWordWrap(True)
         mode_layout_inner.addWidget(self.mode_desc_label)
@@ -1595,11 +1600,15 @@ class BoltPage(QWidget):
         if mode == "verify":
             self.mode_desc_label.setText(
                 "校核模式：跳过 FM_min 反推，直接用已知预紧力做校核。\n"
-                "请在「步骤 3. 装配属性」中填写已知 FM,min 值。"
+                "请在「步骤 3. 装配属性」中填写已知 FM,min 值。\n\n"
+                "FK_req（所需夹紧力）：为保证密封、防滑等功能，螺栓连接在工作状态下至少需要维持的夹紧力。\n"
+                "FM_min（最小装配预紧力）：拧紧时螺栓实际需要施加的最小预紧力，考虑了工作载荷、嵌入松弛、热膨胀等损失后，仍能满足 FK_req。"
             )
         else:
             self.mode_desc_label.setText(
-                "设计模式：由 FK_req 反推 FM_min，R3 自动满足。"
+                "设计模式：由 FK_req 反推 FM_min，R3 自动满足。\n\n"
+                "FK_req（所需夹紧力）：为保证密封、防滑等功能，螺栓连接在工作状态下至少需要维持的夹紧力。\n"
+                "FM_min（最小装配预紧力）：拧紧时螺栓实际需要施加的最小预紧力，考虑了工作载荷、嵌入松弛、热膨胀等损失后，仍能满足 FK_req。"
             )
 
     def _on_bearing_material_changed(self, text: str) -> None:
