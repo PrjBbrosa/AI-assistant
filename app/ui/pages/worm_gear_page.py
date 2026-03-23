@@ -208,6 +208,7 @@ class WormGearPage(BaseChapterPage):
         self._field_widgets: dict[str, QWidget] = {}
         self._field_specs: dict[str, FieldSpec] = {}
         self._last_result: dict[str, Any] | None = None
+        self._last_payload: dict[str, Any] | None = None
         self.geometry_group_titles = [
             "蜗杆参数",
             "蜗轮参数",
@@ -681,6 +682,7 @@ class WormGearPage(BaseChapterPage):
     def _calculate(self) -> None:
         try:
             payload = self._build_payload()
+            self._last_payload = payload
             result = calculate_worm_geometry(payload)
         except InputError as exc:
             QMessageBox.critical(self, "输入参数错误", str(exc))
@@ -764,21 +766,35 @@ class WormGearPage(BaseChapterPage):
         if self._last_result is None:
             QMessageBox.warning(self, "无结果", "请先执行计算。")
             return
-        from datetime import datetime
         from PySide6.QtWidgets import QFileDialog
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "导出计算报告", "worm_report.pdf",
+            "PDF Files (*.pdf);;Text Files (*.txt);;All Files (*)",
+        )
+        if not file_path:
+            return
+        out_path = Path(file_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        suffix = out_path.suffix.lower()
+        if suffix == ".pdf":
+            try:
+                import importlib
+                mod = importlib.import_module("app.ui.report_pdf_worm")
+                mod.generate_worm_report(out_path, self._last_payload or {}, self._last_result)
+            except Exception:
+                # Fallback to text
+                out_path = out_path.with_suffix(".txt")
+                self._write_text_report(out_path)
+        else:
+            self._write_text_report(out_path)
+        self.set_info(f"报告已导出: {out_path}")
+
+    def _write_text_report(self, path: Path) -> None:
+        from datetime import datetime
         note = self._last_result.get("inputs_echo", {}).get("meta", {}).get("note", "")
-        header = f"蜗杆副计算报告 \u2014 {note}\n生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n{'=' * 60}\n\n"
+        header = f"蜗杆副计算报告 -- {note}\n生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n{'=' * 60}\n\n"
         body = self.result_metrics.toPlainText() + "\n\n" + self.load_capacity_metrics.toPlainText()
-        path, _ = QFileDialog.getSaveFileName(self, "导出结果说明", "worm_report.txt", "文本文件 (*.txt)")
-        if not path:
-            return
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(header + body)
-        except OSError as exc:
-            QMessageBox.critical(self, "导出失败", f"导出结果失败：{exc}")
-            return
-        self.set_info(f"结果已导出：{path}")
+        path.write_text(header + body, encoding="utf-8")
 
     def _save_input_conditions(self) -> None:
         out_path = choose_save_input_conditions_path(
@@ -828,6 +844,7 @@ class WormGearPage(BaseChapterPage):
 
     def _clear(self) -> None:
         self._last_result = None
+        self._last_payload = None
         self._apply_defaults()
         self.result_title.setText("尚未执行计算")
         self.result_summary.setText("执行计算后显示几何、基础性能以及 Method B 最小子集结果。")

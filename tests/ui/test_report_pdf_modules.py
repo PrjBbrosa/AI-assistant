@@ -234,3 +234,86 @@ class TestSplineRecommendations:
         result["scenario_b"]["checks"]["hub_stress_ok"] = False
         recs = build_spline_recommendations(result)
         assert len(recs) == 2
+
+
+# ---------------------------------------------------------------------------
+# Worm gear PDF report tests
+# ---------------------------------------------------------------------------
+
+class TestWormPdfReport:
+    def test_geometry_only(self, tmp_path):
+        from app.ui.report_pdf_worm import generate_worm_report
+        payload = {"geometry": {"module_mm": 4, "tooth_count_worm": 2, "tooth_count_wheel": 41},
+                   "operating": {"worm_speed_rpm": 1500, "input_power_kw": 1.5}}
+        result = {
+            "geometry": {
+                "ratio": 20.5, "module_mm": 4, "center_distance_mm": 86,
+                "theoretical_center_distance_mm": 86, "lead_angle_deg": 5.6,
+                "worm_dimensions": {"pitch_diameter_mm": 32, "tip_diameter_mm": 40,
+                    "root_diameter_mm": 22.4, "lead_mm": 25.1, "axial_pitch_mm": 12.6,
+                    "pitch_line_speed_mps": 2.51, "face_width_mm": 50},
+                "wheel_dimensions": {"pitch_diameter_mm": 164, "tip_diameter_mm": 172,
+                    "root_diameter_mm": 154.4, "pitch_line_speed_mps": 0.63,
+                    "tooth_height_mm": 8.8, "face_width_mm": 35},
+                "mesh_dimensions": {"ratio": 20.5, "center_distance_mm": 86,
+                    "worm_speed_rpm": 1500, "wheel_speed_rpm": 73.2,
+                    "input_torque_nm": 9.55, "output_torque_nm": 156.3},
+                "consistency": {"warnings": []},
+            },
+            "performance": {"input_power_kw": 1.5, "output_power_kw": 1.2,
+                "input_torque_nm": 9.55, "worm_pitch_line_speed_mps": 2.51,
+                "efficiency_estimate": 0.80, "power_loss_kw": 0.3,
+                "thermal_capacity_kw": 0.5, "output_torque_nm": 156.3,
+                "friction_mu": 0.08, "application_factor": 1.0},
+            "load_capacity": {"enabled": False, "status": "未启用", "checks": {},
+                "forces": {}, "contact": {}, "root": {}, "factors": {},
+                "torque_ripple": {}, "warnings": [], "assumptions": []},
+        }
+        out = tmp_path / "worm_geom.pdf"
+        generate_worm_report(out, payload, result)
+        assert out.exists() and out.stat().st_size > 1000
+
+    def test_with_load_capacity(self, tmp_path):
+        from app.ui.report_pdf_worm import generate_worm_report
+        payload = {"geometry": {"module_mm": 4, "tooth_count_worm": 2, "tooth_count_wheel": 41},
+                   "operating": {"worm_speed_rpm": 1500, "input_power_kw": 1.5}}
+        result = {
+            "geometry": {
+                "ratio": 20.5, "module_mm": 4, "center_distance_mm": 86,
+                "theoretical_center_distance_mm": 86, "lead_angle_deg": 5.6,
+                "worm_dimensions": {"pitch_diameter_mm": 32, "tip_diameter_mm": 40,
+                    "root_diameter_mm": 22.4, "lead_mm": 25.1, "axial_pitch_mm": 12.6,
+                    "pitch_line_speed_mps": 2.51, "face_width_mm": 50},
+                "wheel_dimensions": {"pitch_diameter_mm": 164, "tip_diameter_mm": 172,
+                    "root_diameter_mm": 154.4, "pitch_line_speed_mps": 0.63,
+                    "tooth_height_mm": 8.8, "face_width_mm": 35},
+                "mesh_dimensions": {"ratio": 20.5, "center_distance_mm": 86,
+                    "worm_speed_rpm": 1500, "wheel_speed_rpm": 73.2,
+                    "input_torque_nm": 9.55, "output_torque_nm": 156.3},
+                "consistency": {"warnings": []},
+            },
+            "performance": {"input_power_kw": 1.5, "output_power_kw": 1.2,
+                "input_torque_nm": 9.55, "worm_pitch_line_speed_mps": 2.51,
+                "efficiency_estimate": 0.80, "power_loss_kw": 0.3,
+                "thermal_capacity_kw": 0.5, "output_torque_nm": 156.3,
+                "friction_mu": 0.08, "application_factor": 1.0},
+            "load_capacity": {
+                "enabled": True, "method": "DIN 3996 Method B", "status": "通过",
+                "checks": {"geometry_consistent": True, "contact_ok": True, "root_ok": True},
+                "forces": {"tangential_force_wheel_n": 1905, "axial_force_wheel_n": 597,
+                    "radial_force_wheel_n": 693, "normal_force_n": 2150,
+                    "design_normal_force_n": 2150},
+                "contact": {"sigma_hm_nominal_mpa": 450, "allowable_contact_stress_mpa": 600,
+                    "safety_factor_nominal": 1.33, "safety_factor_peak": 1.1},
+                "root": {"sigma_f_nominal_mpa": 25, "allowable_root_stress_mpa": 50,
+                    "safety_factor_nominal": 2.0, "safety_factor_peak": 1.6},
+                "factors": {"application_factor": 1.0, "dynamic_factor_kv": 1.05,
+                    "transverse_load_factor_kha": 1.0, "face_load_factor_khb": 1.0},
+                "torque_ripple": {"percent": 10, "output_torque_nominal_nm": 156.3,
+                    "output_torque_peak_nm": 171.9},
+                "warnings": [], "assumptions": ["ZK tooth form", "Steel-plastic pairing"],
+            },
+        }
+        out = tmp_path / "worm_lc.pdf"
+        generate_worm_report(out, payload, result)
+        assert out.exists() and out.stat().st_size > 1000
