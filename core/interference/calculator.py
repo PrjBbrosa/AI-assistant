@@ -279,10 +279,6 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     axial_min_n = min_state["axial_cap_n"]
     axial_mean_n = mean_state["axial_cap_n"]
     axial_max_n = max_state["axial_cap_n"]
-    press_force_min_n = min_state["press_force_n"]
-    press_force_mean_n = mean_state["press_force_n"]
-    press_force_max_n = max_state["press_force_n"]
-
     shaft_vm_min = min_state["shaft_vm_mpa"]
     shaft_vm_mean = mean_state["shaft_vm_mpa"]
     shaft_vm_max = max_state["shaft_vm_mpa"]
@@ -353,6 +349,22 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
             "mu_axial": mu_axial,
         },
     )
+
+    summary_press_mu = mu_assembly
+    assembly_friction = assembly_detail.get("assembly_friction", {})
+    if (
+        assembly_detail.get("method") == "force_fit"
+        and isinstance(assembly_friction, dict)
+        and "mu_press_in" in assembly_friction
+    ):
+        summary_press_mu = float(assembly_friction["mu_press_in"])
+
+    def summary_press_force_n(pressure_mpa: float) -> float:
+        return summary_press_mu * pressure_mpa * contact_area_mm2
+
+    press_force_min_n = summary_press_force_n(p_min)
+    press_force_mean_n = summary_press_force_n(p_mean)
+    press_force_max_n = summary_press_force_n(p_max)
 
     repeated_notes: list[str] = []
     repeated_enabled = repeated_load_mode == "on"
@@ -433,7 +445,7 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
         delta_um = curve_max_um * idx / (curve_points - 1)
         pressure = pressure_from_input_interference(delta_um)
         curve_x.append(delta_um)
-        curve_y.append(press_force_n(pressure))
+        curve_y.append(summary_press_force_n(pressure))
 
     checks_out = {
         "torque_ok": torque_ok,

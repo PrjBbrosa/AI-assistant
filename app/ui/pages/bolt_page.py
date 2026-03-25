@@ -2660,6 +2660,8 @@ class BoltPage(QWidget):
             recs.append("[建议] 热损失偏大：可补偿预紧力、优化材料热匹配或降低温差。")
         if "fatigue_ok" in checks and not checks.get("fatigue_ok", True):
             recs.append("[建议] 疲劳不通过：可降低应力幅、提高螺栓等级、优化载荷谱或增大规格。")
+        if "bearing_pressure_ok" in checks and not checks.get("bearing_pressure_ok", True):
+            recs.append("[建议] 支承面压强不通过：可增大支承直径、加垫圈、降低预紧力或提高支承面材料许用压强。")
         if "thread_strip_ok" in checks and not checks.get("thread_strip_ok", True):
             strip = result.get("thread_strip", {})
             side = strip.get("critical_side", "")
@@ -2738,7 +2740,10 @@ class BoltPage(QWidget):
                 passed = refs.get("additional_load_ok", True)
                 lines.append(f"- {title}: {'通过' if passed else '超限（仅参考）'}")
                 continue
-            lines.append(f"- {title}: {'通过' if checks.get(key) else '不通过'}")
+            if key not in checks:
+                lines.append(f"- {title}: 已跳过")
+            else:
+                lines.append(f"- {title}: {'通过' if checks.get(key) else '不通过'}")
 
         lines.extend(
             [

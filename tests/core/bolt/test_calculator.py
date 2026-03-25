@@ -76,6 +76,12 @@ class TestBearingPressureR7:
         result = calculate_vdi2230_core(data)
         assert "bearing_pressure_ok" not in result["checks"]
 
+    def test_r7_negative_p_g_allow_raises(self):
+        data = _base_input()
+        data["bearing"]["p_G_allow"] = -1.0
+        with pytest.raises(InputError, match="p_G_allow"):
+            calculate_vdi2230_core(data)
+
     def test_r7_formula_correctness(self):
         data = _base_input()
         data["bearing"]["p_G_allow"] = 700.0
@@ -944,6 +950,12 @@ class TestThreadStripR8:
         data = _base_input()
         data["thread_strip"] = {"m_eff": 12.0}  # 无 tau_BM
         with pytest.raises(InputError, match="tau_BM"):
+            calculate_vdi2230_core(data)
+
+    def test_r8_negative_m_eff_raises(self):
+        data = self._strip_input()
+        data["thread_strip"]["m_eff"] = -1.0
+        with pytest.raises(InputError, match="m_eff"):
             calculate_vdi2230_core(data)
 
     def test_r8_overall_pass_includes_strip(self):

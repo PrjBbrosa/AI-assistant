@@ -656,7 +656,7 @@ BEGINNER_GUIDES: dict[str, str] = {
     "options.curve_points": "仅影响曲线显示精细度，不改变任何通过/不通过结论。",
     "geometry.shaft_d_mm": "决定接触面积与接触半径，直接影响扭矩能力。",
     "geometry.shaft_inner_d_mm": "填 0 表示实心轴；内孔越大，轴越柔，通常会降低接触压力和传递能力。",
-    "geometry.hub_outer_d_mm": "外径越大，轮毂刚度越高、同等过盈下接触压力越低。",
+    "geometry.hub_outer_d_mm": "外径越大，轮毂柔度越低；按当前厚壁轮毂模型，同等过盈下接触压力越高。",
     "fit.mode": "如果只知道标准配合代号，优先用“优选配合”；如果已有轴/孔偏差，改用“偏差换算”。",
     "fit.preferred_fit_name": "当前只提供受限的常用孔基制优选配合，用于快速得到可追溯的过盈窗口。",
     "fit.shaft_upper_deviation_um": "偏差换算时，系统会自动把轴/孔偏差转换为 delta_min / delta_max。",

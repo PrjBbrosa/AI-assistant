@@ -267,6 +267,30 @@ class InterferenceFitCalculatorTests(unittest.TestCase):
         self.assertIn("force_fit", result["assembly_detail"])
         self.assertGreater(result["assembly_detail"]["force_fit"]["press_in_force_n"], 0.0)
 
+    def test_force_fit_mode_uses_press_in_friction_for_main_press_force_summary(self) -> None:
+        data = make_case()
+        data["assembly"] = {
+            "method": "force_fit",
+            "mu_press_in": 0.08,
+            "mu_press_out": 0.06,
+        }
+
+        result = calculate_interference_fit(data)
+
+        area = result["derived"]["contact_area_mm2"]
+        p_min = result["pressure_mpa"]["p_min"]
+        p_mean = result["pressure_mpa"]["p_mean"]
+        p_max = result["pressure_mpa"]["p_max"]
+
+        self.assertAlmostEqual(result["assembly"]["press_force_min_n"], 0.08 * p_min * area, places=6)
+        self.assertAlmostEqual(result["assembly"]["press_force_mean_n"], 0.08 * p_mean * area, places=6)
+        self.assertAlmostEqual(result["assembly"]["press_force_max_n"], 0.08 * p_max * area, places=6)
+        self.assertAlmostEqual(
+            result["assembly"]["press_force_max_n"],
+            result["assembly_detail"]["force_fit"]["press_in_force_n"],
+            places=6,
+        )
+
     def test_repeated_load_block_reports_applicable_case(self) -> None:
         data = make_case()
         data["advanced"] = {

@@ -121,6 +121,14 @@ class InterferenceFitPageTests(unittest.TestCase):
 
         self.assertIn("仅影响曲线显示", hint)
 
+    def test_hub_outer_diameter_help_matches_current_model_direction(self) -> None:
+        page = InterferenceFitPage()
+
+        hub_outer_widget = page._field_widgets["geometry.hub_outer_d_mm"]
+        hint = page._widget_hints[hub_outer_widget]
+
+        self.assertIn("接触压力越高", hint)
+
     def test_report_lines_include_fit_source_trace(self) -> None:
         page = InterferenceFitPage()
         page._field_widgets["fit.mode"].setCurrentText("偏差换算")  # type: ignore[attr-defined]

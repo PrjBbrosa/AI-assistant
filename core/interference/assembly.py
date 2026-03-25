@@ -112,7 +112,8 @@ def calculate_assembly_detail(
             assembly.get("alpha_shaft_1e6_per_c", 11.0),
             "assembly.alpha_shaft_1e6_per_c",
         )
-        required_expansion_um = delta_min_um + clearance_um
+        # Heat-joining temperature must clear the worst-case interference side.
+        required_expansion_um = delta_max_um + clearance_um
         hub_growth_um_per_c = alpha_hub * shaft_d_mm / 1000.0
         if hub_growth_um_per_c <= 0.0:
             raise InputError("无法根据热膨胀系数计算热装温度。")

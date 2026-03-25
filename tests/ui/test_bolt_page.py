@@ -165,6 +165,80 @@ class BoltPageStateTests(unittest.TestCase):
         self.assertIn("σ_vm_work", calc_text)
         self.assertIn("判据: σ_vm_work ≤ σ_allow", calc_text)
 
+    def test_r7_failure_generates_specific_recommendation(self) -> None:
+        page = BoltPage()
+        payload = {
+            "fastener": {"d": 12.0, "p": 1.75, "Rp02": 940.0},
+            "tightening": {
+                "alpha_A": 1.5,
+                "mu_thread": 0.1,
+                "mu_bearing": 0.12,
+                "utilization": 0.85,
+                "thread_flank_angle_deg": 60.0,
+            },
+            "loads": {
+                "FA_max": 6000.0,
+                "FQ_max": 600.0,
+                "embed_loss": 600.0,
+                "thermal_force_loss": 300.0,
+                "slip_friction_coefficient": 0.2,
+                "friction_interfaces": 1.0,
+            },
+            "stiffness": {
+                "bolt_compliance": 1.8e-06,
+                "clamped_compliance": 2.4e-06,
+                "load_introduction_factor_n": 1.0,
+            },
+            "bearing": {
+                "bearing_d_inner": 13.0,
+                "bearing_d_outer": 22.0,
+                "p_G_allow": 1.0,
+            },
+            "checks": {"yield_safety_operating": 1.15},
+        }
+        result = calculate_vdi2230_core(payload)
+
+        recs = page._build_recommendations(result)
+
+        self.assertFalse(any("满足全部校核" in rec for rec in recs))
+        self.assertTrue(any("支承面" in rec for rec in recs))
+
+    def test_report_lines_mark_skipped_optional_checks_as_skipped(self) -> None:
+        page = BoltPage()
+        payload = {
+            "fastener": {"d": 12.0, "p": 1.75, "Rp02": 940.0},
+            "tightening": {
+                "alpha_A": 1.5,
+                "mu_thread": 0.1,
+                "mu_bearing": 0.12,
+                "utilization": 0.85,
+                "thread_flank_angle_deg": 60.0,
+            },
+            "loads": {
+                "FA_max": 6000.0,
+                "FQ_max": 600.0,
+                "embed_loss": 600.0,
+                "thermal_force_loss": 300.0,
+                "slip_friction_coefficient": 0.2,
+                "friction_interfaces": 1.0,
+            },
+            "stiffness": {
+                "bolt_compliance": 1.8e-06,
+                "clamped_compliance": 2.4e-06,
+                "load_introduction_factor_n": 1.0,
+            },
+            "bearing": {"bearing_d_inner": 13.0, "bearing_d_outer": 22.0},
+            "checks": {"yield_safety_operating": 1.15},
+        }
+        result = calculate_vdi2230_core(payload)
+        page._last_payload = payload
+        page._last_result = result
+
+        report_lines = page._build_report_lines()
+
+        self.assertIn("- 支承面压强校核（R7）: 已跳过", report_lines)
+        self.assertIn("- 螺纹脱扣校核: 已跳过", report_lines)
+
     def test_flowchart_includes_optional_r8_thread_strip_step(self) -> None:
         page = BoltPage()
 

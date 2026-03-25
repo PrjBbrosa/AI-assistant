@@ -58,6 +58,28 @@ class AssemblyDetailTests(unittest.TestCase):
             low["shrink_fit"]["required_hub_temperature_c"],
         )
 
+    def test_shrink_fit_required_expansion_uses_max_interference_side(self) -> None:
+        context = make_context()
+
+        result = calculate_assembly_detail(
+            {
+                "method": "shrink_fit",
+                "room_temperature_c": 20.0,
+                "shaft_temperature_c": 20.0,
+                "clearance_mode": "direct_value",
+                "clearance_um": 20.0,
+                "alpha_hub_1e6_per_c": 11.0,
+                "alpha_shaft_1e6_per_c": 11.0,
+            },
+            context,
+        )
+
+        self.assertAlmostEqual(
+            result["shrink_fit"]["required_expansion_um"],
+            context["delta_max_um"] + 20.0,
+            places=6,
+        )
+
     def test_force_fit_pressing_force_uses_max_pressure_side(self) -> None:
         context = make_context()
 

@@ -507,6 +507,8 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     thread_strip = data.get("thread_strip", {})
     m_eff = _float_or_none(thread_strip.get("m_eff"), "thread_strip.m_eff")
     tau_BM = _float_or_none(thread_strip.get("tau_BM"), "thread_strip.tau_BM")
+    if m_eff is not None and m_eff <= 0:
+        raise InputError("thread_strip.m_eff 必须 > 0；若不做脱扣校核，请留空该字段。")
     r8_active = m_eff is not None and m_eff > 0
     r8_note = ""
     strip_result: Dict[str, Any] = {}
@@ -570,7 +572,12 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     # --- R7 支承面压强校核 ---
-    p_g_allow = float(bearing.get("p_G_allow", 0.0))
+    p_g_allow_raw = bearing.get("p_G_allow")
+    p_g_allow = 0.0
+    if p_g_allow_raw not in (None, ""):
+        p_g_allow = float(p_g_allow_raw)
+        if p_g_allow < 0:
+            raise InputError("bearing.p_G_allow 不能 < 0；若不做 R7 校核，请留空或填 0。")
     r7_active = p_g_allow > 0
     r7_note = ""
     if r7_active:
