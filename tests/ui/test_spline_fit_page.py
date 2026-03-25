@@ -31,7 +31,7 @@ class TestSplineFitPage:
         page = SplineFitPage()
         texts = self._label_texts(page)
         assert any("简化预校核" in text for text in texts)
-        assert any("不替代 DIN 5480 / DIN 6892 工程校核" in text for text in texts)
+        assert any("不替代 DIN 5480" in text and "DIN 6892" in text for text in texts)
 
     def test_chapter_count(self, app):
         page = SplineFitPage()

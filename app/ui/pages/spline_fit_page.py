@@ -70,8 +70,8 @@ MATERIAL_LIBRARY: dict[str, dict[str, float] | None] = {
 }
 
 SPLINE_SCOPE_DISCLAIMER = (
-    "花键部分当前仅提供齿面平均承压的简化预校核，"
-    "不替代 DIN 5480 / DIN 6892 工程校核。"
+    "当前仅提供齿面平均承压的简化预校核，"
+    "不替代 DIN 5480（渐开线花键尺寸标准）/ DIN 6892（花键连接承载能力标准）的完整工程校核。"
 )
 
 SMOOTH_FIT_FIELD_IDS: list[str] = [
@@ -95,7 +95,7 @@ CHAPTERS: list[dict[str, Any]] = [
         "fields": [
             FieldSpec(
                 "mode", "校核模式", "-",
-                "仅花键：只校核齿面承压；联合：同时校核光滑段圆柱过盈。",
+                "仅花键：只校核花键齿面承压（场景 A）；联合：同时校核花键轴光滑段与轮毂孔的圆柱过盈配合（场景 B）。",
                 widget_type="choice",
                 options=("仅花键", "联合"),
                 default="联合",
@@ -120,7 +120,7 @@ CHAPTERS: list[dict[str, Any]] = [
             ),
             FieldSpec(
                 "loads.application_factor_ka", "工况系数 KA", "-",
-                "同时放大场景 A 和场景 B 的设计载荷。",
+                "考虑驱动/负载特性引起的动态过载，同时放大场景 A 和 B 的设计载荷。电机驱动约 1.0~1.25，内燃机约 1.25~1.75。",
                 mapping=("loads", "application_factor_ka"),
                 default="1.25", placeholder="建议 1.0~2.25",
             ),
@@ -152,7 +152,7 @@ CHAPTERS: list[dict[str, Any]] = [
             ),
             FieldSpec(
                 "spline.reference_diameter_mm", "参考直径 d_B", "mm",
-                "DIN 5480 基于参考直径；公开样例可用 W/N 15 x 1.25 x 10。",
+                "DIN 5480 花键的基本尺寸参考直径。例如 '外花键 W 15x1.25x10' 表示 d_B=15mm, m=1.25, z=10。",
                 mapping=("spline", "reference_diameter_mm"),
                 default="15.0", placeholder="例如 15",
             ),
@@ -182,7 +182,7 @@ CHAPTERS: list[dict[str, Any]] = [
             ),
             FieldSpec(
                 "spline.k_alpha", "载荷分布系数 K_alpha", "-",
-                "Niemann 推荐值与公差/磨合有关；轻滑移配合通常高于过盈固定连接。",
+                "齿面载荷分布不均匀的修正系数。过盈固定连接约 1.0~1.3，滑移连接约 1.5~2.0。",
                 mapping=("spline", "k_alpha"),
                 default="1.3", placeholder="例如 1.1~2.0",
             ),
@@ -231,7 +231,7 @@ CHAPTERS: list[dict[str, Any]] = [
             ),
             FieldSpec(
                 "smooth_fit.relief_groove_width_mm", "退刀槽宽度", "mm",
-                "花键到光滑段过渡处退刀槽宽度，自动从配合长度中扣除。",
+                "花键齿根与光滑段之间的让刀凹槽宽度，用于加工退刀。计算时自动从配合长度中扣除。",
                 mapping=("smooth_fit", "relief_groove_width_mm"),
                 default="3.0", placeholder="例如 2~5",
             ),
@@ -587,7 +587,7 @@ class SplineFitPage(BaseChapterPage):
             f"齿面压力 p = {a['flank_pressure_mpa']:.1f} MPa, "
             f"许用 p_zul = {a['p_allowable_mpa']:.0f} MPa, "
             f"安全系数 S = {a['flank_safety']:.2f}, "
-            f"结果级别 = {a['overall_verdict_level']}"
+            f"结果级别 = {'简化预校核' if a['overall_verdict_level'] == 'simplified_precheck' else a['overall_verdict_level']}"
         )
 
         b_badge = self._result_labels["b_badge"]
