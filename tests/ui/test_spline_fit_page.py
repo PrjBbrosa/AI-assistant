@@ -80,3 +80,19 @@ class TestSplineFitPage:
             card = page._field_cards.get(fid)
             if card:
                 assert card.objectName() == "SubCard", f"{fid} should be SubCard in combined mode"
+
+    def test_standard_designation_autofills_geometry(self, app):
+        page = SplineFitPage()
+        combo = page._widgets["spline.standard_designation"]
+        combo.setCurrentText("W 25x1.25x18")
+        assert page._widgets["spline.module_mm"].text() == "1.25"
+        assert page._widgets["spline.tooth_count"].text() == "18"
+        assert page._widgets["spline.reference_diameter_mm"].text() == "25.0"
+
+    def test_standard_designation_custom_restores_editable(self, app):
+        page = SplineFitPage()
+        combo = page._widgets["spline.standard_designation"]
+        combo.setCurrentText("W 25x1.25x18")
+        combo.setCurrentText("自定义")
+        card = page._field_cards.get("spline.module_mm")
+        assert card.objectName() == "SubCard"

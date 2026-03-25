@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from core.spline.calculator import InputError, calculate_spline_fit
+from core.spline.din5480_table import all_designations, lookup_by_designation
 
 
 @dataclass(frozen=True)
@@ -88,6 +89,12 @@ SMOOTH_FIT_FIELD_IDS: list[str] = [
     "smooth_roughness.shaft_rz_um", "smooth_roughness.hub_rz_um",
 ]
 
+_STANDARD_GEOMETRY_FIELD_IDS: list[str] = [
+    "spline.module_mm", "spline.tooth_count", "spline.reference_diameter_mm",
+    "spline.tip_diameter_shaft_mm", "spline.root_diameter_shaft_mm",
+    "spline.tip_diameter_hub_mm",
+]
+
 CHAPTERS: list[dict[str, Any]] = [
     {
         "title": "校核目标",
@@ -130,6 +137,13 @@ CHAPTERS: list[dict[str, Any]] = [
         "title": "花键几何",
         "subtitle": "渐开线花键 (DIN 5480) 优先使用公开目录/图纸尺寸；近似模式仅用于预估。",
         "fields": [
+            FieldSpec(
+                "spline.standard_designation", "标准花键规格", "-",
+                "选择 DIN 5480 标准规格后自动填充几何尺寸；选'自定义'手动输入。",
+                widget_type="choice",
+                options=tuple(all_designations()) + ("自定义",),
+                default="自定义",
+            ),
             FieldSpec(
                 "spline.geometry_mode", "几何输入模式", "-",
                 "优先使用公开目录、图纸或实测尺寸；近似模式只适合简化预校核。",
@@ -378,6 +392,10 @@ class SplineFitPage(BaseChapterPage):
             mode_combo.currentTextChanged.connect(self._on_mode_changed)
             self._on_mode_changed(mode_combo.currentText())
 
+        std_combo = self._widgets.get("spline.standard_designation")
+        if isinstance(std_combo, QComboBox):
+            std_combo.currentTextChanged.connect(self._on_standard_designation_changed)
+
         # Connect load condition to auto-fill p_zul
         lc_combo = self._widgets.get("spline.load_condition")
         if isinstance(lc_combo, QComboBox):
@@ -505,6 +523,35 @@ class SplineFitPage(BaseChapterPage):
             self._set_card_disabled(fid, not is_combined)
         for fid in ("checks.slip_safety_min", "checks.stress_safety_min"):
             self._set_card_disabled(fid, not is_combined)
+
+    def _on_standard_designation_changed(self, text: str) -> None:
+        is_standard = (text != "自定义")
+        if is_standard:
+            record = lookup_by_designation(text)
+            if record is None:
+                return
+            field_map = {
+                "spline.module_mm": str(record["module_mm"]),
+                "spline.tooth_count": str(record["tooth_count"]),
+                "spline.reference_diameter_mm": str(record["reference_diameter_mm"]),
+                "spline.tip_diameter_shaft_mm": str(record["tip_diameter_shaft_mm"]),
+                "spline.root_diameter_shaft_mm": str(record["root_diameter_shaft_mm"]),
+                "spline.tip_diameter_hub_mm": str(record["tip_diameter_hub_mm"]),
+            }
+            for fid, value in field_map.items():
+                w = self._widgets.get(fid)
+                if isinstance(w, QLineEdit):
+                    w.setText(value)
+            # 切换 geometry_mode 到"公开/图纸尺寸"
+            geo_combo = self._widgets.get("spline.geometry_mode")
+            if isinstance(geo_combo, QComboBox):
+                idx = geo_combo.findText("公开/图纸尺寸")
+                if idx >= 0:
+                    geo_combo.setCurrentIndex(idx)
+        # AutoCalcCard 样式
+        for fid in _STANDARD_GEOMETRY_FIELD_IDS:
+            self._set_card_disabled(fid, is_standard)
+        self._set_card_disabled("spline.geometry_mode", is_standard)
 
     def _on_load_condition_changed(self, text: str) -> None:
         p_zul = LOAD_CONDITION_P_ZUL.get(text)
