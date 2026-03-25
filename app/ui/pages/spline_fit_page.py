@@ -561,9 +561,13 @@ class SplineFitPage(BaseChapterPage):
         try:
             payload = self._build_payload()
             result = calculate_spline_fit(payload)
-        except (InputError, Exception) as exc:
+        except InputError as exc:
             self.set_overall_status(f"输入错误: {exc}", "fail")
             self.set_info(str(exc))
+            return
+        except Exception as exc:
+            self.set_overall_status(f"内部错误: {exc}", "fail")
+            self.set_info(f"计算过程中出现意外错误，请检查输入或联系开发者。\n{exc}")
             return
 
         self._last_payload = payload
@@ -641,9 +645,11 @@ class SplineFitPage(BaseChapterPage):
             try:
                 mod = importlib.import_module("app.ui.report_pdf_spline")
                 mod.generate_spline_report(out_path, self._last_payload, self._last_result)
-            except Exception:
+            except Exception as pdf_exc:
                 out_path = out_path.with_suffix(".txt")
                 out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
+                self.set_info(f"PDF 生成失败（{pdf_exc}），已回退为文本格式: {out_path}")
+                return
         else:
             out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
         self.set_info(f"报告已导出: {out_path}")
