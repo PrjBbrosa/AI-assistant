@@ -25,7 +25,7 @@ d_m = (d_a1 + d_f1) / 2.0
 
 **修正为**:
 ```python
-d_m = (d_a1 + d_a2) / 2.0
+d_m = (d_a1 + d_a2) / 2.0         # 平均直径（接触区中心）
 ```
 
 **依据**: h_w = (d_a1 - d_a2)/2 定义的是 d_a1 到 d_a2 之间的接触带，d_m 作为力臂应取同一区间中心。Niemann/Winter 卷 I 承压公式 p = 2T*K_alpha / (z*h_w*d_m*L) 中 h_w 和 d_m 是配套量。
@@ -65,7 +65,9 @@ d_m = (d_a1 + d_a2) / 2.0
 6. **SPLINE_SCOPE_DISCLAIMER** (L72): 解释 DIN 标准编号含义
    - 改为: "当前仅提供齿面平均承压的简化预校核，不替代 DIN 5480（渐开线花键尺寸标准）/ DIN 6892（花键连接承载能力标准）的完整工程校核。"
 
-7. **结果页 verdict_level** (L590): 英文 `simplified_precheck` 映射为中文 "简化预校核"
+7. **结果页 verdict_level** (L590): 英文 `simplified_precheck` 映射为中文 "简化预校核"。
+   具体改动：L590 的 `f"结果级别 = {a['overall_verdict_level']}"` 中，将 `a['overall_verdict_level']` 替换为内联映射 `{"simplified_precheck": "简化预校核"}.get(a["overall_verdict_level"], a["overall_verdict_level"])`。
+   L618/621 的 `"PRECHECK PASS"` / `"PRECHECK FAIL"` 保留英文不变（状态栏简洁标识，非面向新手的描述文字）。
 
 ### Step 3: 代码健壮性
 
@@ -88,13 +90,17 @@ d_m = (d_a1 + d_a2) / 2.0
 | test_partial_explicit_geometry_raises | test_geometry.py | 只提供部分显式尺寸 -> GeometryError |
 | test_pressure_angle_out_of_range_raises | test_geometry.py | pressure_angle=60 -> GeometryError |
 | test_invalid_geometry_mode_raises | test_calculator.py | geometry_mode="invalid" -> InputError |
-| test_negative_relief_groove_raises | test_calculator.py | relief_groove < 0 -> InputError |
-| test_relief_groove_exceeds_length_raises | test_calculator.py | relief_groove >= fit_length -> InputError |
-| test_zero_torque_gives_infinite_safety | test_calculator.py | torque=0 -> flank_sf = inf |
+| test_negative_relief_groove_raises | test_calculator.py | relief_groove < 0 -> InputError（验证已有代码路径） |
+| test_relief_groove_exceeds_length_raises | test_calculator.py | relief_groove >= fit_length -> InputError（验证已有代码路径） |
+| test_zero_torque_raises | test_calculator.py | torque=0 -> InputError（_positive 拒绝零值，验证已有守卫） |
 
 ## 执行顺序
 
+开始前先运行全量测试确认绿色基线。Step 1 修改公式后必须在同一 commit 内同步更新测试断言值（公式改动会导致旧断言失败，这是预期行为）。
+
 Step 1 → Step 2 → Step 3 → Step 4，每步完成后运行全量测试确认无回归，每步一次 commit。
+
+注意：Step 4 中 relief_groove 和 zero_torque 的测试是验证已有代码路径，不需要新增生产代码。
 
 ## 不在此次范围内
 
