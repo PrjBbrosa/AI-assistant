@@ -130,6 +130,18 @@ class TestScenarioA:
         with pytest.raises(InputError, match="tooth_count"):
             calculate_spline_fit(case)
 
+    def test_invalid_geometry_mode_raises(self):
+        case = make_scenario_a_case()
+        case["spline"]["geometry_mode"] = "invalid"
+        with pytest.raises(InputError, match="geometry_mode"):
+            calculate_spline_fit(case)
+
+    def test_zero_torque_raises(self):
+        case = make_scenario_a_case()
+        case["loads"]["torque_required_nm"] = 0.0
+        with pytest.raises(InputError, match="torque_required_nm"):
+            calculate_spline_fit(case)
+
 
 def make_combined_case() -> dict:
     """Combined mode: scenario A + scenario B."""
@@ -231,3 +243,15 @@ class TestScenarioB:
         assert trace["application_factor_ka"] == pytest.approx(1.25)
         assert trace["torque_design_nm"] == pytest.approx(625.0)
         assert trace["delegated_application_factor_ka"] == pytest.approx(1.0)
+
+    def test_negative_relief_groove_raises(self):
+        case = make_combined_case()
+        case["smooth_fit"]["relief_groove_width_mm"] = -1.0
+        with pytest.raises(InputError, match="不能为负数"):
+            calculate_spline_fit(case)
+
+    def test_relief_groove_exceeds_length_raises(self):
+        case = make_combined_case()
+        case["smooth_fit"]["relief_groove_width_mm"] = 50.0  # >= fit_length_mm (45.0)
+        with pytest.raises(InputError, match="有效配合长度"):
+            calculate_spline_fit(case)

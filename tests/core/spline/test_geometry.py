@@ -72,3 +72,22 @@ class TestDeriveInvoluteGeometry:
             "geometry_source", "approximation_used", "messages",
         }
         assert expected_keys.issubset(set(r.keys()))
+
+    def test_partial_explicit_geometry_raises(self):
+        """Providing only some explicit dimensions should raise GeometryError."""
+        with pytest.raises(GeometryError, match="显式花键几何输入不完整"):
+            derive_involute_geometry(
+                module_mm=1.25,
+                tooth_count=10,
+                reference_diameter_mm=15.0,
+                # missing tip_diameter_shaft_mm, root_diameter_shaft_mm, tip_diameter_hub_mm
+            )
+
+    def test_pressure_angle_out_of_range_raises(self):
+        with pytest.raises(GeometryError, match="压力角"):
+            derive_involute_geometry(
+                module_mm=2.0,
+                tooth_count=20,
+                allow_approximation=True,
+                pressure_angle_deg=60.0,
+            )
