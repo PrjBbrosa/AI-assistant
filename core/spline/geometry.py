@@ -88,7 +88,7 @@ def derive_involute_geometry(
         )
 
     h_w = (d_a1 - d_a2) / 2.0         # 有效齿高（单侧）
-    d_m = (d_a1 + d_f1) / 2.0         # 平均直径
+    d_m = (d_a1 + d_a2) / 2.0         # 平均直径（接触区中心）
 
     return {
         "module_mm": m,

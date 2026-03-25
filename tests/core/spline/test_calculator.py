@@ -89,7 +89,7 @@ class TestScenarioA:
         K_alpha = 1.0
         z = 20
         h_w = 2.0
-        d_m = 39.75
+        d_m = 40.0
         L = 30.0
         p_expected = (2 * T * K_A * K_alpha) / (z * h_w * d_m * L)
         assert result["scenario_a"]["flank_pressure_mpa"] == pytest.approx(
@@ -103,7 +103,7 @@ class TestScenarioA:
         p_zul = 100.0
         z = 20
         h_w = 2.0
-        d_m = 39.75
+        d_m = 40.0
         L = 30.0
         K_alpha = 1.0
         T_expected_nmm = p_zul * z * h_w * d_m * L / (2 * K_alpha)

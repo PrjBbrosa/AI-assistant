@@ -16,7 +16,7 @@ class TestDeriveInvoluteGeometry:
         assert r["root_diameter_shaft_mm"] == pytest.approx(37.5)
         assert r["tip_diameter_hub_mm"] == pytest.approx(38.0)
         assert r["effective_tooth_height_mm"] == pytest.approx(2.0)
-        assert r["mean_diameter_mm"] == pytest.approx(39.75)
+        assert r["mean_diameter_mm"] == pytest.approx(40.0)
         assert r["pressure_angle_deg"] == pytest.approx(30.0)
         assert r["geometry_source"] == "approximation_from_module_and_tooth_count"
         assert r["approximation_used"] is True
@@ -36,7 +36,7 @@ class TestDeriveInvoluteGeometry:
         assert r["root_diameter_shaft_mm"] == pytest.approx(12.1)
         assert r["tip_diameter_hub_mm"] == pytest.approx(12.5)
         assert r["effective_tooth_height_mm"] == pytest.approx(1.125)
-        assert r["mean_diameter_mm"] == pytest.approx(13.425)
+        assert r["mean_diameter_mm"] == pytest.approx(13.625)
         assert r["geometry_source"] == "explicit_reference_dimensions"
         assert r["approximation_used"] is False
 
