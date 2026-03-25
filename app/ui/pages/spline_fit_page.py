@@ -402,6 +402,7 @@ class SplineFitPage(BaseChapterPage):
         lc_combo = self._widgets.get("spline.load_condition")
         if isinstance(lc_combo, QComboBox):
             lc_combo.currentTextChanged.connect(self._on_load_condition_changed)
+            self._on_load_condition_changed(lc_combo.currentText())
 
         shaft_material_combo = self._widgets.get("smooth_materials.shaft_material")
         if isinstance(shaft_material_combo, QComboBox):
@@ -529,6 +530,14 @@ class SplineFitPage(BaseChapterPage):
             self._set_card_disabled(fid, not is_combined)
         for fid in ("checks.slip_safety_min", "checks.stress_safety_min"):
             self._set_card_disabled(fid, not is_combined)
+        # 模式切换后重新触发材料联动以刷新 AutoCalcCard 样式
+        if is_combined:
+            shaft_mat = self._widgets.get("smooth_materials.shaft_material")
+            if isinstance(shaft_mat, QComboBox):
+                self._on_material_changed("smooth_materials.shaft", shaft_mat.currentText())
+            hub_mat = self._widgets.get("smooth_materials.hub_material")
+            if isinstance(hub_mat, QComboBox):
+                self._on_material_changed("smooth_materials.hub", hub_mat.currentText())
         if self.curve_widget is not None:
             self.curve_widget.setVisible(False)
 
@@ -567,18 +576,30 @@ class SplineFitPage(BaseChapterPage):
             w = self._widgets.get("spline.p_allowable_mpa")
             if isinstance(w, QLineEdit):
                 w.setText(str(p_zul))
+            self._set_card_disabled("spline.p_allowable_mpa", True)
+        else:
+            # "自定义"
+            self._set_card_disabled("spline.p_allowable_mpa", False)
 
     def _on_material_changed(self, field_prefix: str, material_name: str) -> None:
         material = MATERIAL_LIBRARY.get(material_name)
+        e_fid = f"{field_prefix}_e_mpa"
+        nu_fid = f"{field_prefix}_nu"
         if material is None:
+            # "自定义"：恢复可编辑（仅联合模式下生效）
+            if MODE_MAP.get(self._get_value("mode")) == "combined":
+                self._set_card_disabled(e_fid, False)
+                self._set_card_disabled(nu_fid, False)
             return
-
-        e_widget = self._widgets.get(f"{field_prefix}_e_mpa")
-        nu_widget = self._widgets.get(f"{field_prefix}_nu")
+        # 非自定义：自动填充 + 蓝色样式
+        e_widget = self._widgets.get(e_fid)
+        nu_widget = self._widgets.get(nu_fid)
         if isinstance(e_widget, QLineEdit):
             e_widget.setText(str(material["e_mpa"]))
         if isinstance(nu_widget, QLineEdit):
             nu_widget.setText(str(material["nu"]))
+        self._set_card_disabled(e_fid, True)
+        self._set_card_disabled(nu_fid, True)
 
     def _get_value(self, field_id: str) -> str:
         w = self._widgets.get(field_id)
