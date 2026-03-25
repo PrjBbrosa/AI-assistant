@@ -49,7 +49,8 @@ tests/                 # pytest 测试
 2. **每模块一个 calculator**: `core/<module>/calculator.py` 包含 `InputError` 异常类、`_require`/`_positive` 验证辅助函数、主计算函数。
 3. **UI 页面模式**: 每个模块页面在 `app/ui/pages/` 下，使用 `FieldSpec` 数据类描述字段元信息（id、label、unit、hint、mapping、widget_type、default）。`mapping` 为 `(section, key)` 元组时，该字段参与计算 payload 构建；为 `None` 时仅用于 UI 记录或占位。
 4. **暖色调主题**: 全局 QSS 在 `theme.py`，使用 `#F7F5F2` 背景 / `#D97757` 主色 / `#EED9CF` 选中色。ObjectName 驱动样式（Card、SubCard、PassBadge、FailBadge 等）。
-5. **输入条件持久化**: 通过 `input_condition_store.py` 统一保存/加载 JSON 文件到 `saved_inputs/` 目录。
+5. **自动填充字段蓝色标识**: 凡由下拉联动、查表、材料选择等逻辑自动填充的输入字段，必须使用 `AutoCalcCard` 样式（蓝灰色背景 `#EDF1F5`，蓝灰文字 `#3A4F63`），与手动输入的 `SubCard` 区分。所有模块（螺栓、过盈、花键等）保持一致。通过 `card.setObjectName("AutoCalcCard")` + `style().unpolish/polish` 切换样式，`QLineEdit` 设为 `setReadOnly(True)`，`QComboBox` 设为 `setEnabled(False)`。
+6. **输入条件持久化**: 通过 `input_condition_store.py` 统一保存/加载 JSON 文件到 `saved_inputs/` 目录。
 
 ## Claude 工作流程
 - **对话语言以中文为主**，包括回复、汇报、提问均使用中文；代码和变量名保持英文。
