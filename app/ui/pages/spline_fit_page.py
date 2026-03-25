@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.pages.base_chapter_page import BaseChapterPage
+from app.ui.widgets.press_force_curve import PressForceCurveWidget
 from core.spline.calculator import InputError, calculate_spline_fit
 from core.spline.din5480_table import all_designations, lookup_by_designation
 
@@ -374,6 +375,7 @@ class SplineFitPage(BaseChapterPage):
 
         self._last_result: dict | None = None
         self._last_payload: dict | None = None
+        self.curve_widget: PressForceCurveWidget | None = None
 
         calc_btn = self.add_action_button("计算", primary=True)
         calc_btn.clicked.connect(self._on_calculate)
@@ -500,6 +502,10 @@ class SplineFitPage(BaseChapterPage):
             self._result_labels[f"{scenario}_detail"] = detail
             layout.addWidget(card)
 
+        self.curve_widget = PressForceCurveWidget()
+        self.curve_widget.setVisible(False)
+        layout.addWidget(self.curve_widget)
+
     def _set_card_disabled(self, field_id: str, disabled: bool) -> None:
         """Toggle a field card between normal SubCard and disabled AutoCalcCard style."""
         card = self._field_cards.get(field_id)
@@ -523,6 +529,8 @@ class SplineFitPage(BaseChapterPage):
             self._set_card_disabled(fid, not is_combined)
         for fid in ("checks.slip_safety_min", "checks.stress_safety_min"):
             self._set_card_disabled(fid, not is_combined)
+        if self.curve_widget is not None:
+            self.curve_widget.setVisible(False)
 
     def _on_standard_designation_changed(self, text: str) -> None:
         is_standard = (text != "自定义")
@@ -658,12 +666,22 @@ class SplineFitPage(BaseChapterPage):
                 f"打滑扭矩 T_min = {b['capacity']['torque_min_nm']:.1f} N*m, "
                 f"有效长度 = {b['effective_fit_length_mm']:.1f} mm"
             )
+            curve = b["press_force_curve"]
+            self.curve_widget.set_curve(
+                curve["interference_um"],
+                curve["force_n"],
+                curve["delta_min_um"],
+                curve["delta_max_um"],
+                curve.get("delta_required_um", 0.0),
+            )
+            self.curve_widget.setVisible(True)
         else:
             b_badge.setText("未启用")
             b_badge.setObjectName("WaitBadge")
             b_badge.style().unpolish(b_badge)
             b_badge.style().polish(b_badge)
             b_detail.setText("仅花键模式，光滑段过盈校核已跳过。")
+            self.curve_widget.setVisible(False)
 
         if result["overall_pass"]:
             status_text = "PRECHECK PASS" if result.get("overall_verdict_level") == "simplified_precheck" else "ALL PASS"
