@@ -786,6 +786,8 @@ class WormGearPage(BaseChapterPage):
         self.set_current_chapter(self.chapter_stack.count() - 1)
 
     def _export_report(self) -> None:
+        # Recalculate from current UI inputs to ensure exported data is up-to-date
+        self._calculate()
         if self._last_result is None:
             QMessageBox.warning(self, "无结果", "请先执行计算。")
             return

@@ -2674,6 +2674,8 @@ class BoltPage(QWidget):
         return recs
 
     def _save_report(self) -> None:
+        # Recalculate from current UI inputs to ensure exported data is up-to-date
+        self._calculate()
         if self._last_result is None or self._last_payload is None:
             QMessageBox.information(self, "无结果", "请先执行校核计算。")
             return
