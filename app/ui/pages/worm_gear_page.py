@@ -31,15 +31,17 @@ from app.ui.input_condition_store import (
     write_input_conditions,
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
+from app.ui.widgets.latex_label import LatexLabel
 from app.ui.widgets.worm_geometry_overview import WormGeometryOverviewWidget
 from app.ui.widgets.worm_performance_curve import WormPerformanceCurveWidget
+from app.ui.widgets.worm_stress_curve import WormStressCurveWidget
 from core.worm.calculator import InputError, calculate_worm_geometry
 
 
 LOAD_CAPACITY_OPTIONS = (
-    "DIN 3996 Method B",
-    "ISO/TR 14521 Method B",
-    "Niemann",
+    "DIN 3996 Method A -- 基于实验/FEM，精度最高",
+    "DIN 3996 Method B -- 标准解析计算（推荐）",
+    "DIN 3996 Method C -- 简化估算",
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -83,7 +85,7 @@ BASIC_SETTINGS_FIELDS = [
         "当前版本各方法计算逻辑相同，仅作标记用途。",
         widget_type="choice",
         options=LOAD_CAPACITY_OPTIONS,
-        default="DIN 3996 Method B",
+        default="DIN 3996 Method B -- 标准解析计算（推荐）",
     ),
 ]
 
@@ -96,7 +98,7 @@ WORM_GEOMETRY_FIELDS = [
         "geometry.handedness",
         "旋向",
         "-",
-        "按 manual 保留旋向记录项。",
+        "仅记录用，不参与计算。",
         widget_type="choice",
         options=("右旋", "左旋"),
         default="右旋",
@@ -141,7 +143,7 @@ MATERIAL_FIELDS = [
 ]
 
 OPERATING_FIELDS = [
-    FieldSpec("operating.power_kw", "输入功率 P", "kW", "输入轴功率。", default="3.0"),
+    FieldSpec("operating.input_torque_nm", "输入扭矩 T1", "Nm", "蜗杆轴输入扭矩。", default="19.76"),
     FieldSpec("operating.speed_rpm", "输入转速 n", "rpm", "蜗杆轴转速。", default="1450"),
     FieldSpec("operating.application_factor", "使用系数 KA", "-", "工况冲击影响的简化系数。", default="1.25"),
     FieldSpec("operating.torque_ripple_percent", "扭矩波动", "%", "围绕名义扭矩的峰值波动幅值。", default="0.0"),
@@ -149,7 +151,7 @@ OPERATING_FIELDS = [
         "operating.lubrication",
         "润滑方式",
         "-",
-        "润滑记录项。",
+        "仅记录用，不参与计算。",
         widget_type="choice",
         options=("油浴润滑", "飞溅润滑", "强制润滑"),
         default="油浴润滑",
@@ -188,7 +190,7 @@ WORM_DIMENSION_FIELDS = [
 ]
 
 WHEEL_DIMENSION_FIELDS = [
-    ("pitch_diameter_mm", "分度圆直径 d2", "mm", "由中心距与蜗杆分度圆自动计算。"),
+    ("pitch_diameter_mm", "分度圆直径 d2", "mm", "由 d2 = z2 × m 自动计算。"),
     ("tip_diameter_mm", "顶圆直径 da2", "mm", "按首版近似关系自动计算。"),
     ("root_diameter_mm", "根圆直径 df2", "mm", "按首版近似关系自动计算。"),
     ("tooth_height_mm", "齿高 h", "mm", "按首版近似关系自动计算。"),
@@ -394,7 +396,7 @@ class WormGearPage(BaseChapterPage):
         parent: QWidget,
     ) -> QFrame:
         card = QFrame(parent)
-        card.setObjectName("SubCard")
+        card.setObjectName("AutoCalcCard")
         layout = QVBoxLayout(card)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
@@ -405,7 +407,7 @@ class WormGearPage(BaseChapterPage):
 
         for key, label_text, unit_text, hint_text in fields:
             row_card = QFrame(card)
-            row_card.setObjectName("SubCard")
+            row_card.setObjectName("AutoCalcCard")
             row = QGridLayout(row_card)
             row.setContentsMargins(12, 10, 12, 10)
             row.setHorizontalSpacing(10)
@@ -416,6 +418,7 @@ class WormGearPage(BaseChapterPage):
             value_label = QLabel("待输入", row_card)
             value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             value_label.setObjectName("SectionHint")
+            value_label.setStyleSheet("color: #3A4F63; font-weight: 600;")
             unit = QLabel(unit_text, row_card)
             unit.setObjectName("SectionHint")
             hint = QLabel(hint_text, row_card)
@@ -480,8 +483,10 @@ class WormGearPage(BaseChapterPage):
 
         self.geometry_overview = WormGeometryOverviewWidget(container)
         self.performance_curve = WormPerformanceCurveWidget(container)
+        self.stress_curve = WormStressCurveWidget(container)
         body.addWidget(self.geometry_overview)
         body.addWidget(self.performance_curve)
+        body.addWidget(self.stress_curve)
         body.addStretch(1)
 
         self.graphics_scroll_area.setWidget(container)
@@ -512,12 +517,79 @@ class WormGearPage(BaseChapterPage):
         self.load_capacity_metrics.setReadOnly(True)
         self.load_capacity_metrics.setMinimumHeight(240)
         self.load_capacity_metrics.setPlainText("尚无 Load Capacity 结果。")
+
+        self._check_badges: dict[str, tuple[QLabel, QLabel]] = {}
+        badges_card = QFrame(page)
+        badges_card.setObjectName("SubCard")
+        badges_layout = QVBoxLayout(badges_card)
+        badges_layout.setContentsMargins(12, 12, 12, 12)
+        badges_layout.setSpacing(6)
+        badges_title = QLabel("校核徽章", badges_card)
+        badges_title.setObjectName("SubSectionTitle")
+        badges_layout.addWidget(badges_title)
+        for key, label_text in [
+            ("contact_ok", "齿面应力校核"),
+            ("root_ok", "齿根应力校核"),
+            ("geometry_consistent", "几何一致性"),
+        ]:
+            row = QHBoxLayout()
+            name_label = QLabel(label_text, badges_card)
+            name_label.setObjectName("SectionHint")
+            badge = QLabel("待计算", badges_card)
+            badge.setObjectName("WaitBadge")
+            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            badge.setFixedHeight(28)
+            row.addWidget(name_label)
+            row.addStretch(1)
+            row.addWidget(badge)
+            badges_layout.addLayout(row)
+            self._check_badges[key] = (name_label, badge)
+
+        overall_row = QHBoxLayout()
+        overall_name = QLabel("总体校核", badges_card)
+        overall_name.setObjectName("SubSectionTitle")
+        self._overall_lc_badge = QLabel("待计算", badges_card)
+        self._overall_lc_badge.setObjectName("WaitBadge")
+        self._overall_lc_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._overall_lc_badge.setFixedHeight(28)
+        overall_row.addWidget(overall_name)
+        overall_row.addStretch(1)
+        overall_row.addWidget(self._overall_lc_badge)
+        badges_layout.addLayout(overall_row)
+
         layout.addWidget(title)
         layout.addWidget(hint)
         layout.addWidget(self.load_capacity_status, 0, Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(self.load_capacity_note)
         self._lc_params_card = self._create_group_input_card("Method B 最小子集参数", LOAD_CAPACITY_PARAMETER_FIELDS, page)
         layout.addWidget(self._lc_params_card)
+        layout.addWidget(badges_card)
+
+        formulas_card = QFrame(page)
+        formulas_card.setObjectName("AutoCalcCard")
+        formulas_layout = QVBoxLayout(formulas_card)
+        formulas_layout.setContentsMargins(12, 12, 12, 12)
+        formulas_layout.setSpacing(8)
+
+        formulas_title = QLabel("校核公式", formulas_card)
+        formulas_title.setObjectName("SubSectionTitle")
+        formulas_layout.addWidget(formulas_title)
+
+        self._latex_hertz = LatexLabel(formulas_card)
+        self._latex_hertz.set_latex(
+            r"$\sigma_H = \sqrt{\frac{F_n \cdot E^*}{\pi \cdot L_c \cdot \rho_{eq}}}$",
+            fontsize=16,
+        )
+        formulas_layout.addWidget(self._latex_hertz)
+
+        self._latex_root = LatexLabel(formulas_card)
+        self._latex_root.set_latex(
+            r"$\sigma_F = \frac{F_t \cdot h}{W_{section}}$",
+            fontsize=16,
+        )
+        formulas_layout.addWidget(self._latex_root)
+
+        layout.addWidget(formulas_card)
         layout.addWidget(self.load_capacity_metrics)
         layout.addStretch(1)
         self.add_chapter("Load Capacity", page)
@@ -674,6 +746,7 @@ class WormGearPage(BaseChapterPage):
             geometry = calculate_worm_geometry(payload)["geometry"]
         except (InputError, ValueError):
             self._reset_dimension_preview_labels()
+            self.set_info("输入不完整或无效，预览已重置")
             return
 
         self._set_dimension_group_values(self.worm_dimension_labels, geometry.get("worm_dimensions", {}), WORM_DIMENSION_FIELDS)
@@ -702,6 +775,13 @@ class WormGearPage(BaseChapterPage):
             return f"{value:.3f}"
         return f"{value:.3f} {unit_text}"
 
+    def _set_badge(self, label: QLabel, text: str, level: str) -> None:
+        label.setText(text)
+        obj_name = "PassBadge" if level == "pass" else ("FailBadge" if level == "fail" else "WaitBadge")
+        label.setObjectName(obj_name)
+        label.style().unpolish(label)
+        label.style().polish(label)
+
     def _calculate(self) -> None:
         try:
             payload = self._build_payload()
@@ -726,9 +806,21 @@ class WormGearPage(BaseChapterPage):
         ripple = load_capacity.get("torque_ripple", {})
         warnings = load_capacity.get("warnings", [])
         checks = load_capacity.get("checks", {})
+        lc_enabled = bool(load_capacity.get("enabled", len(checks) > 0))
 
         self.result_title.setText("已完成蜗杆副几何、基础性能与 Method B 最小校核")
         self.result_summary.setText("当前版本已输出几何结果、效率估算、齿面应力、齿根应力和扭矩波动摘要。")
+
+        # W-03: 当 LC 未启用时，应力/力/扭矩显示"未启用"而非 0.000
+        if lc_enabled:
+            sigma_hm_line = f"齿面应力 sigma_Hm = {contact.get('sigma_hm_peak_mpa', 0.0):.3f} MPa"
+            sigma_f_line = f"齿根应力 sigma_F = {root.get('sigma_f_peak_mpa', 0.0):.3f} MPa"
+            ripple_line = f"扭矩波动 peak = {ripple.get('output_torque_peak_nm', 0.0):.3f} N·m"
+        else:
+            sigma_hm_line = "齿面应力 sigma_Hm = 未启用"
+            sigma_f_line = "齿根应力 sigma_F = 未启用"
+            ripple_line = "扭矩波动 peak = 未启用"
+
         self.result_metrics.setPlainText(
             "\n".join(
                 [
@@ -739,12 +831,13 @@ class WormGearPage(BaseChapterPage):
                     f"蜗轮分度圆直径 d2 = {wheel_dimensions['pitch_diameter_mm']:.3f} mm",
                     f"导程角 gamma = {geometry['lead_angle_deg']:.3f} deg",
                     f"效率估算 eta = {performance['efficiency_estimate']:.4f}",
+                    f"输入功率 P1 = {performance['input_power_kw']:.4f} kW（反算）",
                     f"输出功率 P2 = {performance['output_power_kw']:.4f} kW",
                     f"输出扭矩 T2 = {performance['output_torque_nm']:.3f} N·m",
                     f"损失功率 = {performance['power_loss_kw']:.4f} kW",
-                    f"齿面应力 sigma_Hm = {contact.get('sigma_hm_peak_mpa', 0.0):.3f} MPa",
-                    f"齿根应力 sigma_F = {root.get('sigma_f_peak_mpa', 0.0):.3f} MPa",
-                    f"扭矩波动 peak = {ripple.get('output_torque_peak_nm', 0.0):.3f} N·m",
+                    sigma_hm_line,
+                    sigma_f_line,
+                    ripple_line,
                 ]
             )
         )
@@ -755,33 +848,69 @@ class WormGearPage(BaseChapterPage):
             thermal_capacity_kw=curve["thermal_capacity_kw"],
             current_index=curve["current_index"],
         )
+        stress_curve_data = load_capacity.get("stress_curve", {})
+        if stress_curve_data and stress_curve_data.get("theta_deg"):
+            self.stress_curve.set_curves(
+                theta_deg=stress_curve_data["theta_deg"],
+                sigma_h_mpa=stress_curve_data["sigma_h_mpa"],
+                sigma_f_mpa=stress_curve_data["sigma_f_mpa"],
+                sigma_h_nominal_mpa=stress_curve_data.get("sigma_h_nominal_mpa", 0.0),
+                sigma_f_nominal_mpa=stress_curve_data.get("sigma_f_nominal_mpa", 0.0),
+            )
         self.geometry_overview.set_display_state(
             "几何总览",
             f"i={geometry['ratio']:.2f}，a={geometry['center_distance_mm']:.1f} mm，gamma={geometry['lead_angle_deg']:.1f} deg",
         )
         self.load_capacity_status.setText(load_capacity["status"])
-        self.load_capacity_metrics.setPlainText(
-            "\n".join(
-                [
-                    f"sigma_Hm,nom = {contact.get('sigma_hm_nominal_mpa', 0.0):.3f} MPa",
-                    f"sigma_Hm,peak = {contact.get('sigma_hm_peak_mpa', 0.0):.3f} MPa",
-                    f"SH_peak = {contact.get('safety_factor_peak', 0.0):.3f}",
-                    f"sigma_F,nom = {root.get('sigma_f_nominal_mpa', 0.0):.3f} MPa",
-                    f"sigma_F,peak = {root.get('sigma_f_peak_mpa', 0.0):.3f} MPa",
-                    f"SF_peak = {root.get('safety_factor_peak', 0.0):.3f}",
-                    f"T2_nom = {ripple.get('output_torque_nominal_nm', 0.0):.3f} N·m",
-                    f"T2_rms = {ripple.get('output_torque_rms_nm', 0.0):.3f} N·m",
-                    f"T2_peak = {ripple.get('output_torque_peak_nm', 0.0):.3f} N·m",
-                    f"几何一致性 = {'通过' if checks.get('geometry_consistent', False) else '存在警告'}",
-                    *[f"warning: {msg}" for msg in warnings],
-                ]
-            )
-        )
-        self._refresh_derived_geometry_preview()
-        if checks.get("contact_ok", False) and checks.get("root_ok", False):
-            self.set_overall_status("Load Capacity 通过", "pass")
+
+        # W-03: LC 未启用时，负载能力详情区显示"未计算"占位
+        if lc_enabled:
+            lc_metrics_lines = [
+                f"sigma_Hm,nom = {contact.get('sigma_hm_nominal_mpa', 0.0):.3f} MPa",
+                f"sigma_Hm,peak = {contact.get('sigma_hm_peak_mpa', 0.0):.3f} MPa",
+                f"SH_peak = {contact.get('safety_factor_peak', 0.0):.3f}",
+                f"sigma_F,nom = {root.get('sigma_f_nominal_mpa', 0.0):.3f} MPa",
+                f"sigma_F,peak = {root.get('sigma_f_peak_mpa', 0.0):.3f} MPa",
+                f"SF_peak = {root.get('safety_factor_peak', 0.0):.3f}",
+                f"T2_nom = {ripple.get('output_torque_nominal_nm', 0.0):.3f} N·m",
+                f"T2_rms = {ripple.get('output_torque_rms_nm', 0.0):.3f} N·m",
+                f"T2_peak = {ripple.get('output_torque_peak_nm', 0.0):.3f} N·m",
+                f"几何一致性 = {'通过' if checks.get('geometry_consistent', False) else '存在警告'}",
+                *[f"warning: {msg}" for msg in warnings],
+            ]
         else:
-            self.set_overall_status("Load Capacity 需复核", "wait")
+            lc_metrics_lines = [
+                "负载能力校核：未启用",
+                "如需校核齿面/齿根安全系数，请在【基本设置】中启用 Load Capacity 页。",
+                *[f"warning: {msg}" for msg in warnings],
+            ]
+
+        self.load_capacity_metrics.setPlainText("\n".join(lc_metrics_lines))
+        self._refresh_derived_geometry_preview()
+
+        # W-03 + W-02: LC 未启用时不显示通过/不通过徽章；几何不一致时总体为不通过
+        if lc_enabled:
+            for key, (_, badge) in self._check_badges.items():
+                ok = checks.get(key, False)
+                self._set_badge(badge, "通过" if ok else "不通过", "pass" if ok else "fail")
+            # W-02: 总体判定纳入 geometry_consistent
+            geometry_ok = checks.get("geometry_consistent", False)
+            overall_lc_ok = geometry_ok and checks.get("contact_ok", False) and checks.get("root_ok", False)
+            self._set_badge(
+                self._overall_lc_badge,
+                "总体通过" if overall_lc_ok else "总体不通过",
+                "pass" if overall_lc_ok else "fail",
+            )
+            if overall_lc_ok:
+                self.set_overall_status("Load Capacity 通过", "pass")
+            else:
+                self.set_overall_status("Load Capacity 需复核", "wait")
+        else:
+            # LC 未启用：徽章显示"未启用"，整体状态为等待
+            for _key, (_, badge) in self._check_badges.items():
+                self._set_badge(badge, "未启用", "wait")
+            self._set_badge(self._overall_lc_badge, "未启用", "wait")
+            self.set_overall_status("Load Capacity 未启用", "wait")
         self.set_info("已完成蜗杆副几何、基础性能与 Method B 最小子集计算。")
         self.set_current_chapter(self.chapter_stack.count() - 1)
 

@@ -24,7 +24,7 @@
     "wheel_nu": 0.36
   },
   "operating": {
-    "power_kw": 5.5,
+    "input_torque_nm": 54.74,
     "speed_rpm": 960.0,
     "application_factor": 1.5,
     "torque_ripple_percent": 20.0,

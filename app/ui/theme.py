@@ -12,7 +12,7 @@ def apply_theme(app: QApplication) -> None:
         QWidget {
             background-color: #F7F5F2;
             color: #1F1D1A;
-            font-family: "Avenir Next", "SF Pro Text", "Segoe UI", sans-serif;
+            font-family: "Avenir Next", "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
             font-size: 13px;
         }
         QMainWindow {

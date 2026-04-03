@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.pages.bolt_page import BoltPage
+from app.ui.pages.bolt_tapped_axial_page import BoltTappedAxialPage
 from app.ui.pages.hertz_contact_page import HertzContactPage
 from app.ui.pages.interference_fit_page import InterferenceFitPage
 from app.ui.pages.placeholder_page import PlaceholderPage
@@ -61,6 +62,7 @@ class MainWindow(QMainWindow):
 
         self.modules: List[ModuleSpec] = [
             ("螺栓连接", BoltPage(self)),
+            ("轴向受力螺纹连接", BoltTappedAxialPage(self)),
             ("过盈配合", InterferenceFitPage(self)),
             ("花键过盈配合", SplineFitPage(self)),
             ("蜗轮蜗杆设计", WormGearPage(self)),
