@@ -89,7 +89,7 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     if lead_angle_deg > 45:
         raise InputError(f"导程角必须 <= 45 deg，当前值 {lead_angle_deg}")
 
-    power_kw = _positive(float(_require(operating, "power_kw", "operating")), "operating.power_kw")
+    input_torque_nm = _positive(float(_require(operating, "input_torque_nm", "operating")), "operating.input_torque_nm")
     speed_rpm = _positive(float(_require(operating, "speed_rpm", "operating")), "operating.speed_rpm")
     application_factor = _positive(
         float(operating.get("application_factor", 1.0)),
@@ -143,7 +143,7 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     wheel_speed_rpm = speed_rpm / ratio
     wheel_pitch_line_speed_mps = math.pi * pitch_diameter_wheel_mm * wheel_speed_rpm / 60000.0
 
-    input_torque_nm = 9550.0 * power_kw / max(speed_rpm, 1e-6)
+    power_kw = input_torque_nm * speed_rpm / 9550.0
 
     friction_override = advanced.get("friction_override", "")
     if friction_override in ("", None):
@@ -153,7 +153,22 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
         if not (0.01 <= friction_mu <= 0.30):
             raise InputError(f"摩擦系数覆盖值必须在 0.01~0.30 范围内，当前值 {friction_mu}")
     efficiency_estimate = math.tan(lead_angle_calc_rad) / math.tan(lead_angle_calc_rad + math.atan(friction_mu))
-    efficiency_estimate = _fraction(min(0.98, max(0.30, efficiency_estimate)), "performance.efficiency_estimate")
+    # Apply only physical upper limit (lossless is impossible); no lower clamp — caller sees true value.
+    efficiency_estimate = min(0.98, efficiency_estimate)
+
+    # Collect performance-level warnings (does not modify computed values)
+    performance_warnings: list[str] = []
+    if efficiency_estimate <= 0:
+        performance_warnings.append(
+            f"效率估算值 eta={efficiency_estimate:.4f} <= 0，蜗轮副在当前导程角 gamma={lead_angle_calc_deg:.2f} deg"
+            f" 和摩擦系数 mu={friction_mu:.3f} 下处于自锁状态，功率无法从蜗杆传递至蜗轮。"
+        )
+    elif efficiency_estimate < 0.30:
+        performance_warnings.append(
+            f"效率估算值 eta={efficiency_estimate:.4f} 异常偏低（< 0.30），"
+            f"对应导程角 gamma={lead_angle_calc_deg:.2f} deg、摩擦系数 mu={friction_mu:.3f}，"
+            f"请确认设计参数是否合理。"
+        )
 
     output_power_kw = power_kw * efficiency_estimate
     power_loss_kw = power_kw - output_power_kw
@@ -265,6 +280,7 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
         "output_torque_nm": output_torque_nm,
         "friction_mu": friction_mu,
         "application_factor": application_factor,
+        "warnings": performance_warnings,
     }
     curve_out: Dict[str, Any] = {
         "load_factor": load_factors,

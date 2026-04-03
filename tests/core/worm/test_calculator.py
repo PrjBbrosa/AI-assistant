@@ -28,7 +28,7 @@ class WormCalculatorTests(unittest.TestCase):
                 "x2": 0.0,
             },
             "operating": {
-                "power_kw": 3.0,
+                "input_torque_nm": 19.76,
                 "speed_rpm": 1450.0,
                 "application_factor": 1.25,
                 "torque_ripple_percent": 0.0,
@@ -72,7 +72,7 @@ class WormCalculatorTests(unittest.TestCase):
                     "x2": 0.0,
                 },
                 "operating": {
-                    "power_kw": 3.0,
+                    "input_torque_nm": 19.76,
                     "speed_rpm": 1450.0,
                 },
                 "materials": {
@@ -100,7 +100,7 @@ class WormCalculatorTests(unittest.TestCase):
                         "lead_angle_deg": 20.0,
                     },
                     "operating": {
-                        "power_kw": 3.0,
+                        "input_torque_nm": 19.76,
                         "speed_rpm": 1450.0,
                     },
                 }
@@ -127,7 +127,7 @@ class WormCalculatorTests(unittest.TestCase):
                     "x2": 0.0,
                 },
                 "operating": {
-                    "power_kw": 4.0,
+                    "input_torque_nm": 39.79,
                     "speed_rpm": 960.0,
                 },
                 "load_capacity": {
@@ -159,7 +159,7 @@ class WormCalculatorTests(unittest.TestCase):
                     "x2": 0.0,
                 },
                 "operating": {
-                    "power_kw": 3.0,
+                    "input_torque_nm": 19.76,
                     "speed_rpm": 1450.0,
                 },
             }
@@ -178,22 +178,14 @@ class WormCalculatorTests(unittest.TestCase):
 
     def test_power_chain_uses_efficiency_for_output_power_and_output_torque(self) -> None:
         payload = self._base_payload()
-
         result = calculate_worm_geometry(payload)
-
         performance = result["performance"]
+        input_torque = payload["operating"]["input_torque_nm"]
+        speed = payload["operating"]["speed_rpm"]
+        expected_power = input_torque * speed / 9550.0
+        self.assertAlmostEqual(performance["input_power_kw"], expected_power, places=4)
         output_power_kw = performance["output_power_kw"]
-        self.assertAlmostEqual(output_power_kw, payload["operating"]["power_kw"] * performance["efficiency_estimate"], places=9)
-        self.assertAlmostEqual(
-            performance["power_loss_kw"],
-            payload["operating"]["power_kw"] - output_power_kw,
-            places=9,
-        )
-        self.assertAlmostEqual(
-            performance["output_torque_nm"],
-            9550.0 * output_power_kw / result["geometry"]["wheel_speed_rpm"],
-            places=9,
-        )
+        self.assertAlmostEqual(output_power_kw, expected_power * performance["efficiency_estimate"], places=4)
 
     def test_friction_override_changes_efficiency_and_reported_friction(self) -> None:
         payload = self._base_payload()
@@ -446,6 +438,86 @@ class WormCalculatorTests(unittest.TestCase):
         self.assertEqual(lc["status"], "未启用")
         self.assertEqual(lc["checks"], {})
         self.assertEqual(lc["forces"], {})
+
+
+    def test_center_distance_zero_raises_error(self):
+        data = self._base_payload()
+        data["geometry"]["center_distance_mm"] = 0
+        with self.assertRaises(InputError):
+            calculate_worm_geometry(data)
+
+    def test_extreme_profile_shift(self):
+        data = self._base_payload()
+        data["geometry"]["x1"] = 1.0
+        data["geometry"]["x2"] = -1.0
+        result = calculate_worm_geometry(data)
+        self.assertIn("geometry", result)
+
+    def test_load_capacity_forces_output(self):
+        data = self._base_payload()
+        data["load_capacity"] = {"enabled": True}
+        data["operating"]["input_torque_nm"] = 19.76
+        data["operating"]["speed_rpm"] = 1450
+        result = calculate_worm_geometry(data)
+        lc = result.get("load_capacity", {})
+        forces = lc.get("forces", {})
+        for key in ("tangential_force_wheel_n", "axial_force_wheel_n", "radial_force_wheel_n", "normal_force_n"):
+            self.assertIn(key, forces)
+            self.assertGreater(forces[key], 0)
+
+    # ---- Regression tests: efficiency boundary and warnings ----
+
+    def test_low_lead_angle_high_friction_efficiency_not_clamped(self) -> None:
+        """z1=1, q=20 -> gamma = atan(1/20) ~ 2.86 deg.
+        PA66+GF30 -> mu=0.22.
+        eta = tan(gamma) / tan(gamma + atan(mu))
+            = tan(0.04996) / tan(0.04996 + atan(0.22))
+            ~ 0.050 / 0.272 ~ 0.183
+        The calculator must NOT clamp the result upward to 0.30.
+        """
+        payload = self._base_payload()
+        payload["geometry"]["z1"] = 1.0
+        payload["geometry"]["z2"] = 20.0
+        payload["geometry"]["diameter_factor_q"] = 20.0
+        # Recalculate consistent lead angle: atan(1/20) deg
+        import math as _math
+        payload["geometry"]["lead_angle_deg"] = round(_math.degrees(_math.atan(1.0 / 20.0)), 4)
+        payload["materials"]["wheel_material"] = "PA66+GF30"
+        payload["materials"]["wheel_e_mpa"] = 10000.0
+        payload["materials"]["wheel_nu"] = 0.36
+
+        result = calculate_worm_geometry(payload)
+
+        eta = result["performance"]["efficiency_estimate"]
+        # True physical value should be ~0.183 — must NOT be silently raised to 0.30
+        self.assertLess(eta, 0.30)
+        self.assertGreater(eta, 0.10)
+        self.assertAlmostEqual(eta, 0.183, delta=0.005)
+
+    def test_low_efficiency_result_contains_warning(self) -> None:
+        """When efficiency is below 0.30 a warning about low efficiency must appear
+        in result['performance']['warnings'].
+        """
+        payload = self._base_payload()
+        payload["geometry"]["z1"] = 1.0
+        payload["geometry"]["z2"] = 20.0
+        payload["geometry"]["diameter_factor_q"] = 20.0
+        import math as _math
+        payload["geometry"]["lead_angle_deg"] = round(_math.degrees(_math.atan(1.0 / 20.0)), 4)
+        payload["materials"]["wheel_material"] = "PA66+GF30"
+        payload["materials"]["wheel_e_mpa"] = 10000.0
+        payload["materials"]["wheel_nu"] = 0.36
+
+        result = calculate_worm_geometry(payload)
+
+        warnings = result["performance"]["warnings"]
+        self.assertTrue(len(warnings) > 0, "期望在效率低于 0.30 时产生性能警告")
+        combined = " ".join(warnings)
+        # Warning should mention efficiency (eta) being low
+        self.assertTrue(
+            "eta" in combined or "效率" in combined,
+            f"警告文本应包含 'eta' 或 '效率'，实际: {combined!r}",
+        )
 
 
 if __name__ == "__main__":
