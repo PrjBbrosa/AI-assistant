@@ -520,5 +520,48 @@ class WormCalculatorTests(unittest.TestCase):
         )
 
 
+    # ---- Task 4 tests: mesh stress variation curve ----
+
+    def test_stress_curve_output_has_correct_shape(self) -> None:
+        payload = self._base_payload()
+        result = calculate_worm_geometry(payload)
+        sc = result["load_capacity"]["stress_curve"]
+        self.assertIn("theta_deg", sc)
+        self.assertIn("sigma_h_mpa", sc)
+        self.assertIn("sigma_f_mpa", sc)
+        n = len(sc["theta_deg"])
+        self.assertGreaterEqual(n, 100)
+        self.assertEqual(len(sc["sigma_h_mpa"]), n)
+        self.assertEqual(len(sc["sigma_f_mpa"]), n)
+        self.assertAlmostEqual(sc["theta_deg"][0], 0.0, places=1)
+        self.assertAlmostEqual(sc["theta_deg"][-1], 360.0, delta=2.0)
+
+    def test_stress_curve_has_z1_peaks_per_revolution(self) -> None:
+        payload = self._base_payload()
+        result = calculate_worm_geometry(payload)
+        sc = result["load_capacity"]["stress_curve"]
+        self.assertEqual(sc["mesh_frequency_per_rev"], 2)
+        sigma_h = sc["sigma_h_mpa"]
+        peaks = sum(
+            1 for i in range(1, len(sigma_h) - 1)
+            if sigma_h[i] > sigma_h[i - 1] and sigma_h[i] > sigma_h[i + 1]
+        )
+        self.assertEqual(peaks, 2)
+
+    def test_stress_curve_peak_exceeds_nominal(self) -> None:
+        payload = self._base_payload()
+        result = calculate_worm_geometry(payload)
+        sc = result["load_capacity"]["stress_curve"]
+        self.assertGreaterEqual(sc["sigma_h_peak_mpa"], sc["sigma_h_nominal_mpa"])
+        self.assertGreaterEqual(sc["sigma_f_peak_mpa"], sc["sigma_f_nominal_mpa"])
+
+    def test_stress_curve_not_present_when_lc_disabled(self) -> None:
+        payload = self._base_payload()
+        payload["load_capacity"]["enabled"] = False
+        result = calculate_worm_geometry(payload)
+        sc = result["load_capacity"].get("stress_curve", {})
+        self.assertEqual(sc, {})
+
+
 if __name__ == "__main__":
     unittest.main()
