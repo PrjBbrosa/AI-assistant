@@ -2,7 +2,7 @@
 
 ## 项目概述
 本地桌面机械设计计算工具，基于 PySide6 构建。提供工程校核表单界面，面向个人/小团队日常设计验算。
-当前已实现：螺栓连接（VDI 2230）、过盈配合（DIN 7190）、赫兹接触应力、蜗轮几何（DIN 3975）。
+当前已实现：螺栓连接（VDI 2230）、过盈配合（DIN 7190）、赫兹接触应力、蜗轮几何（DIN 3975）、轴向受力螺纹连接。
 
 ## 技术栈
 - **语言**: Python 3.12
@@ -15,6 +15,7 @@
 ```
 core/                  # 纯计算逻辑，不依赖 Qt
   bolt/calculator.py       # VDI 2230 核心校核
+  bolt/tapped_axial_joint.py  # 轴向受力螺纹连接
   interference/calculator.py  # 圆柱面过盈配合
   hertz/calculator.py      # 赫兹接触应力
   worm/calculator.py       # DIN 3975 蜗轮几何
@@ -26,6 +27,7 @@ app/
     input_condition_store.py  # 输入条件保存/加载通用逻辑
     pages/             # 各模块 UI 页面
       bolt_page.py         # 螺栓连接（章节式步骤表单）
+      bolt_tapped_axial_page.py  # 轴向受力螺纹连接
       interference_fit_page.py
       hertz_contact_page.py
       worm_gear_page.py
@@ -60,6 +62,19 @@ tests/                 # pytest 测试
 - 新功能开发使用 `superpowers:test-driven-development`，先写测试再写实现。
 - 声称完成前，使用 `superpowers:verification-before-completion` 确认测试通过。
 
+## Agent Team 经验积累
+- **经验文件位置**: `.claude/lessons/` 目录，按角色分文件（`core-lessons.md`、`ui-lessons.md`、`test-lessons.md`、`review-lessons.md`）。
+- **写入时机**: 当用户纠正错误、指出问题、或确认非显而易见的做法时，主会话（编排者）负责将教训写入对应的 lessons 文件。
+- **写入格式**:
+  ```
+  ## YYYY-MM-DD 简短标题
+  - **错误**: 描述犯了什么错
+  - **正确做法**: 应该怎么做
+  - **原因**: 为什么这样做是对的
+  ```
+- **读取时机**: 每个 agent 启动时自动读取自己的 lessons 文件，确保历史教训不会遗忘。
+- **跨角色教训**: 如果一个错误涉及多个角色（如 UI 错误同时需要 reviewer 关注），同时写入相关的所有 lessons 文件。
+
 ## 开发规范
 - 错误信息与 UI 文本使用**中文**。
 - 代码注释在必要时使用中文（解释工程公式背景）。
@@ -86,6 +101,7 @@ python3 src/vdi2230_tool.py --input examples/input_case_01.json
 ## 当前已知限制
 - 螺栓模块：未覆盖螺纹脱扣、完整疲劳谱（FKN 法）、偏心弯矩。
 - 螺栓模块：多层被夹件统一圆柱体模型（不支持逐层锥体/套筒选择），锥台模型仅适用对称夹紧体。
+- 轴向受力螺纹连接：已实现 core 计算（含 ISO/VDI 标准引用）、UI 结果展示、文本/PDF 报告导出。暂不支持横向力、弯矩、多螺栓并联。
 - 蜗轮模块：DIN 3996 负载能力校核未实现。
 
 ## 开发注意事项
