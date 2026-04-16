@@ -158,7 +158,7 @@ def generate_spline_report(
         f"齿面压力 p = {_fmt(a.get('flank_pressure_mpa'), 2, 'MPa')} (许用 {_fmt(a.get('p_allowable_mpa'), 0, 'MPa')})",
         f"安全系数 S = {_fmt(a.get('flank_safety'), 2)} (最小 {_fmt(a.get('flank_safety_min'), 2)})",
         f"扭矩容量 T_cap = {_fmt(a.get('torque_capacity_nm'), 1, 'N*m')}",
-        f"扭矩容量安全系数 S_T = {_fmt(a.get('torque_capacity_sf'), 2)}",
+        f"扭矩容量比 T_cap/T_d = {_fmt(a.get('torque_capacity_sf'), 2)} (与 S 等价)",
     ]
     elems.append(KeepTogether([
         _rstep_card(styles, "齿面承压校核", a_values, passed=a.get("flank_ok")),

@@ -866,8 +866,7 @@ class SplineFitPage(BaseChapterPage):
             f"参考直径 d_B = {a['geometry']['reference_diameter_mm']:.2f} mm, "
             f"齿面压力 p = {a['flank_pressure_mpa']:.1f} MPa, "
             f"许用 p_zul = {a['p_allowable_mpa']:.0f} MPa, "
-            f"安全系数 S = {a['flank_safety']:.2f}, "
-            f"扭矩容量安全系数 S_T = {a['torque_capacity_sf']:.2f}, "
+            f"安全系数 S (= T_cap/T_design) = {a['flank_safety']:.2f}, "
             f"结果级别 = {'简化预校核' if a['overall_verdict_level'] == 'simplified_precheck' else a['overall_verdict_level']}"
         )
 
@@ -965,7 +964,7 @@ class SplineFitPage(BaseChapterPage):
             f"安全系数 S = {a['flank_safety']:.2f}",
             f"扭矩容量 T_cap = {a['torque_capacity_nm']:.1f} N*m",
             f"设计扭矩 T_d = {loads.get('torque_design_nm', 0):.1f} N*m",
-            f"扭矩容量安全系数 S_T = {a['torque_capacity_sf']:.2f}",
+            f"扭矩容量比 T_cap/T_d = {a['torque_capacity_sf']:.2f} (与齿面 S 等价)",
             f"结果: {'通过' if a['flank_ok'] else '不通过'}",
         ]
         b = result.get("scenario_b")
