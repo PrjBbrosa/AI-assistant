@@ -5,18 +5,18 @@ from core.spline.geometry import derive_involute_geometry, GeometryError
 
 class TestDeriveInvoluteGeometry:
     def test_basic_m2_z20(self):
-        """DIN 5480-2 近似：m=2, z=20 -> d=40, d_a1=39.6, d_a2=36.0, d_f1=35.4, h_w=1.8."""
+        """DIN 5480-2 保守近似（h_w=0.5m）：m=2, z=20 -> d=40, d_a1=39, d_a2=37, d_f1=36, h_w=1."""
         r = derive_involute_geometry(
             module_mm=2.0,
             tooth_count=20,
             allow_approximation=True,
         )
         assert r["reference_diameter_mm"] == pytest.approx(40.0)
-        assert r["tip_diameter_shaft_mm"] == pytest.approx(39.6)
-        assert r["root_diameter_shaft_mm"] == pytest.approx(35.4)
-        assert r["tip_diameter_hub_mm"] == pytest.approx(36.0)
-        assert r["effective_tooth_height_mm"] == pytest.approx(1.8)
-        assert r["mean_diameter_mm"] == pytest.approx(37.8)
+        assert r["tip_diameter_shaft_mm"] == pytest.approx(39.0)
+        assert r["root_diameter_shaft_mm"] == pytest.approx(36.0)
+        assert r["tip_diameter_hub_mm"] == pytest.approx(37.0)
+        assert r["effective_tooth_height_mm"] == pytest.approx(1.0)
+        assert r["mean_diameter_mm"] == pytest.approx(38.0)
         assert r["pressure_angle_deg"] == pytest.approx(30.0)
         assert r["geometry_source"] == "approximation_from_module_and_tooth_count"
         assert r["approximation_used"] is True
@@ -32,16 +32,34 @@ class TestDeriveInvoluteGeometry:
         d_f1 = r["root_diameter_shaft_mm"]
         assert d_f1 < d_a2 < d_a1 < d
 
-    def test_approximation_aligns_with_catalog_w25x125(self):
-        """近似 h_w 与 catalog 实测值相对误差 <= 10%."""
+    def test_approximation_is_conservative_for_all_catalog_moduli(self):
+        """近似 h_w 必须 <= 任一 catalog 条目实测值（保证非保守事故不发生）。"""
+        from core.spline.din5480_table import DIN5480_CATALOG
+        for entry in DIN5480_CATALOG:
+            approx = derive_involute_geometry(
+                module_mm=entry["module_mm"],
+                tooth_count=entry["tooth_count"],
+                allow_approximation=True,
+            )
+            h_w_ref = (
+                entry["tip_diameter_shaft_mm"] - entry["tip_diameter_hub_mm"]
+            ) / 2
+            h_w_approx = approx["effective_tooth_height_mm"]
+            assert h_w_approx <= h_w_ref + 1e-9, (
+                f"近似 h_w={h_w_approx} 大于 catalog h_w_ref={h_w_ref} "
+                f"（{entry['designation']}），将低估 p_flank 造成假 PASS。"
+            )
+
+    def test_approximation_catalog_gap_is_bounded(self):
+        """保守近似与最苛刻 catalog 条目（m=2.5/z=8）的偏差 <= 1%。"""
         from core.spline.din5480_table import lookup_by_designation
-        ref = lookup_by_designation("W 25x1.25x18")
+        ref = lookup_by_designation("W 25x2.5x8")
         approx = derive_involute_geometry(
-            module_mm=1.25, tooth_count=18, allow_approximation=True
+            module_mm=2.5, tooth_count=8, allow_approximation=True
         )
         h_w_ref = (ref["tip_diameter_shaft_mm"] - ref["tip_diameter_hub_mm"]) / 2
         h_w_approx = approx["effective_tooth_height_mm"]
-        assert abs(h_w_approx - h_w_ref) / h_w_ref < 0.10
+        assert abs(h_w_approx - h_w_ref) / h_w_ref <= 0.01
 
     def test_public_catalog_w15_x_1_25_x_10_geometry(self):
         """Public DIN 5480 small-size catalog sample: W/N 15 x 1.25 x 10."""

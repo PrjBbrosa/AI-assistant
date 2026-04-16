@@ -42,8 +42,8 @@ class TestScenarioA:
         result = calculate_spline_fit(make_scenario_a_case())
         geo = result["scenario_a"]["geometry"]
         assert geo["reference_diameter_mm"] == pytest.approx(40.0)
-        # DIN 5480-2 近似：h_w = 0.9 m = 1.8
-        assert geo["effective_tooth_height_mm"] == pytest.approx(1.8)
+        # DIN 5480-2 保守近似：h_w = 0.5 m = 1.0
+        assert geo["effective_tooth_height_mm"] == pytest.approx(1.0)
         assert geo["geometry_source"] == "approximation_from_module_and_tooth_count"
 
     def test_public_catalog_geometry_can_be_used_for_precheck(self):
@@ -89,9 +89,9 @@ class TestScenarioA:
         K_A = 1.25
         K_alpha = 1.0
         z = 20
-        # DIN 5480-2 近似（m=2, z=20）：d=40, d_a1=39.6, d_a2=36.0 → h_w=1.8, d_m=37.8
-        h_w = 1.8
-        d_m = 37.8
+        # DIN 5480-2 保守近似（m=2, z=20）：d=40, d_a1=39, d_a2=37 → h_w=1.0, d_m=38
+        h_w = 1.0
+        d_m = 38.0
         L = 30.0
         p_expected = (2 * T * K_A * K_alpha) / (z * h_w * d_m * L)
         assert result["scenario_a"]["flank_pressure_mpa"] == pytest.approx(
@@ -104,8 +104,8 @@ class TestScenarioA:
         result = calculate_spline_fit(case)
         p_zul = 100.0
         z = 20
-        h_w = 1.8
-        d_m = 37.8
+        h_w = 1.0
+        d_m = 38.0
         L = 30.0
         K_alpha = 1.0
         T_expected_nmm = p_zul * z * h_w * d_m * L / (2 * K_alpha)

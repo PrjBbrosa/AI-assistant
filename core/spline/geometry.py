@@ -82,20 +82,24 @@ def derive_involute_geometry(
             "root_diameter_shaft_mm、tip_diameter_hub_mm。"
         )
     elif allow_approximation:
-        # DIN 5480-2:2015 30° 压力角近似（从公用 catalog W/N 15~50 反推的系数）
-        # d_a1 = d - 0.2m（外花键齿顶，7e 公差带中位）
-        # d_a2 = d - 2.0m（内花键齿顶）
-        # d_f1 = d - 2.3m（外花键齿根，含齿根倒角）
-        # h_w = (d_a1 - d_a2)/2 ≈ 0.9m，与 catalog 相符
+        # DIN 5480-2:2015 保守近似：不同模数/齿数条目下 catalog 中 h_w/m
+        # 最小值 ≈ 0.5（W 25x2.5x8 / W 20x2x8 等小齿数大模数规格）。
+        # 取 h_w = 0.5·m 作保守下限，保证"近似模式算出的 p_flank 不低于真实值"，
+        # 避免 m≥1.75 时高估齿高、低估齿面压力而给出假 PASS。
+        #   d_a1 = d - 0.5m（外花键齿顶）
+        #   d_a2 = d - 1.5m（内花键齿顶）
+        #   d_f1 = d - 2.0m（外花键齿根）
+        # 不同 catalog 规格实际 h_w/m 在 0.5~1.08 之间，近似偏差方向始终保守。
         d = m * z
-        d_a1 = d - 0.2 * m
-        d_a2 = d - 2.0 * m
-        d_f1 = d - 2.3 * m
+        d_a1 = d - 0.5 * m
+        d_a2 = d - 1.5 * m
+        d_f1 = d - 2.0 * m
         geometry_source = "approximation_from_module_and_tooth_count"
         approximation_used = True
         messages.append(
-            "当前花键几何采用 DIN 5480-2 近似（d=m·z，齿顶/齿根系数取 catalog 平均），"
-            "仅适合简化预校核。"
+            "近似模式使用 DIN 5480-2 catalog 最小 h_w/m=0.5 作保守下限，"
+            "实际几何 h_w 在不同模数下可能偏大 5%~110%。"
+            "重要设计请切换到公开/图纸尺寸模式并录入实测值。"
         )
     else:
         raise GeometryError(
