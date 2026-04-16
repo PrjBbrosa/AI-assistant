@@ -500,20 +500,28 @@ class MainWindowWormModuleTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
 
+    def _find_worm_index(self, window: MainWindow) -> int:
+        for index in range(window.stack.count()):
+            if isinstance(window.stack.widget(index), WormGearPage):
+                return index
+        self.fail("WormGearPage not mounted in main window stack")
+
     def test_main_window_mounts_real_worm_page(self) -> None:
         window = MainWindow()
 
-        worm_widget = window.stack.widget(3)
+        worm_index = self._find_worm_index(window)
+        worm_widget = window.stack.widget(worm_index)
         self.assertIsInstance(worm_widget, WormGearPage)
 
     def test_main_window_can_open_worm_graphics_step(self) -> None:
         window = MainWindow()
         window.resize(1500, 940)
         window.show()
-        window.module_list.setCurrentRow(3)
+        worm_index = self._find_worm_index(window)
+        window.module_list.setCurrentRow(worm_index)
         self.app.processEvents()
 
-        page = window.stack.widget(3)
+        page = window.stack.widget(worm_index)
         page.set_current_chapter(4)
         self.app.processEvents()
         pixmap = window.grab()
