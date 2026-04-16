@@ -648,11 +648,13 @@ class SplineFitPage(BaseChapterPage):
         nu_fid = f"{field_prefix}_nu"
         yield_fid = f"{field_prefix}_yield_mpa"
         if material is None:
-            # 用户选择"自定义"时始终解锁 E/ν/屈服强度字段，保持与载荷工况、
-            # 标准规格一致的"切回自定义即手填"语义。
-            # 切换 mode 时 _on_mode_changed 会根据当前模式重新锁定/解锁。
+            # 选"自定义"时按当前 mode 决定锁定状态：
+            #   联合模式下解锁为 SubCard 让用户手填；
+            #   仅花键模式下保持 AutoCalcCard（smooth_* 整段对用户不可用）。
+            # 这样保持 "mode 是权威" 的不变量，避免加载 JSON 时状态不一致。
+            is_combined = MODE_MAP.get(self._get_value("mode")) == "combined"
             for fid in (e_fid, nu_fid, yield_fid):
-                self._set_card_disabled(fid, False)
+                self._set_card_disabled(fid, not is_combined)
             self._suspend_live_feedback = was_suspended
             if not self._suspend_live_feedback:
                 self._run_calculation(strict=False)

@@ -173,6 +173,8 @@ class TestSplineFitPage:
 
     def test_material_autofills_with_blue_style(self, app):
         page = SplineFitPage()
+        # material 相关控件仅在联合模式可用，测试环境需显式切换
+        page._widgets["mode"].setCurrentText("联合")
         shaft_mat = page._widgets["smooth_materials.shaft_material"]
         shaft_mat.setCurrentText("40Cr")
         e_card = page._field_cards.get("smooth_materials.shaft_e_mpa")
@@ -181,15 +183,30 @@ class TestSplineFitPage:
         assert e_card.objectName() == "AutoCalcCard"
         assert nu_card.objectName() == "AutoCalcCard"
         assert yield_card.objectName() == "AutoCalcCard"
-        # 切自定义恢复
+        # 切自定义恢复（仅在联合模式下解锁）
         shaft_mat.setCurrentText("自定义")
         assert e_card.objectName() == "SubCard"
         assert nu_card.objectName() == "SubCard"
         assert yield_card.objectName() == "SubCard"
 
-    def test_material_choice_autofills_yield_strength(self, app):
-        """选材料后屈服强度自动填充，切自定义可编辑。"""
+    def test_material_custom_respects_mode_authority(self, app):
+        """仅花键模式下即使 material=自定义 也保持 AutoCalcCard，守住 mode 权威不变量。"""
         page = SplineFitPage()
+        page._widgets["mode"].setCurrentText("仅花键")
+        shaft_mat = page._widgets["smooth_materials.shaft_material"]
+        # 仅花键模式下 combo 本身 disabled，但编程方式仍可触发
+        shaft_mat.setCurrentText("自定义")
+        for fid in (
+            "smooth_materials.shaft_e_mpa",
+            "smooth_materials.shaft_nu",
+            "smooth_materials.shaft_yield_mpa",
+        ):
+            assert page._field_cards[fid].objectName() == "AutoCalcCard"
+
+    def test_material_choice_autofills_yield_strength(self, app):
+        """选材料后屈服强度自动填充，切自定义可编辑（联合模式）。"""
+        page = SplineFitPage()
+        page._widgets["mode"].setCurrentText("联合")
         shaft_material = page._widgets["smooth_materials.shaft_material"]
         shaft_yield = page._widgets["smooth_materials.shaft_yield_mpa"]
 
