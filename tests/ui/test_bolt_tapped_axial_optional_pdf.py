@@ -165,6 +165,49 @@ def test_pdf_verdict_receives_overall_status_string(tmp_path: Path, monkeypatch)
     assert out.exists()
 
 
+def test_verdict_block_bool_backward_compatibility() -> None:
+    """锁定 _verdict_block(True/False) 旧调用方的 bool 语义不因 tri-state 扩展变化。
+
+    其他 PDF 导出（bolt、interference、spline、worm、hertz）仍传 bool；
+    True 必须走绿色 C_PASS + "ALL PASS"，False 必须走红色 C_FAIL + "FAIL"，
+    不得被 incomplete 分支误用。
+    """
+    pytest.importorskip("reportlab")
+    from app.ui.report_pdf_common import (
+        C_FAIL,
+        C_INCOMPLETE,
+        C_LIGHT_FAIL,
+        C_LIGHT_INCOMPLETE,
+        C_LIGHT_PASS,
+        C_PASS,
+        _build_styles,
+        _register_fonts,
+        _verdict_block,
+    )
+
+    _register_fonts()
+    styles = _build_styles()
+
+    def _backgrounds(table) -> list[object]:
+        return [
+            cmd[3]
+            for cmd in getattr(table, "_bkgrndcmds", [])
+            if cmd[0] == "BACKGROUND"
+        ]
+
+    pass_bg = _backgrounds(_verdict_block(styles, True, "ok"))
+    assert C_PASS in pass_bg and C_LIGHT_PASS in pass_bg
+    assert C_FAIL not in pass_bg and C_INCOMPLETE not in pass_bg
+
+    fail_bg = _backgrounds(_verdict_block(styles, False, "ng"))
+    assert C_FAIL in fail_bg and C_LIGHT_FAIL in fail_bg
+    assert C_PASS not in fail_bg and C_INCOMPLETE not in fail_bg
+
+    incomplete_bg = _backgrounds(_verdict_block(styles, "incomplete", "wait"))
+    assert C_INCOMPLETE in incomplete_bg and C_LIGHT_INCOMPLETE in incomplete_bg
+    assert C_PASS not in incomplete_bg and C_FAIL not in incomplete_bg
+
+
 def test_pdf_check_pills_render_none_as_unchecked(tmp_path: Path) -> None:
     """Codex follow-up 2026-04-16：checks[key] is None 的 pill 必须渲染为中性"未校核"，
     其背景颜色为 C_MUTED（灰色），而不是 C_FAIL（红色）."""
