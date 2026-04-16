@@ -107,6 +107,12 @@ python3 src/vdi2230_tool.py --input examples/input_case_01.json
   - 疲劳 Goodman 折减没有人为下限；`σ_m ≥ 0.9·Rp0.2` 直接判疲劳不通过。
   - 任意输入变更、加载输入、清空页面后，"导出报告"按钮会立即失效，直到重新执行计算后才允许导出。
 - 蜗轮模块：DIN 3996 负载能力校核未实现。
+- 花键模块：
+  - 近似几何已按 DIN 5480-2:2015 catalog 重新推导（d_a1=d-0.2m, d_a2=d-2.0m, d_f1=d-2.3m；h_w≈0.9m）。仍仅供简化预校核，正式校核应走公开/图纸尺寸模式。
+  - `scenario_a` 返回新增 `torque_capacity_sf = T_cap/T_design`（与 flank_safety 等价，方便从扭矩视角解读）。
+  - 材料下拉 45钢/40Cr/42CrMo 选中后自动填充 E / ν / 屈服强度，切"自定义"一并解锁。
+  - k_alpha 默认值 1.3（DIN 6892 K_1·K_2·K_3 的保守合成上限），与 UI FieldSpec.default 一致。
+  - `_build_payload` 在"仅花键"模式下不再向 calculator 传递 smooth_* 段。
 
 ## 开发注意事项
 - **禁止 Unicode 智能引号**: Python 代码中严禁出现 `"` `"` (U+201C/U+201D)，仅使用 ASCII 引号 `"` `'`。含中文字符串时尤其注意。
