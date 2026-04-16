@@ -685,6 +685,7 @@ class HertzContactPage(BaseChapterPage):
             f"• 最大接触应力: p0 = {contact['p0_mpa']:.2f} MPa",
             f"• 平均接触应力: p_mean = {contact['p_mean_mpa']:.2f} MPa",
             f"• 允许应力与安全系数: [p0]={check['allowable_p0_mpa']:.2f} MPa, S={check['safety_factor']:.3f}",
+            f"• 接触面积: A = {result['contact_area_mm2']:.4f} mm\u00b2",
         ]
         self.metrics_text.setText("\n".join(lines))
 
@@ -834,6 +835,7 @@ class HertzContactPage(BaseChapterPage):
             f"- p_mean: {contact['p_mean_mpa']:.3f} MPa",
             f"- [p0]: {check['allowable_p0_mpa']:.3f} MPa",
             f"- Safety: {check['safety_factor']:.3f}",
+            f"- 接触面积: {result['contact_area_mm2']:.6f} mm²",
         ]
         if result["mode"] == "line":
             lines.append(f"- b: {contact['semi_width_mm']:.6f} mm")

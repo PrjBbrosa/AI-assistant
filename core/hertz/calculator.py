@@ -76,15 +76,18 @@ def calculate_hertz_contact(data: Dict[str, Any]) -> Dict[str, Any]:
 
     semi_width = 0.0
     contact_radius = 0.0
+    contact_area_mm2 = 0.0
     if mode == "line":
         load_per_length = normal_force / length_mm
         semi_width = math.sqrt((4.0 * load_per_length * r_eq) / (math.pi * e_eq))
         p0 = (2.0 * load_per_length) / (math.pi * semi_width)
         mean_pressure = load_per_length / (2.0 * semi_width)
+        contact_area_mm2 = 2.0 * semi_width * length_mm
     else:
         contact_radius = ((3.0 * normal_force * r_eq) / (4.0 * e_eq)) ** (1.0 / 3.0)
         p0 = (3.0 * normal_force) / (2.0 * math.pi * contact_radius * contact_radius)
         mean_pressure = normal_force / (math.pi * contact_radius * contact_radius)
+        contact_area_mm2 = math.pi * contact_radius * contact_radius
 
     safety_factor = allowable_p0 / p0 if p0 > 0 else math.inf
     pass_contact = p0 <= allowable_p0
@@ -130,6 +133,7 @@ def calculate_hertz_contact(data: Dict[str, Any]) -> Dict[str, Any]:
             "p_mean_mpa": mean_pressure,
             "length_mm": length_mm,
             "normal_force_n": normal_force,
+            "contact_area_mm2": contact_area_mm2,
         },
         "check": {
             "allowable_p0_mpa": allowable_p0,
