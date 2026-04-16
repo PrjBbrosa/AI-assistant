@@ -17,6 +17,9 @@
 - 桌面框架模块入口固定为：螺栓连接、轴连接、轴承、蜗轮、弹簧、材料与标准库
 - 用户要求界面按 eAssistant Chapter 14 的章节结构与参数组织方式重排
 - 用户要求结果展示改为非 JSON 的工程可读格式，并要求增加螺栓夹紧图
+- 当前仓库已形成稳定的章节式模块模式：`core/<module>/calculator.py` 负责核心结果，`app/ui/pages/*_page.py` 负责章节表单，`app/ui/report_pdf*.py` 负责专业报告，测试按 `tests/core` 与 `tests/ui` 分层
+- 螺栓模块已有 `疲劳简化Goodman`、`螺纹脱扣`、`flowchart`、`PDF 报告` 和 `章节化 UI`，适合作为新工具的骨架来源
+- 过盈配合模块已验证一种“主 verdict + 扩展步骤/适用性 gate + traceability + warnings 不直接污染主模型”的增强模式，适合作为新工具规则层的复用模板
 
 ## Technical Decisions
 | Decision | Rationale |
@@ -30,6 +33,93 @@
 | 螺栓页面改为 Chapter 14 导航布局 | 与用户参考页面的信息架构保持一致 |
 | 参数全部带说明（hint + tooltip） | 面向非程序员用户，降低误填风险 |
 | 结果输出改为“结论 + 分项 + 建议 + 报告导出” | 使结果可直接用于工程沟通 |
+| 新的“预紧后承受交变轴向力”工具优先复用现有 bolt/interference 的章节与结果组织方式 | 可减少新模块认知成本，并保持 UI、报告、trace、测试架构一致 |
+| 花键模块本轮先做“状态闭环 + 边界澄清 + message window + 实时预校核”，暂不直接拆成两个独立 sidebar 模块 | 该方向能在不重写 core 的前提下，最大化收敛当前 review 中暴露的 UI/workflow 缺口 |
+
+## 2026-03-29 Spline Workflow Alignment Notes
+
+### Review Outcome
+- 当前花键页和项目其余章节页相比，最明显的缺口不是计算链，而是交互闭环：
+  - 无保存输入条件
+  - 无加载输入条件
+  - 无清空参数
+  - 无测试案例按钮
+- 当前页已经把标题降级为“花键连接校核”，但 `MainWindow` 侧栏仍写“花键过盈配合”，帮助文案也没有把该模块列入已实现模块，导航语义仍不一致
+- 结果展示仍明显弱于 bolt / interference / hertz：
+  - 只有两张简短结果卡
+  - 没有独立 message window
+  - warning 和建议被压在 footer `info_label`
+- 当前模式切换已经能控制 smooth-fit 字段禁用，但章节导航本身没有把“当前跳过/当前启用”的边界显式表达出来
+- 即时反馈层当前为空白：
+  - 用户必须点击“计算”才知道结果
+  - 修改字段后没有预校核刷新
+
+### Design Decision
+- 本轮不把花键与光滑段过盈拆成两个独立模块
+- 本轮采用“单页双场景继续保留，但边界和状态都说清”的方案：
+  - 侧栏名统一为“花键连接校核”
+  - 默认模式改为“仅花键”
+  - 章节标题随模式变化，明确 smooth-fit 是否当前跳过
+  - 新增独立 message window
+  - 控件变化后触发实时预校核刷新
+
+### Planned Verification
+- UI 重点验证：
+  - 按钮存在
+  - snapshot round-trip
+  - mode-aware chapter wording
+  - live feedback
+  - MainWindow 名称同步
+
+## 2026-03-25 Alternating Axial Bolt Planning Notes
+
+### Repository Pattern Findings
+- CLI 入口仍保留在 `src/vdi2230_tool.py`，但桌面应用的核心模式已经转向 `core + app/ui + report + tests` 的模块化架构
+- `core/bolt/calculator.py` 已具备：
+  - 预紧力链路
+  - 工作载荷分配
+  - 服役应力
+  - 简化疲劳
+  - 螺纹脱扣
+- `app/ui/pages/bolt_page.py` 和 `app/ui/pages/bolt_flowchart.py` 已形成可复用的章节页面 + R 节点解释结构
+- `core/interference/fretting.py` 和 repeated-load 相关逻辑体现出一个可复用规则模式：
+  - 先判断 applicability
+  - 再输出 risk / warning / recommendation
+  - 与主通过/不通过 verdict 解耦
+- `CLAUDE.md` 已把这套模式写成项目级约定：`calculate_xxx(data)->dict`、`InputError`、`FieldSpec` 章节页、统一主题、统一输入持久化
+- 最近提交仍在沿用“spec → review fixes → feature落地”的工作流，说明本仓库接受先规划再接入的增量方式，而不是一次性大改
+- `app/ui/report_pdf.py`、`app/ui/pages/bolt_flowchart.py`、`report/vdi2230-verification-report-2026-03-18.md` 说明 bolt 模块现有结果语义已经包含：
+  - 总体 verdict
+  - 分项 checks
+  - fatigue / thread strip 等扩展块
+  - flowchart 逐步解释
+- `BaseChapterPage` 已提供统一的章节导航、动作栏、状态徽标和底部信息区，新 section 复用页面壳的成本较低
+- `core/bolt/calculator.py` 当前强依赖夹紧连接概念：
+  - `delta_s / delta_p / phi_n`
+  - `FMmin / FMmax`
+  - `F_K_required / residual clamp`
+  - `bearing` 与 `clamped` 几何
+  这些不应直接迁移到“无被夹件、受轴向力”的新 section
+- 同一个 calculator 内也存在可复用思路：
+  - `_require / _positive / _float_or_none`
+  - `_derive_thread_geometry`
+  - `fatigue` 结果块的组织方式
+  - `thread_strip` 结果块的组织方式
+- `app/ui/report_pdf.py` 当前按 `overall_pass + checks + input summary + R-step cards + recommendations` 组织报告；新 section 很适合沿用这套版式，但需要把 R1-R5 的夹紧语义替换成轴向受力链语义
+
+### Scope Hypothesis
+- 用户这次要的不是完全脱离现有 bolt 模块重做，而是在“拧紧后承受交变轴向力”的场景下，规划一套延续 Chapter 1 bolt check 和 interference enhancement 风格的计算工具
+- 从现有仓库语境看，最自然的实现路径不是新开完全独立产品，而是新增一个 bolt 场景增强层或并列章节模块
+
+### 2026-03-25 Planning Outcome
+- 已确定采用“独立并列页面/模块”而非扩展 `calculate_vdi2230_core()` 的方案
+- 设计 spec 已落到 `docs/superpowers/specs/2026-03-25-tapped-axial-threaded-joint-design.md`
+- 实施计划已落到 `docs/superpowers/plans/2026-03-25-tapped-axial-threaded-joint.md`
+- 计划中的核心架构决定：
+  - 新建独立 calculator，不复用 `clamped parts / phi_n / FK_residual`
+  - 复用 bolt 域中的螺纹几何、疲劳极限、脱扣块组织方式
+  - 复用 `BaseChapterPage`、`report_pdf_common.py` 和输入持久化模式
+  - 按 `core / UI / flowchart+report / docs+examples` 四条 lane 并行执行
 
 ## Issues Encountered
 | Issue | Resolution |

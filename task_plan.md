@@ -4,7 +4,7 @@
 在保留 VDI 2230 螺栓计算核心的基础上，搭建本地 PySide6 桌面框架并预留多模块入口，支持后续打包为 `.exe`。
 
 ## Current Phase
-No active phase selected (latest completed: Phase 18 spline fit engineering hardening)
+Phase 20: Spline Workflow Alignment
 
 ## Phases
 ### Phase 1: Requirements & Discovery
@@ -135,6 +135,23 @@ No active phase selected (latest completed: Phase 18 spline fit engineering hard
 - [x] Merge the hardened spline worktree back to `main`
 - **Status:** complete
 
+### Phase 19: Alternating Axial Bolt Tool Planning
+- [ ] Audit the current bolt / interference-fit architecture and identify reusable chapter patterns
+- [ ] Clarify the intended engineering boundary for the new "preloaded + alternating axial load" scenario
+- [ ] Propose tool rules, data model, chapter layout, and calculator/report integration plan
+- [ ] Write or update the planning artifact after user confirms the direction
+- [ ] Write the design spec and detailed implementation plan for the parallel section
+- [ ] Define the multi-agent execution map and file ownership
+- **Status:** in_progress
+
+### Phase 20: Spline Workflow Alignment
+- [x] Re-review current spline page state design and compare it against the current eAssistant-style workflow
+- [x] Write a focused design spec for state closure, boundary clarity, message window, and live preview
+- [x] Write a TDD implementation plan for the selected approach
+- [ ] Execute the plan in the current workspace
+- [ ] Re-run spline UI/core verification and sync handoff docs
+- **Status:** in_progress
+
 ## Key Questions
 1. 交付形态是 Web 还是本地桌面？（已选本地桌面）
 2. 模块范围是只做螺栓还是全量？（已选“螺栓先做，其余占位”）
@@ -156,6 +173,8 @@ No active phase selected (latest completed: Phase 18 spline fit engineering hard
 | 空心轴支持本轮按“兼容当前实心轴基线”的增量方式接入 | 先补齐主模型几何边界，同时避免把 speed / temperature / stepped geometry 一起引入导致范围失控 |
 | 蜗杆模块本轮按“先修逻辑漏洞，再做 Method-B 风格最小负载能力子集”推进 | 用户要求的不只是设计校核，而是要输出齿面应力、齿根应力和扭矩波动等工程结果 |
 | 花键模块整改按“Stage A 立即去风险 → Stage B 标准化重构”推进 | 先消除错误承诺和 trace 缺口，再决定是否投入更重的 DIN 5480 / DIN 6892 重建成本 |
+| 本轮“预紧后承受交变轴向力”按现有螺栓章节和过盈配合增强模式来规划 | 用户要求新工具的规则、架构、撰写方式尽量复用已验证的章节式组织和渐进增强方法 |
+| 本轮花键 UI 收敛按“单页双场景继续保留，但状态闭环、导航语义和实时反馈先做齐”推进 | 先收敛当前页的可用性和心智模型，再决定是否值得拆成两个独立模块 |
 
 ## Errors Encountered
 | Error | Attempt | Resolution |
@@ -184,3 +203,8 @@ No active phase selected (latest completed: Phase 18 spline fit engineering hard
 - 花键模块 2026-03-22 深度审查结论：当前场景 A 仅能作为“齿面平均承压简化预校核”，不能直接作为正式工程校核
 - 花键模块后续整改计划已写入 `docs/superpowers/plans/2026-03-22-spline-fit-engineering-hardening.md`
 - 花键模块本轮已完成：语义降级、trace/warning 修复、参考直径几何输入、公开 benchmark 与回归验证，并已合回 `main`
+- 本轮新任务聚焦“预紧后承受交变轴向力”的螺栓计算工具规划，目标是沿用现有螺栓章节式 UI、flowchart、报告和过盈配合的增强型规则组织方式
+- 新 section 的 design spec 已写入 `docs/superpowers/specs/2026-03-25-tapped-axial-threaded-joint-design.md`
+- 新 section 的 implementation plan 已写入 `docs/superpowers/plans/2026-03-25-tapped-axial-threaded-joint.md`
+- 花键模块本轮新 design spec 已写入 `docs/superpowers/specs/2026-03-29-spline-workflow-alignment-design.md`
+- 花键模块本轮新 implementation plan 已写入 `docs/superpowers/plans/2026-03-29-spline-workflow-alignment.md`

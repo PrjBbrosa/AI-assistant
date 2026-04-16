@@ -1,5 +1,48 @@
 # Progress Log
 
+## Session: 2026-03-29
+
+### Phase 20: Spline Workflow Alignment
+- **Status:** in_progress
+- **Started:** 2026-03-29
+- Actions taken:
+  - 激活 `using-superpowers`、`planning-with-files`、`writing-plans` 与 `test-driven-development` 工作流
+  - 重新审查当前 `SplineFitPage`、`MainWindow`、`input_condition_store.py` 与相关 UI 测试
+  - 对照前一轮 review 结论，确认本轮优先级收敛为：状态闭环、模块边界、message window、即时反馈
+  - 编写新的花键 UI 收敛 design spec
+  - 编写新的 TDD implementation plan
+  - 将 planning 文件更新到 Phase 20 上下文
+- Files created/modified:
+  - docs/superpowers/specs/2026-03-29-spline-workflow-alignment-design.md (created)
+  - docs/superpowers/plans/2026-03-29-spline-workflow-alignment.md (created)
+  - task_plan.md (updated)
+  - findings.md (updated)
+  - progress.md (updated)
+
+## Session: 2026-03-25
+
+### Phase 19: Alternating Axial Bolt Tool Planning
+- **Status:** in_progress
+- **Started:** 2026-03-25
+- Actions taken:
+  - 激活 `brainstorming` 与 `planning-with-files` 工作流
+  - 检查仓库是否存在未同步 planning 上下文，并确认根目录已有 `task_plan.md / findings.md / progress.md`
+  - 扫描现有 bolt / interference / spline 代码与文档，确认当前项目已形成稳定的 `core + ui page + report + tests` 模式
+  - 识别出可复用资产：`core/bolt/calculator.py`、`app/ui/pages/bolt_page.py`、`app/ui/pages/bolt_flowchart.py`、`app/ui/report_pdf.py`，以及 interference 的 applicability/warning/trace 规则层模式
+  - 更新 planning 文件，为“预紧后承受交变轴向力”的工具规划建立独立任务上下文
+  - 继续检查 `CLAUDE.md`、最近提交和 bolt/interference 关键符号，确认项目级架构约定与最近开发节奏
+  - 确认 bolt 模块已具备 fatigue / thread strip / flowchart / PDF report 四层结果组织，可直接作为新规划的骨架
+  - 读取 `BaseChapterPage`、现有 fretting design/plan 文档，以及 `core/bolt/calculator.py` / `app/ui/report_pdf.py`
+  - 确认新 section 应复用页面壳、报告壳和结果块组织，但不能直接继承 `phi_n / residual clamp / clamped parts` 这类夹紧连接主链
+  - 基于 bolt / interference / spec-template 三路探索结果，编写新 section 的 design spec 与 implementation plan
+  - 在 implementation plan 中按 `core / UI / flowchart+report / docs+examples` 定义并行 lane 和文件 ownership
+- Files created/modified:
+  - task_plan.md (updated)
+  - findings.md (updated)
+  - progress.md (updated)
+  - docs/superpowers/specs/2026-03-25-tapped-axial-threaded-joint-design.md (created)
+  - docs/superpowers/plans/2026-03-25-tapped-axial-threaded-joint.md (created)
+
 ## Session: 2026-03-22
 
 ### Phase 18: Spline Fit Engineering Hardening Execution
