@@ -1,6 +1,7 @@
 import pytest
 from PySide6.QtWidgets import QApplication, QLabel
 
+from app.ui.main_window import MainWindow
 from app.ui.pages.spline_fit_page import SMOOTH_FIT_FIELD_IDS, SplineFitPage
 
 
@@ -42,6 +43,18 @@ class TestSplineFitPage:
         texts = self._label_texts(page)
         assert "场景 A - 花键齿面承压（简化）" in texts
 
+    def test_default_mode_prefers_spline_only_for_first_entry(self, app):
+        page = SplineFitPage()
+        assert page._widgets["mode"].currentText() == "仅花键"
+
+    def test_page_exposes_state_closure_actions(self, app):
+        page = SplineFitPage()
+        assert page.btn_save_inputs.text() == "保存输入条件"
+        assert page.btn_load_inputs.text() == "加载输入条件"
+        assert page.btn_clear.text() == "清空参数"
+        assert page.btn_load_1.text() == "测试案例 1"
+        assert page.btn_load_2.text() == "测试案例 2"
+
     def test_material_choice_autofills_elastic_properties(self, app):
         page = SplineFitPage()
         shaft_material = page._widgets["smooth_materials.shaft_material"]
@@ -62,6 +75,7 @@ class TestSplineFitPage:
 
     def test_default_combined_case_surfaces_scenario_b_failure_reason(self, app):
         page = SplineFitPage()
+        page._widgets["mode"].setCurrentText("联合")
         page._on_calculate()
         assert "扭矩与轴向力联合作用超出当前最小过盈能力" in page.info_label.text()
 
@@ -87,6 +101,16 @@ class TestSplineFitPage:
             card = page._field_cards.get(fid)
             if card:
                 assert card.objectName() == "SubCard", f"{fid} should be SubCard in combined mode"
+
+    def test_mode_switch_updates_smooth_fit_chapter_title(self, app):
+        page = SplineFitPage()
+        mode_combo = page._widgets["mode"]
+
+        mode_combo.setCurrentText("仅花键")
+        assert "当前跳过" in page.chapter_list.item(2).text()
+
+        mode_combo.setCurrentText("联合")
+        assert "DIN 7190" in page.chapter_list.item(2).text()
 
     def test_standard_designation_autofills_geometry(self, app):
         page = SplineFitPage()
@@ -114,6 +138,36 @@ class TestSplineFitPage:
         lc.setCurrentText("自定义")
         assert card.objectName() == "SubCard"
 
+    def test_snapshot_round_trip_preserves_ui_only_state(self, app):
+        page = SplineFitPage()
+        page._widgets["mode"].setCurrentText("联合")
+        page._widgets["spline.standard_designation"].setCurrentText("W 25x1.25x18")
+        page._widgets["spline.load_condition"].setCurrentText("自定义")
+        page._widgets["spline.p_allowable_mpa"].setText("88")
+        page._widgets["smooth_materials.shaft_material"].setCurrentText("自定义")
+        page._widgets["smooth_materials.shaft_e_mpa"].setText("205000")
+
+        snapshot = page._capture_input_snapshot()
+
+        clone = SplineFitPage()
+        clone._apply_input_data(snapshot)
+
+        assert clone._widgets["mode"].currentText() == "联合"
+        assert clone._widgets["spline.standard_designation"].currentText() == "W 25x1.25x18"
+        assert clone._widgets["spline.load_condition"].currentText() == "自定义"
+        assert clone._widgets["spline.p_allowable_mpa"].text() == "88"
+        assert clone._widgets["smooth_materials.shaft_material"].currentText() == "自定义"
+        assert clone._widgets["smooth_materials.shaft_e_mpa"].text() == "205000"
+
+    def test_live_feedback_updates_result_without_manual_calculate(self, app):
+        page = SplineFitPage()
+
+        page._widgets["loads.torque_required_nm"].setText("100000")
+        app.processEvents()
+
+        assert page._result_labels["a_badge"].text() == "FAIL"
+        assert page.message_box.toPlainText() != ""
+
     def test_material_autofills_with_blue_style(self, app):
         page = SplineFitPage()
         shaft_mat = page._widgets["smooth_materials.shaft_material"]
@@ -139,3 +193,9 @@ class TestSplineFitPage:
         for fid in ["spline.module_mm", "spline.tooth_count", "spline.reference_diameter_mm"]:
             card = page._field_cards.get(fid)
             assert card.objectName() == "SubCard", f"{fid} should be SubCard"
+
+    def test_main_window_uses_connection_check_name_for_spline_module(self, app):
+        window = MainWindow()
+        items = [window.module_list.item(i).text() for i in range(window.module_list.count())]
+        assert any("花键连接校核" in text for text in items)
+        assert not any("花键过盈配合" in text for text in items)

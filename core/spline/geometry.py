@@ -62,6 +62,17 @@ def derive_involute_geometry(
                 "显式花键尺寸必须满足 root_diameter_shaft < "
                 "tip_diameter_hub < tip_diameter_shaft < reference_diameter"
             )
+        # Consistency check: if module and tooth_count are provided,
+        # verify that the explicit reference_diameter is close to m * z.
+        d_theoretical = m * z
+        if d_theoretical > 0:
+            relative_deviation = abs(d - d_theoretical) / d_theoretical
+            if relative_deviation > 0.05:
+                messages.append(
+                    f"显式参考直径 d={d:.2f} mm 与 m*z={d_theoretical:.2f} mm "
+                    f"偏差 {relative_deviation * 100:.1f}%，超过 5% 阈值，"
+                    "请确认模数和齿数是否与图纸一致。"
+                )
         geometry_source = "explicit_reference_dimensions"
         approximation_used = False
     elif any(value is not None for value in explicit_values):

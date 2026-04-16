@@ -255,3 +255,29 @@ class TestScenarioB:
         case["smooth_fit"]["relief_groove_width_mm"] = 50.0  # >= fit_length_mm (45.0)
         with pytest.raises(InputError, match="有效配合长度"):
             calculate_spline_fit(case)
+
+    def test_scenario_b_ka_comment_in_design_loads(self):
+        """Verify design_loads contains both real ka and delegated ka=1.0."""
+        result = calculate_spline_fit(make_combined_case())
+        dl = result["scenario_b"]["design_loads"]
+        # Real ka from outer loads
+        assert dl["application_factor_ka"] == pytest.approx(1.25)
+        # Delegated ka must be 1.0 because loads are pre-multiplied
+        assert dl["delegated_application_factor_ka"] == pytest.approx(1.0)
+        # Design torque = required * ka
+        assert dl["torque_design_nm"] == pytest.approx(500.0 * 1.25)
+
+    def test_combined_mode_both_scenarios_present(self):
+        """Combined mode must produce both scenario_a and scenario_b results."""
+        result = calculate_spline_fit(make_combined_case())
+        assert "scenario_a" in result
+        assert "scenario_b" in result
+        # scenario_a has flank check fields
+        assert "flank_pressure_mpa" in result["scenario_a"]
+        assert "flank_safety" in result["scenario_a"]
+        # scenario_b has DIN 7190 delegation fields
+        assert "pressure_mpa" in result["scenario_b"]
+        assert "safety" in result["scenario_b"]
+        assert "design_loads" in result["scenario_b"]
+        # overall_pass reflects both
+        assert isinstance(result["overall_pass"], bool)

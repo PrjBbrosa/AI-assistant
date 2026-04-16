@@ -91,3 +91,31 @@ class TestDeriveInvoluteGeometry:
                 allow_approximation=True,
                 pressure_angle_deg=60.0,
             )
+
+    def test_explicit_geometry_consistency_warning(self):
+        """When explicit d deviates >5% from m*z, a warning message is produced."""
+        # m=1.25, z=10 -> m*z=12.5, but we provide d=15.0 -> deviation=20%
+        r = derive_involute_geometry(
+            module_mm=1.25,
+            tooth_count=10,
+            reference_diameter_mm=15.0,
+            tip_diameter_shaft_mm=14.75,
+            root_diameter_shaft_mm=12.1,
+            tip_diameter_hub_mm=12.5,
+        )
+        assert any("偏差" in msg for msg in r["messages"])
+        assert any("5%" in msg for msg in r["messages"])
+
+    def test_explicit_geometry_no_warning_when_consistent(self):
+        """When explicit d matches m*z within 5%, no consistency warning."""
+        # m=1.25, z=12 -> m*z=15.0, provide d=15.0 -> deviation=0%
+        # Must satisfy d_f1 < d_a2 < d_a1 < d
+        r = derive_involute_geometry(
+            module_mm=1.25,
+            tooth_count=12,
+            reference_diameter_mm=15.0,
+            tip_diameter_shaft_mm=14.75,
+            root_diameter_shaft_mm=12.1,
+            tip_diameter_hub_mm=12.5,
+        )
+        assert not any("偏差" in msg for msg in r["messages"])

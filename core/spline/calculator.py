@@ -162,6 +162,9 @@ def _calculate_scenario_b(
         "loads": {
             "torque_required_nm": torque_design_nm,
             "axial_force_required_n": axial_design_n,
+            # ka=1.0 is intentional: torque_design_nm and axial_design_n
+            # are already multiplied by the real ka in calculate_spline_fit(),
+            # so the delegated DIN 7190 calculator must not apply ka again.
             "application_factor_ka": 1.0,
         },
         "checks": {
@@ -189,6 +192,8 @@ def _calculate_scenario_b(
             "torque_design_nm": torque_design_nm,
             "axial_design_n": axial_design_n,
             "application_factor_ka": application_factor_ka,
+            # delegated ka=1.0: loads passed to DIN 7190 are already
+            # pre-multiplied by the real ka above, avoiding double-counting.
             "delegated_application_factor_ka": 1.0,
         },
     }

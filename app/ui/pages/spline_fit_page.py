@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import importlib
+import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,15 +19,28 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPlainTextEdit,
     QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
+from app.ui.input_condition_store import (
+    build_form_snapshot,
+    build_saved_inputs_dir,
+    choose_load_input_conditions_path,
+    choose_save_input_conditions_path,
+    read_input_conditions,
+    write_input_conditions,
+)
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.widgets.press_force_curve import PressForceCurveWidget
 from core.spline.calculator import InputError, calculate_spline_fit
 from core.spline.din5480_table import all_designations, lookup_by_designation
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+EXAMPLES_DIR = PROJECT_ROOT / "examples"
+SAVED_INPUTS_DIR = build_saved_inputs_dir(PROJECT_ROOT)
 
 
 @dataclass(frozen=True)
@@ -106,7 +120,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "仅花键：只校核花键齿面承压（场景 A）；联合：同时校核花键轴光滑段与轮毂孔的圆柱过盈配合（场景 B）。",
                 widget_type="choice",
                 options=("仅花键", "联合"),
-                default="联合",
+                default="仅花键",
             ),
             FieldSpec(
                 "checks.flank_safety_min", "齿面最小安全系数 S_flank,min", "-",
@@ -365,60 +379,70 @@ class SplineFitPage(BaseChapterPage):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(
             "花键连接校核",
-            "花键齿面承压（简化预校核）+ 光滑段圆柱过盈 (DIN 7190)",
+            "花键齿面承压（简化预校核）+ 可选光滑段圆柱过盈复核 (DIN 7190)",
             parent,
         )
 
         self._widgets: dict[str, QWidget] = {}
+        self._field_specs: dict[str, FieldSpec] = {}
         self._field_cards: dict[str, QWidget] = {}
         self._result_labels: dict[str, QLabel] = {}
+        self._chapter_indices: dict[str, int] = {}
+        self._suspend_live_feedback = False
 
         self._last_result: dict | None = None
         self._last_payload: dict | None = None
         self.curve_widget: PressForceCurveWidget | None = None
+        self.message_box: QPlainTextEdit | None = None
 
-        calc_btn = self.add_action_button("计算", primary=True)
-        calc_btn.clicked.connect(self._on_calculate)
-
-        export_btn = self.add_action_button("导出报告")
-        export_btn.clicked.connect(self._save_report)
+        self.btn_save_inputs = self.add_action_button("保存输入条件")
+        self.btn_load_inputs = self.add_action_button("加载输入条件")
+        self.btn_calculate = self.add_action_button("计算", primary=True)
+        self.btn_clear = self.add_action_button("清空参数")
+        self.btn_save = self.add_action_button("导出报告")
+        self.btn_load_1 = self.add_action_button("测试案例 1", side="right")
+        self.btn_load_2 = self.add_action_button("测试案例 2", side="right")
 
         for chapter in CHAPTERS:
             page = self._build_chapter_page(chapter)
-            self.add_chapter(chapter["title"], page)
+            self._chapter_indices[chapter["title"]] = self.add_chapter(chapter["title"], page)
 
         self.set_current_chapter(0)
+
+        self.btn_save_inputs.clicked.connect(self._save_input_conditions)
+        self.btn_load_inputs.clicked.connect(self._load_input_conditions)
+        self.btn_calculate.clicked.connect(self._on_calculate)
+        self.btn_clear.clicked.connect(self._clear)
+        self.btn_save.clicked.connect(self._save_report)
+        self.btn_load_1.clicked.connect(lambda: self._load_sample("spline_case_01.json"))
+        self.btn_load_2.clicked.connect(lambda: self._load_sample("spline_case_02.json"))
 
         mode_combo = self._widgets.get("mode")
         if isinstance(mode_combo, QComboBox):
             mode_combo.currentTextChanged.connect(self._on_mode_changed)
-            self._on_mode_changed(mode_combo.currentText())
 
         std_combo = self._widgets.get("spline.standard_designation")
         if isinstance(std_combo, QComboBox):
             std_combo.currentTextChanged.connect(self._on_standard_designation_changed)
 
-        # Connect load condition to auto-fill p_zul
         lc_combo = self._widgets.get("spline.load_condition")
         if isinstance(lc_combo, QComboBox):
             lc_combo.currentTextChanged.connect(self._on_load_condition_changed)
-            self._on_load_condition_changed(lc_combo.currentText())
 
         shaft_material_combo = self._widgets.get("smooth_materials.shaft_material")
         if isinstance(shaft_material_combo, QComboBox):
             shaft_material_combo.currentTextChanged.connect(
                 lambda text: self._on_material_changed("smooth_materials.shaft", text)
             )
-            self._on_material_changed("smooth_materials.shaft", shaft_material_combo.currentText())
 
         hub_material_combo = self._widgets.get("smooth_materials.hub_material")
         if isinstance(hub_material_combo, QComboBox):
             hub_material_combo.currentTextChanged.connect(
                 lambda text: self._on_material_changed("smooth_materials.hub", text)
             )
-            self._on_material_changed("smooth_materials.hub", hub_material_combo.currentText())
 
         self.set_info(SPLINE_SCOPE_DISCLAIMER)
+        self._sync_state_from_ui(refresh=True)
 
     def _build_chapter_page(self, chapter: dict) -> QWidget:
         scroll = QScrollArea()
@@ -474,6 +498,11 @@ class SplineFitPage(BaseChapterPage):
             grid.addWidget(hint, 1, 0, 1, 2)
 
         self._widgets[spec.field_id] = w
+        self._field_specs[spec.field_id] = spec
+        if isinstance(w, QComboBox):
+            w.currentTextChanged.connect(lambda _text: self._on_inputs_changed())
+        elif isinstance(w, QLineEdit):
+            w.textChanged.connect(lambda _text: self._on_inputs_changed())
         return card
 
     def _build_result_chapter(self, layout: QVBoxLayout) -> None:
@@ -507,6 +536,20 @@ class SplineFitPage(BaseChapterPage):
         self.curve_widget.setVisible(False)
         layout.addWidget(self.curve_widget)
 
+        msg_card = QFrame()
+        msg_card.setObjectName("SubCard")
+        msg_layout = QVBoxLayout(msg_card)
+        msg_layout.setContentsMargins(12, 10, 12, 10)
+        msg_layout.setSpacing(6)
+        msg_title = QLabel("消息与建议", msg_card)
+        msg_title.setObjectName("SubSectionTitle")
+        self.message_box = QPlainTextEdit(msg_card)
+        self.message_box.setReadOnly(True)
+        self.message_box.setMinimumHeight(180)
+        msg_layout.addWidget(msg_title)
+        msg_layout.addWidget(self.message_box)
+        layout.addWidget(msg_card)
+
     def _set_card_disabled(self, field_id: str, disabled: bool) -> None:
         """Toggle a field card between normal SubCard and disabled AutoCalcCard style."""
         card = self._field_cards.get(field_id)
@@ -525,12 +568,13 @@ class SplineFitPage(BaseChapterPage):
             widget.setEnabled(not disabled)
 
     def _on_mode_changed(self, text: str) -> None:
+        was_suspended = self._suspend_live_feedback
+        self._suspend_live_feedback = True
         is_combined = (text == "联合")
         for fid in SMOOTH_FIT_FIELD_IDS:
             self._set_card_disabled(fid, not is_combined)
         for fid in ("checks.slip_safety_min", "checks.stress_safety_min"):
             self._set_card_disabled(fid, not is_combined)
-        # 模式切换后重新触发材料联动以刷新 AutoCalcCard 样式
         if is_combined:
             shaft_mat = self._widgets.get("smooth_materials.shaft_material")
             if isinstance(shaft_mat, QComboBox):
@@ -540,12 +584,19 @@ class SplineFitPage(BaseChapterPage):
                 self._on_material_changed("smooth_materials.hub", hub_mat.currentText())
         if self.curve_widget is not None:
             self.curve_widget.setVisible(False)
+        self._update_mode_chapter_title(text)
+        self._suspend_live_feedback = was_suspended
+        if not self._suspend_live_feedback:
+            self._run_calculation(strict=False)
 
     def _on_standard_designation_changed(self, text: str) -> None:
+        was_suspended = self._suspend_live_feedback
+        self._suspend_live_feedback = True
         is_standard = (text != "自定义")
         if is_standard:
             record = lookup_by_designation(text)
             if record is None:
+                self._suspend_live_feedback = was_suspended
                 return
             field_map = {
                 "spline.module_mm": str(record["module_mm"]),
@@ -565,12 +616,16 @@ class SplineFitPage(BaseChapterPage):
                 idx = geo_combo.findText("公开/图纸尺寸")
                 if idx >= 0:
                     geo_combo.setCurrentIndex(idx)
-        # AutoCalcCard 样式
         for fid in _STANDARD_GEOMETRY_FIELD_IDS:
             self._set_card_disabled(fid, is_standard)
         self._set_card_disabled("spline.geometry_mode", is_standard)
+        self._suspend_live_feedback = was_suspended
+        if not self._suspend_live_feedback:
+            self._run_calculation(strict=False)
 
     def _on_load_condition_changed(self, text: str) -> None:
+        was_suspended = self._suspend_live_feedback
+        self._suspend_live_feedback = True
         p_zul = LOAD_CONDITION_P_ZUL.get(text)
         if p_zul is not None:
             w = self._widgets.get("spline.p_allowable_mpa")
@@ -578,20 +633,25 @@ class SplineFitPage(BaseChapterPage):
                 w.setText(str(p_zul))
             self._set_card_disabled("spline.p_allowable_mpa", True)
         else:
-            # "自定义"
             self._set_card_disabled("spline.p_allowable_mpa", False)
+        self._suspend_live_feedback = was_suspended
+        if not self._suspend_live_feedback:
+            self._run_calculation(strict=False)
 
     def _on_material_changed(self, field_prefix: str, material_name: str) -> None:
+        was_suspended = self._suspend_live_feedback
+        self._suspend_live_feedback = True
         material = MATERIAL_LIBRARY.get(material_name)
         e_fid = f"{field_prefix}_e_mpa"
         nu_fid = f"{field_prefix}_nu"
         if material is None:
-            # "自定义"：恢复可编辑（仅联合模式下生效）
             if MODE_MAP.get(self._get_value("mode")) == "combined":
                 self._set_card_disabled(e_fid, False)
                 self._set_card_disabled(nu_fid, False)
+            self._suspend_live_feedback = was_suspended
+            if not self._suspend_live_feedback:
+                self._run_calculation(strict=False)
             return
-        # 非自定义：自动填充 + 蓝色样式
         e_widget = self._widgets.get(e_fid)
         nu_widget = self._widgets.get(nu_fid)
         if isinstance(e_widget, QLineEdit):
@@ -600,6 +660,126 @@ class SplineFitPage(BaseChapterPage):
             nu_widget.setText(str(material["nu"]))
         self._set_card_disabled(e_fid, True)
         self._set_card_disabled(nu_fid, True)
+        self._suspend_live_feedback = was_suspended
+        if not self._suspend_live_feedback:
+            self._run_calculation(strict=False)
+
+    def _on_inputs_changed(self) -> None:
+        if self._suspend_live_feedback:
+            return
+        self._run_calculation(strict=False)
+
+    def _set_chapter_title(self, chapter_key: str, title: str) -> None:
+        index = self._chapter_indices.get(chapter_key)
+        if index is None:
+            return
+        item = self.chapter_list.item(index)
+        if item is None:
+            return
+        item.setText(f"步骤 {index + 1}. {title}")
+
+    def _update_mode_chapter_title(self, mode_text: str) -> None:
+        title = "光滑段过盈（DIN 7190）" if mode_text == "联合" else "光滑段过盈（当前跳过）"
+        self._set_chapter_title("光滑段过盈", title)
+
+    def _sync_state_from_ui(self, *, refresh: bool) -> None:
+        was_suspended = self._suspend_live_feedback
+        self._suspend_live_feedback = True
+        mode_text = self._get_value("mode") or "仅花键"
+        self._on_mode_changed(mode_text)
+        self._on_standard_designation_changed(self._get_value("spline.standard_designation") or "自定义")
+        self._on_load_condition_changed(self._get_value("spline.load_condition") or "自定义")
+        self._on_material_changed(
+            "smooth_materials.shaft",
+            self._get_value("smooth_materials.shaft_material") or "自定义",
+        )
+        self._on_material_changed(
+            "smooth_materials.hub",
+            self._get_value("smooth_materials.hub_material") or "自定义",
+        )
+        self._suspend_live_feedback = was_suspended
+        if refresh:
+            self._run_calculation(strict=False)
+
+    def _read_snapshot_value(self, spec: FieldSpec) -> str:
+        return self._get_value(spec.field_id)
+
+    def _capture_input_snapshot(self) -> dict[str, Any]:
+        return build_form_snapshot(self._field_specs.values(), self._read_snapshot_value)
+
+    def _apply_defaults(self) -> None:
+        for spec in self._field_specs.values():
+            widget = self._widgets[spec.field_id]
+            if isinstance(widget, QComboBox):
+                idx = widget.findText(spec.default)
+                if idx >= 0:
+                    widget.setCurrentIndex(idx)
+            elif isinstance(widget, QLineEdit):
+                widget.setText(spec.default)
+
+    def _apply_input_data(self, data: dict[str, Any]) -> None:
+        inputs_data = data.get("inputs")
+        inputs = inputs_data if isinstance(inputs_data, dict) else data
+        ui_state_data = data.get("ui_state")
+        ui_state = ui_state_data if isinstance(ui_state_data, dict) else {}
+
+        previous = self._suspend_live_feedback
+        self._suspend_live_feedback = True
+        self._apply_defaults()
+        for spec in self._field_specs.values():
+            value: Any | None = None
+            if spec.field_id in ui_state:
+                value = ui_state[spec.field_id]
+            elif spec.mapping is not None:
+                section, key = spec.mapping
+                section_data = inputs.get(section)
+                if isinstance(section_data, dict) and key in section_data:
+                    value = section_data[key]
+            if value is None:
+                continue
+            widget = self._widgets[spec.field_id]
+            text = str(value)
+            if isinstance(widget, QComboBox):
+                idx = widget.findText(text)
+                if idx >= 0:
+                    widget.setCurrentIndex(idx)
+            elif isinstance(widget, QLineEdit):
+                widget.setText(text)
+        self._suspend_live_feedback = previous
+        self._sync_state_from_ui(refresh=True)
+
+    def _save_input_conditions(self) -> None:
+        out_path = choose_save_input_conditions_path(
+            self,
+            "保存输入条件",
+            SAVED_INPUTS_DIR / "spline_input_conditions.json",
+        )
+        if out_path is None:
+            return
+        try:
+            write_input_conditions(out_path, self._capture_input_snapshot())
+        except OSError as exc:
+            QMessageBox.critical(self, "保存失败", f"输入条件保存失败：{exc}")
+            return
+        self.set_info(f"输入条件已保存：{out_path}")
+
+    def _load_input_conditions(self) -> None:
+        in_path = choose_load_input_conditions_path(self, "加载输入条件", SAVED_INPUTS_DIR)
+        if in_path is None:
+            return
+        try:
+            data = read_input_conditions(in_path)
+        except FileNotFoundError:
+            QMessageBox.warning(self, "文件不存在", f"未找到输入条件文件：{in_path}")
+            return
+        except json.JSONDecodeError as exc:
+            QMessageBox.critical(self, "文件损坏", f"输入条件文件不是有效 JSON：{exc}")
+            return
+        except OSError as exc:
+            QMessageBox.critical(self, "加载失败", f"输入条件加载失败：{exc}")
+            return
+        self._apply_input_data(data)
+        self.set_info(f"已加载输入条件：{in_path}")
 
     def _get_value(self, field_id: str) -> str:
         w = self._widgets.get(field_id)
@@ -608,6 +788,27 @@ class SplineFitPage(BaseChapterPage):
         if isinstance(w, QLineEdit):
             return w.text().strip()
         return ""
+
+    def _run_calculation(self, *, strict: bool) -> None:
+        try:
+            payload = self._build_payload()
+            result = calculate_spline_fit(payload)
+        except InputError as exc:
+            self._last_payload = None
+            self._last_result = None
+            self.set_overall_status(f"输入错误: {exc}", "fail" if strict else "wait")
+            self.set_info(str(exc))
+            return
+        except Exception as exc:
+            self._last_payload = None
+            self._last_result = None
+            self.set_overall_status(f"内部错误: {exc}", "fail")
+            self.set_info(f"计算过程中出现意外错误，请检查输入或联系开发者。\n{exc}")
+            return
+
+        self._last_payload = payload
+        self._last_result = result
+        self._display_result(result)
 
     def _build_payload(self) -> dict:
         mode_text = self._get_value("mode")
@@ -634,21 +835,7 @@ class SplineFitPage(BaseChapterPage):
         return payload
 
     def _on_calculate(self) -> None:
-        try:
-            payload = self._build_payload()
-            result = calculate_spline_fit(payload)
-        except InputError as exc:
-            self.set_overall_status(f"输入错误: {exc}", "fail")
-            self.set_info(str(exc))
-            return
-        except Exception as exc:
-            self.set_overall_status(f"内部错误: {exc}", "fail")
-            self.set_info(f"计算过程中出现意外错误，请检查输入或联系开发者。\n{exc}")
-            return
-
-        self._last_payload = payload
-        self._last_result = result
-        self._display_result(result)
+        self._run_calculation(strict=True)
 
     def _display_result(self, result: dict) -> None:
         a = result["scenario_a"]
@@ -779,3 +966,44 @@ class SplineFitPage(BaseChapterPage):
                 f"结果: {'通过' if b['overall_pass'] else '不通过'}",
             ])
         return lines
+
+    def _load_sample(self, filename: str) -> None:
+        sample_path = EXAMPLES_DIR / filename
+        if not sample_path.exists():
+            QMessageBox.warning(self, "测试案例不存在", f"未找到测试案例文件: {sample_path}")
+            return
+        try:
+            data = read_input_conditions(sample_path)
+        except json.JSONDecodeError as exc:
+            QMessageBox.critical(self, "测试案例损坏", f"测试案例文件不是有效 JSON：{exc}")
+            return
+        self._apply_input_data(data)
+        self.set_info(f"已加载测试案例：{filename}。可直接执行校核并查看压入力曲线。")
+
+    def _clear(self) -> None:
+        self._apply_defaults()
+        self._last_payload = None
+        self._last_result = None
+        for key in ("a_badge", "b_badge"):
+            badge = self._result_labels.get(key)
+            if badge is None:
+                continue
+            badge.setText("等待计算" if key == "a_badge" else "未启用")
+            badge.setObjectName("WaitBadge")
+            badge.style().unpolish(badge)
+            badge.style().polish(badge)
+        details = {
+            "a_detail": "",
+            "b_detail": "仅花键模式，光滑段过盈校核已跳过。",
+        }
+        for key, text in details.items():
+            label = self._result_labels.get(key)
+            if label is not None:
+                label.setText(text)
+        if self.curve_widget is not None:
+            self.curve_widget.setVisible(False)
+        if self.message_box is not None:
+            self.message_box.clear()
+        self.set_overall_status("等待计算", "wait")
+        self.set_info("参数已重置为默认值。")
+        self._sync_state_from_ui(refresh=True)
