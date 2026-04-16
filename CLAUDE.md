@@ -102,6 +102,10 @@ python3 src/vdi2230_tool.py --input examples/input_case_01.json
 - 螺栓模块：未覆盖螺纹脱扣、完整疲劳谱（FKN 法）、偏心弯矩。
 - 螺栓模块：多层被夹件统一圆柱体模型（不支持逐层锥体/套筒选择），锥台模型仅适用对称夹紧体。
 - 轴向受力螺纹连接：已实现 core 计算（含 ISO/VDI 标准引用）、UI 结果展示、文本/PDF 报告导出。暂不支持横向力、弯矩、多螺栓并联。
+  - `As/d2/d3` 始终由 `d/p` 按 ISO 898-1 公式派生；若用户输入与派生值相对偏差 > 1% 会抛 `InputError`，UI 层把这三个字段锁定为 `AutoCalcCard` 只读。
+  - 未提供 `thread_strip.m_eff` 时螺纹脱扣标记为"未校核"（`status="not_checked"`），`overall_status` 会保持 `incomplete`，不再给出虚假的绿灯 PASS。
+  - 疲劳 Goodman 折减没有人为下限；`σ_m ≥ 0.9·Rp0.2` 直接判疲劳不通过。
+  - 任意输入变更、加载输入、清空页面后，"导出报告"按钮会立即失效，直到重新执行计算后才允许导出。
 - 蜗轮模块：DIN 3996 负载能力校核未实现。
 
 ## 开发注意事项
