@@ -816,14 +816,23 @@ class SplineFitPage(BaseChapterPage):
         mode_text = self._get_value("mode")
         mode = MODE_MAP.get(mode_text, "spline_only")
 
-        payload: dict[str, Any] = {"mode": mode, "spline": {}, "loads": {}, "checks": {}}
+        active_sections = {"spline", "loads", "checks"}
+        if mode == "combined":
+            active_sections |= {
+                "smooth_fit", "smooth_materials",
+                "smooth_roughness", "smooth_friction",
+            }
+
+        payload: dict[str, Any] = {"mode": mode}
+        for section in active_sections:
+            payload[section] = {}
         for chapter in CHAPTERS:
             for spec in chapter["fields"]:
                 if spec.mapping is None:
                     continue
                 section, key = spec.mapping
-                if section not in payload:
-                    payload[section] = {}
+                if section not in active_sections:
+                    continue
                 raw = self._get_value(spec.field_id)
                 if not raw:
                     continue

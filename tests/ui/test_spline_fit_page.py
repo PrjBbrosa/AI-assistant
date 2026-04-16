@@ -223,3 +223,20 @@ class TestSplineFitPage:
         items = [window.module_list.item(i).text() for i in range(window.module_list.count())]
         assert any("花键连接校核" in text for text in items)
         assert not any("花键过盈配合" in text for text in items)
+
+    def test_payload_filters_smooth_sections_in_spline_only_mode(self, app):
+        """仅花键模式下 payload 不包含 smooth_* 段，避免污染计算器输入。"""
+        page = SplineFitPage()
+        page._widgets["mode"].setCurrentText("仅花键")
+        payload = page._build_payload()
+        assert payload["mode"] == "spline_only"
+        assert "smooth_fit" not in payload
+        assert "smooth_materials" not in payload
+        assert "smooth_roughness" not in payload
+        assert "smooth_friction" not in payload
+        # 联合模式恢复后 smooth_* 重新出现
+        page._widgets["mode"].setCurrentText("联合")
+        payload = page._build_payload()
+        assert payload["mode"] == "combined"
+        assert "smooth_fit" in payload
+        assert "smooth_materials" in payload
