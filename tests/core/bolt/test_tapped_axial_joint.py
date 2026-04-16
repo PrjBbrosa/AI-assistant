@@ -1,5 +1,7 @@
 """Tapped axial threaded joint core calculator tests."""
 
+import math
+
 import pytest
 
 import core.bolt as bolt
@@ -214,6 +216,59 @@ def test_thread_strip_inactive_returns_fixed_shape():
     assert ts["critical_side"] == ""
     assert "未提供 m_eff" in ts["note"]
     assert result["checks"]["thread_strip_ok"] is True
+
+
+def test_thread_section_derived_when_as_d2_d3_missing():
+    """不传 As/d2/d3 时，按 d/p 自动派生（ISO 898-1 Annex A）。"""
+    data = _base_input()
+    data["fastener"].update({"d": 10.0, "p": 1.5})
+    # 移除可能遗留的 As/d2/d3
+    for key in ("As", "d2", "d3"):
+        data["fastener"].pop(key, None)
+    result = bolt.calculate_tapped_axial_joint(data)
+    geo = result["derived_geometry"]
+    # ISO 898-1 Sec 9.1.6: As = pi/4 * (d - 0.9382·p)^2
+    expected_as = math.pi / 4.0 * (10.0 - 0.9382 * 1.5) ** 2
+    assert geo["As_mm2"] == pytest.approx(expected_as, rel=1e-6)
+    assert geo["d2_mm"] == pytest.approx(10.0 - 0.64952 * 1.5, rel=1e-6)
+    assert geo["d3_mm"] == pytest.approx(10.0 - 1.22687 * 1.5, rel=1e-6)
+
+
+def test_thread_section_consistent_with_d_p_accepted():
+    """用户提供的 As/d2/d3 与 d/p 派生值相对偏差 <= 1% 时接受。"""
+    data = _base_input()
+    data["fastener"].update({"d": 10.0, "p": 1.5})
+    # 与公式值相对误差 ~0.3%
+    data["fastener"].update({"As": 58.00, "d2": 9.025, "d3": 8.15})
+    result = bolt.calculate_tapped_axial_joint(data)
+    # 派生值仍使用公式值（不使用用户值）
+    geo = result["derived_geometry"]
+    assert geo["As_mm2"] == pytest.approx(
+        math.pi / 4.0 * (10.0 - 0.9382 * 1.5) ** 2, rel=1e-6
+    )
+
+
+def test_thread_section_inconsistent_as_raises():
+    """用户提供的 As 与 d/p 派生值偏差 > 1% 时抛 InputError（§3.2 新规格/旧截面混算保护）。"""
+    data = _base_input()
+    # 示例 JSON 中的 d=8, p=1.25 对应 As≈36.6。用户把 d 改到 10 但 As 还残留 36.6。
+    data["fastener"].update({"d": 10.0, "p": 1.5, "As": 36.6})
+    with pytest.raises(InputError, match="不一致"):
+        bolt.calculate_tapped_axial_joint(data)
+
+
+def test_thread_section_inconsistent_d2_raises():
+    data = _base_input()
+    data["fastener"].update({"d": 10.0, "p": 1.5, "d2": 7.188})
+    with pytest.raises(InputError, match="不一致"):
+        bolt.calculate_tapped_axial_joint(data)
+
+
+def test_thread_section_inconsistent_d3_raises():
+    data = _base_input()
+    data["fastener"].update({"d": 10.0, "p": 1.5, "d3": 6.466})
+    with pytest.raises(InputError, match="不一致"):
+        bolt.calculate_tapped_axial_joint(data)
 
 
 def test_high_mean_stress_fails_fatigue_low_goodman():

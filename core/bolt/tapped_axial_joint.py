@@ -71,27 +71,62 @@ def _float_or_none(value: Any, name: str) -> float | None:
     return _to_float(value, name)
 
 
-def _derive_thread_geometry(fastener: dict[str, Any]) -> dict[str, float]:
-    """Derive ISO metric thread geometry from nominal diameter and pitch.
+_THREAD_SECTION_TOLERANCE = 0.01  # 1% relative; protects against stale As/d2/d3
+
+
+def _derive_thread_section(d: float, p: float) -> dict[str, float]:
+    """Pure formula: ISO metric thread section from nominal d and pitch p.
 
     References:
         DIN 13-1 (ISO 724): ISO metric thread dimensions.
         ISO 898-1:2013, Sec 9.1.6: stress cross-section formula.
     """
+    return {
+        "As": math.pi / 4.0 * (d - 0.9382 * p) ** 2,
+        "d2": d - 0.64952 * p,
+        "d3": d - 1.22687 * p,
+    }
+
+
+def _derive_thread_geometry(fastener: dict[str, Any]) -> dict[str, float]:
+    """Derive ISO metric thread geometry from nominal d and pitch p.
+
+    Always uses formula values for As/d2/d3. If the caller provides any of
+    those fields, they are checked for consistency with d/p (relative
+    tolerance 1%). Inconsistency raises InputError, preventing the
+    "new spec + stale section" silent miscalculation flagged by Codex
+    adversarial review 2026-04-16 §3.2.
+    """
     d = _positive(_require(fastener, "d", "fastener"), "fastener.d")
     p = _positive(_require(fastener, "p", "fastener"), "fastener.p")
-    # As — 应力截面积 (ISO 898-1:2013, Sec 9.1.6)
-    as_val = fastener.get("As", math.pi / 4.0 * (d - 0.9382 * p) ** 2)
-    # d2 — 中径 (DIN 13-1 / ISO 724)
-    d2 = fastener.get("d2", d - 0.64952 * p)
-    # d3 — 小径 (DIN 13-1 / ISO 724)
-    d3 = fastener.get("d3", d - 1.22687 * p)
+    derived = _derive_thread_section(d, p)
+
+    for key in ("As", "d2", "d3"):
+        raw = fastener.get(key)
+        if raw in (None, ""):
+            continue
+        user_value = _to_float(raw, f"fastener.{key}")
+        derived_value = derived[key]
+        if derived_value <= 0:
+            raise InputError(
+                f"fastener.{key} 由 d={d}, p={p} 派生的值 {derived_value} 非正，"
+                "请复核 d 与 p。"
+            )
+        rel_dev = abs(user_value - derived_value) / derived_value
+        if rel_dev > _THREAD_SECTION_TOLERANCE:
+            raise InputError(
+                f"fastener.{key}={user_value} 与由 d={d}, p={p} 派生的 "
+                f"{derived_value:.4f} 不一致（相对偏差 {rel_dev * 100:.1f}% > "
+                f"{_THREAD_SECTION_TOLERANCE * 100:.0f}%）；请清空该字段让系统"
+                "自动计算，或修正 d/p 与截面数据的对应关系。"
+            )
+
     return {
         "d": d,
         "p": p,
-        "As": _positive(as_val, "fastener.As"),
-        "d2": _positive(d2, "fastener.d2"),
-        "d3": _positive(d3, "fastener.d3"),
+        "As": _positive(derived["As"], "fastener.As"),
+        "d2": _positive(derived["d2"], "fastener.d2"),
+        "d3": _positive(derived["d3"], "fastener.d3"),
     }
 
 

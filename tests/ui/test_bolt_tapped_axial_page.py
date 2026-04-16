@@ -1,3 +1,4 @@
+import math
 import os
 import unittest
 
@@ -98,6 +99,85 @@ class BoltTappedAxialPageTests(unittest.TestCase):
         self.assertIn("适用范围", report_text)
         self.assertIn("螺纹脱扣", report_text)
         self.assertNotIn("FK_residual", report_text)
+
+    # --- Codex §3.2 / §3.4：As/d2/d3 自动派生 + 缓存失效 ---
+
+    def test_thread_section_fields_are_autocalccard_readonly(self) -> None:
+        """As/d2/d3 不再允许手动编辑，以避免旧截面残留与新规格混算."""
+        page = BoltTappedAxialPage()
+        for fid in ("fastener.As", "fastener.d2", "fastener.d3"):
+            card = page._field_cards[fid]
+            self.assertEqual(
+                card.objectName(), "AutoCalcCard",
+                f"{fid} 应为 AutoCalcCard，实际 {card.objectName()}",
+            )
+            widget = page._field_widgets[fid]
+            self.assertTrue(
+                widget.isReadOnly(),  # type: ignore[attr-defined]
+                f"{fid} 应 readOnly",
+            )
+
+    def test_changing_d_refreshes_as_d2_d3(self) -> None:
+        """改 d/p 后 As/d2/d3 字段应自动按 ISO 898-1 公式重算."""
+        page = BoltTappedAxialPage()
+        page._field_widgets["fastener.d"].setText("12")  # type: ignore[attr-defined]
+        page._field_widgets["fastener.p"].setText("1.75")  # type: ignore[attr-defined]
+        expected_as = math.pi / 4.0 * (12.0 - 0.9382 * 1.75) ** 2
+        expected_d2 = 12.0 - 0.64952 * 1.75
+        expected_d3 = 12.0 - 1.22687 * 1.75
+        self.assertAlmostEqual(
+            float(page._field_widgets["fastener.As"].text()),  # type: ignore[attr-defined]
+            expected_as, places=3,
+        )
+        self.assertAlmostEqual(
+            float(page._field_widgets["fastener.d2"].text()),  # type: ignore[attr-defined]
+            expected_d2, places=4,
+        )
+        self.assertAlmostEqual(
+            float(page._field_widgets["fastener.d3"].text()),  # type: ignore[attr-defined]
+            expected_d3, places=4,
+        )
+
+    def test_export_buttons_disabled_until_calculate(self) -> None:
+        page = BoltTappedAxialPage()
+        self.assertFalse(page.btn_export_text.isEnabled())
+        self.assertFalse(page.btn_export_pdf.isEnabled())
+        page._field_widgets["service.FA_max"].setText("2000")  # type: ignore[attr-defined]
+        page._run_calculation()
+        self.assertTrue(page.btn_export_text.isEnabled())
+        self.assertTrue(page.btn_export_pdf.isEnabled())
+
+    def test_input_change_invalidates_cache_and_exports(self) -> None:
+        page = BoltTappedAxialPage()
+        page._field_widgets["service.FA_max"].setText("2000")  # type: ignore[attr-defined]
+        page._run_calculation()
+        self.assertIsNotNone(page._last_result)
+        # 改任意输入字段
+        page._field_widgets["service.FA_max"].setText("3000")  # type: ignore[attr-defined]
+        self.assertIsNone(page._last_result)
+        self.assertIsNone(page._last_payload)
+        self.assertFalse(page.btn_export_text.isEnabled())
+        self.assertFalse(page.btn_export_pdf.isEnabled())
+
+    def test_clear_invalidates_cache_and_exports(self) -> None:
+        page = BoltTappedAxialPage()
+        page._field_widgets["service.FA_max"].setText("2000")  # type: ignore[attr-defined]
+        page._run_calculation()
+        self.assertIsNotNone(page._last_result)
+        page._clear()
+        self.assertIsNone(page._last_result)
+        self.assertIsNone(page._last_payload)
+        self.assertFalse(page.btn_export_text.isEnabled())
+
+    def test_apply_input_data_invalidates_cache(self) -> None:
+        page = BoltTappedAxialPage()
+        page._field_widgets["service.FA_max"].setText("2000")  # type: ignore[attr-defined]
+        page._run_calculation()
+        snapshot = page._capture_input_snapshot()
+        # apply 后缓存必须失效
+        page._apply_input_data(snapshot)
+        self.assertIsNone(page._last_result)
+        self.assertFalse(page.btn_export_text.isEnabled())
 
 
 if __name__ == "__main__":

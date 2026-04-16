@@ -31,8 +31,15 @@ from app.ui.input_condition_store import (
     write_input_conditions,
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
-from core.bolt.tapped_axial_joint import calculate_tapped_axial_joint
+from core.bolt.tapped_axial_joint import (
+    _derive_thread_section,
+    calculate_tapped_axial_joint,
+)
 from core.bolt import InputError
+
+
+# Codex §3.2：As/d2/d3 自动派生，不允许手动覆盖
+_AUTO_DERIVED_FIELDS: tuple[str, ...] = ("fastener.As", "fastener.d2", "fastener.d3")
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -180,6 +187,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         self._field_cards: dict[str, QWidget] = {}
         self._last_payload: dict[str, Any] | None = None
         self._last_result: dict[str, Any] | None = None
+        self._suspend_live_feedback = False
 
         self.btn_save_inputs = self.add_action_button("保存输入条件")
         self.btn_load_inputs = self.add_action_button("加载输入条件")
@@ -199,7 +207,16 @@ class BoltTappedAxialPage(BaseChapterPage):
         self.btn_export_text.clicked.connect(self._export_text_report)
         self.btn_export_pdf.clicked.connect(self._export_pdf_report)
 
+        # Codex §3.2：把 As/d2/d3 改为只读 AutoCalcCard
+        for fid in _AUTO_DERIVED_FIELDS:
+            self._set_card_autocalc(fid, True)
+
+        self._suspend_live_feedback = True
         self._apply_defaults()
+        self._refresh_thread_section()
+        self._suspend_live_feedback = False
+
+        self._invalidate_cache()  # 初始禁用导出按钮
         self.set_overall_status("等待计算", "wait")
         self.set_info('填写输入条件后点击"开始计算"。')
 
@@ -376,12 +393,18 @@ class BoltTappedAxialPage(BaseChapterPage):
                 idx = editor.findText(spec.default)
                 if idx >= 0:
                     editor.setCurrentIndex(idx)
+            editor.currentTextChanged.connect(
+                lambda _text, fid=spec.field_id: self._on_input_changed(fid)
+            )
         else:
             editor = QLineEdit(parent)
             editor.setObjectName("InputField")
             editor.setPlaceholderText(spec.label)
             if spec.default:
                 editor.setText(spec.default)
+            editor.textChanged.connect(
+                lambda _text, fid=spec.field_id: self._on_input_changed(fid)
+            )
 
         editor.setToolTip(f"{spec.label}：{spec.hint}")
         self._field_widgets[spec.field_id] = editor
@@ -436,8 +459,12 @@ class BoltTappedAxialPage(BaseChapterPage):
         ui_state_data = data.get("ui_state")
         ui_state = ui_state_data if isinstance(ui_state_data, dict) else {}
 
+        self._suspend_live_feedback = True
         self._apply_defaults()
         for spec in self._field_specs.values():
+            # Codex §3.2：由 d/p 派生的字段不接受文件回填，避免旧截面残留
+            if spec.field_id in _AUTO_DERIVED_FIELDS:
+                continue
             value: Any | None = None
             if spec.field_id in ui_state:
                 value = ui_state[spec.field_id]
@@ -457,6 +484,10 @@ class BoltTappedAxialPage(BaseChapterPage):
                     widget.setCurrentIndex(idx)  # type: ignore[attr-defined]
             else:
                 widget.setText(text)  # type: ignore[attr-defined]
+        # 根据新 d/p 重算 As/d2/d3
+        self._refresh_thread_section()
+        self._suspend_live_feedback = False
+        self._invalidate_cache()
 
     def _save_input_conditions(self) -> None:
         default_path = SAVED_INPUTS_DIR / "bolt_tapped_axial_input_conditions.json"
@@ -490,9 +521,76 @@ class BoltTappedAxialPage(BaseChapterPage):
         self.set_info(f"已加载输入条件：{in_path}")
 
     def _clear(self) -> None:
+        self._suspend_live_feedback = True
         self._apply_defaults()
+        self._refresh_thread_section()
+        self._suspend_live_feedback = False
+        self._invalidate_cache()
         self.set_overall_status("等待计算", "wait")
         self.set_info("参数已重置为默认值。")
+
+    # --- Codex §3.2 / §3.4：AutoCalcCard + 缓存失效 ---
+
+    def _set_card_autocalc(self, field_id: str, auto: bool) -> None:
+        """Toggle a field card between SubCard and AutoCalcCard (auto-filled) style."""
+        card = self._field_cards.get(field_id)
+        if card is None:
+            return
+        card.setObjectName("AutoCalcCard" if auto else "SubCard")
+        card.style().unpolish(card)
+        card.style().polish(card)
+        for child in card.findChildren(QWidget):
+            child.style().unpolish(child)
+            child.style().polish(child)
+        widget = self._field_widgets.get(field_id)
+        if isinstance(widget, QLineEdit):
+            widget.setReadOnly(auto)
+        elif isinstance(widget, QComboBox):
+            widget.setEnabled(not auto)
+
+    def _refresh_thread_section(self) -> None:
+        """Recompute As/d2/d3 from current d/p and push to the auto-filled widgets."""
+        d_text = self._field_widgets.get("fastener.d")
+        p_text = self._field_widgets.get("fastener.p")
+        if not isinstance(d_text, QLineEdit) or not isinstance(p_text, QLineEdit):
+            return
+        try:
+            d = float(d_text.text().strip())
+            p = float(p_text.text().strip())
+        except ValueError:
+            return
+        if d <= 0 or p <= 0:
+            return
+        section = _derive_thread_section(d, p)
+        mapping = {
+            "fastener.As": section["As"],
+            "fastener.d2": section["d2"],
+            "fastener.d3": section["d3"],
+        }
+        for fid, value in mapping.items():
+            widget = self._field_widgets.get(fid)
+            if not isinstance(widget, QLineEdit):
+                continue
+            widget.blockSignals(True)
+            widget.setText(f"{value:.4f}")
+            widget.blockSignals(False)
+
+    def _invalidate_cache(self) -> None:
+        """Clear cached calculation result and disable export buttons."""
+        self._last_payload = None
+        self._last_result = None
+        self.btn_export_text.setEnabled(False)
+        self.btn_export_pdf.setEnabled(False)
+
+    def _on_input_changed(self, field_id: str) -> None:
+        if self._suspend_live_feedback:
+            return
+        # 派生字段自身变化不触发重算（它们由 _refresh_thread_section 写入，已 blockSignals）
+        if field_id in _AUTO_DERIVED_FIELDS:
+            return
+        if field_id in ("fastener.d", "fastener.p"):
+            self._refresh_thread_section()
+        self._invalidate_cache()
 
     def _set_badge(self, label: QLabel, text: str, state: str) -> None:
         if state == "pass":
@@ -511,14 +609,18 @@ class BoltTappedAxialPage(BaseChapterPage):
             payload = self._build_payload()
             result = calculate_tapped_axial_joint(payload)
         except (InputError, ValueError) as exc:
+            self._invalidate_cache()
             QMessageBox.critical(self, "输入参数错误", str(exc))
             return
         except Exception as exc:
+            self._invalidate_cache()
             QMessageBox.critical(self, "计算异常", str(exc))
             return
 
         self._last_payload = payload
         self._last_result = result
+        self.btn_export_text.setEnabled(True)
+        self.btn_export_pdf.setEnabled(True)
         self._render_result(result)
         self.set_current_chapter(self.chapter_list.count() - 1)
 
@@ -655,9 +757,27 @@ class BoltTappedAxialPage(BaseChapterPage):
 
         return lines
 
-    def _export_text_report(self) -> None:
-        if self._last_result is None:
+    def _ensure_export_payload_matches_current_inputs(self) -> bool:
+        """Codex §3.4：导出前再比一次当前表单与缓存 payload，确保报告对应当前输入。"""
+        if self._last_result is None or self._last_payload is None:
             QMessageBox.information(self, "提示", "请先执行计算。")
+            return False
+        try:
+            current = self._build_payload()
+        except ValueError as exc:
+            QMessageBox.warning(self, "输入格式错误", f"当前表单读取失败：{exc}")
+            return False
+        if current != self._last_payload:
+            QMessageBox.warning(
+                self, "输入已变更",
+                "当前表单与上次计算时的输入不一致，请先点击\u201c开始计算\u201d"
+                "刷新结果，再导出报告。",
+            )
+            return False
+        return True
+
+    def _export_text_report(self) -> None:
+        if not self._ensure_export_payload_matches_current_inputs():
             return
         lines = self._build_report_lines()
         path, _ = QFileDialog.getSaveFileName(
@@ -673,8 +793,7 @@ class BoltTappedAxialPage(BaseChapterPage):
             QMessageBox.critical(self, "导出失败", f"文件写入失败: {exc}")
 
     def _export_pdf_report(self) -> None:
-        if self._last_result is None:
-            QMessageBox.information(self, "提示", "请先执行计算。")
+        if not self._ensure_export_payload_matches_current_inputs():
             return
         try:
             from app.ui.report_pdf_tapped_axial import generate_tapped_axial_report
