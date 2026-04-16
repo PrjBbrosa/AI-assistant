@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QWidget
+
+from app.ui.fonts import make_ui_font
 
 
 class HertzInputDiagramWidget(QWidget):
@@ -52,7 +54,7 @@ class HertzInputDiagramWidget(QWidget):
         left = QRectF(panel.left() + 10, panel.top() + 10, panel.width() * 0.54, panel.height() - 20)
         right = QRectF(left.right() + 10, panel.top() + 10, panel.right() - left.right() - 20, panel.height() - 20)
 
-        painter.setFont(QFont("Avenir Next", 14, 700))
+        painter.setFont(make_ui_font(14, 700))
         painter.setPen(QPen(QColor("#2E2A25"), 1.0))
         title = "线接触输入示意" if self._mode == "line" else "点接触输入示意"
         painter.drawText(QRectF(left.left(), left.top(), left.width(), 26), Qt.AlignmentFlag.AlignLeft, title)
@@ -79,7 +81,7 @@ class HertzInputDiagramWidget(QWidget):
             )
 
         painter.setPen(QPen(QColor("#5C574F"), 1.0))
-        painter.setFont(QFont("Avenir Next", 12))
+        painter.setFont(make_ui_font(12))
         value_text = (
             f"当前输入\n"
             f"R1 = {self._r1:.2f} mm\n"
@@ -93,7 +95,7 @@ class HertzInputDiagramWidget(QWidget):
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
             value_text,
         )
-        painter.setFont(QFont("Avenir Next", 12, 600))
+        painter.setFont(make_ui_font(12, 600))
         painter.drawText(
             QRectF(right.left(), right.top() + right.height() * 0.42, right.width(), right.height() * 0.58),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
@@ -126,12 +128,12 @@ class HertzInputDiagramWidget(QWidget):
         top = QPointF(cx, rect.top() + 24)
         contact = QPointF(cx, mid_y - 8)
         self._draw_arrow(painter, top, contact, QColor("#D97757"))
-        painter.setFont(QFont("Avenir Next", 13, 700))
+        painter.setFont(make_ui_font(13, 700))
         painter.setPen(QPen(QColor("#7F2D1A"), 1.0))
         painter.drawText(QRectF(contact.x() + 8, top.y() - 8, 64, 16), "F")
 
         painter.setPen(QPen(QColor("#5C574F"), 1.0))
-        painter.setFont(QFont("Avenir Next", 11))
+        painter.setFont(make_ui_font(11))
         painter.drawText(QRectF(cx - 96, rect.bottom() - 40, 192, 20), Qt.AlignmentFlag.AlignCenter, "接触线长度方向为 L")
 
     def _draw_point_contact(self, painter: QPainter, rect: QRectF) -> None:
@@ -154,12 +156,12 @@ class HertzInputDiagramWidget(QWidget):
         top = QPointF(cx, rect.top() + 24)
         contact = QPointF(cx, cy - 4)
         self._draw_arrow(painter, top, contact, QColor("#D97757"))
-        painter.setFont(QFont("Avenir Next", 13, 700))
+        painter.setFont(make_ui_font(13, 700))
         painter.setPen(QPen(QColor("#7F2D1A"), 1.0))
         painter.drawText(QRectF(contact.x() + 8, top.y() - 8, 64, 16), "F")
 
         painter.setPen(QPen(QColor("#5C574F"), 1.0))
-        painter.setFont(QFont("Avenir Next", 11))
+        painter.setFont(make_ui_font(11))
         painter.drawText(QRectF(cx - 102, rect.bottom() - 40, 204, 20), Qt.AlignmentFlag.AlignCenter, "椭圆接触区在示意中简化为点")
 
     def _draw_arrow(self, painter: QPainter, p0: QPointF, p1: QPointF, color: QColor) -> None:

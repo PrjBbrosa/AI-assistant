@@ -4,15 +4,16 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QApplication
 
+from app.ui.fonts import UI_FONT_FAMILY_CSS
+
 
 def apply_theme(app: QApplication) -> None:
     """Apply app-wide style sheet."""
-    app.setStyleSheet(
-        """
+    style_sheet = """
         QWidget {
             background-color: #F7F5F2;
             color: #1F1D1A;
-            font-family: "Avenir Next", "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+            font-family: __UI_FONT_FAMILY_CSS__;
             font-size: 13px;
         }
         QMainWindow {
@@ -314,4 +315,4 @@ def apply_theme(app: QApplication) -> None:
             background: transparent;
         }
         """
-    )
+    app.setStyleSheet(style_sheet.replace("__UI_FONT_FAMILY_CSS__", UI_FONT_FAMILY_CSS))

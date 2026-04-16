@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPolygonF
+from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QWidget
+
+from app.ui.fonts import UI_FONT_FAMILY_SVG, make_ui_font
 
 
 class ClampingDiagramWidget(QWidget):
@@ -85,14 +87,14 @@ class ClampingDiagramWidget(QWidget):
 
         # Left-side component legend (to avoid overlap with drawing callouts)
         painter.setPen(QPen(QColor("#5A564F"), 1.0))
-        painter.setFont(QFont("Avenir Next", 9))
+        painter.setFont(make_ui_font(9))
         painter.drawText(
             left_legend_rect,
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
             self._legend_text(),
         )
 
-        painter.setFont(QFont("Avenir Next", 10))
+        painter.setFont(make_ui_font(10))
         painter.setPen(QPen(QColor("#6B665E"), 1.0))
         painter.drawText(
             right_values_rect,
@@ -126,7 +128,7 @@ class ClampingDiagramWidget(QWidget):
         )
 
     def _build_through_svg(self) -> str:
-        return """
+        return f"""
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540">
   <defs>
     <linearGradient id="steel" x1="0" y1="0" x2="0" y2="1">
@@ -188,7 +190,7 @@ class ClampingDiagramWidget(QWidget):
   <line x1="370" y1="70" x2="370" y2="510" stroke="#9b8d7a" stroke-width="1.2" stroke-dasharray="8 8"/>
 
   <!-- Component index markers -->
-  <g font-family="Arial, sans-serif" font-size="12" fill="#4b433a">
+  <g font-family="{UI_FONT_FAMILY_SVG}" font-size="12" fill="#4b433a">
     <circle cx="270" cy="118" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="266" y="123">1</text>
     <circle cx="176" cy="206" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="172" y="211">2</text>
     <circle cx="176" cy="300" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="172" y="305">3</text>
@@ -199,7 +201,7 @@ class ClampingDiagramWidget(QWidget):
 """.strip()
 
     def _build_tapped_svg(self) -> str:
-        return """
+        return f"""
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 540">
   <defs>
     <linearGradient id="steel" x1="0" y1="0" x2="0" y2="1">
@@ -261,13 +263,13 @@ class ClampingDiagramWidget(QWidget):
     <line x1="338" y1="394" x2="350" y2="404"/>
     <line x1="390" y1="404" x2="402" y2="394"/>
   </g>
-  <text x="436" y="408" font-family="Arial, sans-serif" font-size="15" fill="#5a564f">内螺纹</text>
+  <text x="436" y="408" font-family="{UI_FONT_FAMILY_SVG}" font-size="15" fill="#5a564f">内螺纹</text>
 
   <!-- Center line -->
   <line x1="370" y1="70" x2="370" y2="510" stroke="#9b8d7a" stroke-width="1.2" stroke-dasharray="8 8"/>
 
   <!-- Component index markers -->
-  <g font-family="Arial, sans-serif" font-size="12" fill="#4b433a">
+  <g font-family="{UI_FONT_FAMILY_SVG}" font-size="12" fill="#4b433a">
     <circle cx="270" cy="118" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="266" y="123">1</text>
     <circle cx="176" cy="206" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="172" y="211">2</text>
     <circle cx="176" cy="300" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="172" y="305">3</text>
@@ -305,7 +307,7 @@ class ClampingDiagramWidget(QWidget):
         painter.setBrush(QColor(251, 248, 243, 235))
         painter.drawRoundedRect(rect, 5, 5)
         painter.setPen(QPen(QColor("#1F1D1A"), 1.0))
-        painter.setFont(QFont("Avenir Next", 9, 700))
+        painter.setFont(make_ui_font(9, 700))
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
 
 
@@ -356,12 +358,12 @@ class ThreadForceTriangleWidget(QWidget):
         self._draw_arrow(painter, p1, apex, QColor("#5A8A5E"), 2.2)  # Axial side
 
         painter.setPen(QPen(QColor("#2E2A25"), 1.0))
-        painter.setFont(QFont("Avenir Next", 10, 600))
+        painter.setFont(make_ui_font(10, 600))
         painter.drawText(QRectF(p0.x() + 10, base_y - 30, 150, 24), "Ft 螺纹切向力")
         painter.drawText(QRectF((p0.x() + apex.x()) / 2 - 20, (p0.y() + apex.y()) / 2 - 32, 150, 24), "Fn 法向力")
         painter.drawText(QRectF(p1.x() + 8, (p1.y() + apex.y()) / 2 - 12, 150, 24), "Fa 轴向分力")
 
-        painter.setFont(QFont("Avenir Next", 10))
+        painter.setFont(make_ui_font(10))
         painter.setPen(QPen(QColor("#6B665E"), 1.0))
         painter.drawText(
             QRectF(panel.left() + panel.width() * 0.67, panel.top() + 24, panel.width() * 0.30, panel.height() - 32),

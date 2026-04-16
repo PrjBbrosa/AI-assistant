@@ -7,8 +7,10 @@ from pathlib import Path
 from typing import Sequence
 from xml.sax.saxutils import escape
 
-from PySide6.QtGui import QFont, QPageSize, QPdfWriter, QTextDocument
+from PySide6.QtGui import QPageSize, QPdfWriter, QTextDocument
 from PySide6.QtWidgets import QFileDialog, QWidget
+
+from app.ui.fonts import make_ui_font
 
 
 EXPORT_FILTER = "PDF Files (*.pdf);;Word Files (*.docx);;Text Files (*.txt);;All Files (*)"
@@ -46,7 +48,7 @@ def _export_pdf(out_path: Path, lines: Sequence[str]) -> None:
     writer = QPdfWriter(str(out_path))
     writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
     document = QTextDocument()
-    document.setDefaultFont(QFont("Avenir Next", 10))
+    document.setDefaultFont(make_ui_font(10))
     document.setPlainText("\n".join(lines))
     document.print_(writer)
 

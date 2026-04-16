@@ -5,8 +5,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QWidget
+
+from app.ui.fonts import make_ui_font
 
 
 class WormPerformanceCurveWidget(QWidget):
@@ -52,12 +54,12 @@ class WormPerformanceCurveWidget(QWidget):
 
             title_rect = QRectF(panel.left() + 18, panel.top() + 12, panel.width() - 36, 22)
             painter.setPen(QPen(QColor("#2E2A26"), 1.0))
-            painter.setFont(QFont("Avenir Next", 12, 600))
+            painter.setFont(make_ui_font(12, 600))
             painter.drawText(title_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "性能曲线")
 
             if len(self._load_factor) < 2:
                 painter.setPen(QPen(QColor("#6B665E"), 1.0))
-                painter.setFont(QFont("Avenir Next", 10))
+                painter.setFont(make_ui_font(10))
                 painter.drawText(panel, Qt.AlignmentFlag.AlignCenter, "执行计算后显示效率 / 损失功率曲线")
                 return
 
@@ -79,7 +81,7 @@ class WormPerformanceCurveWidget(QWidget):
         painter.drawRoundedRect(rect, 8, 8)
 
         painter.setPen(QPen(QColor("#6B665E"), 1.0))
-        painter.setFont(QFont("Avenir Next", 9, 500))
+        painter.setFont(make_ui_font(9, 500))
         painter.drawText(QRectF(rect.left() + 10, rect.top() + 8, 180, 14), Qt.AlignmentFlag.AlignLeft, label)
 
         plot = QRectF(rect.left() + 54, rect.top() + 12, rect.width() - 72, rect.height() - 28)
@@ -120,7 +122,7 @@ class WormPerformanceCurveWidget(QWidget):
             painter.drawEllipse(QPointF(current_x, current_y), 4.0, 4.0)
 
         painter.setPen(QPen(QColor("#7A7369"), 1.0))
-        painter.setFont(QFont("Avenir Next", 8))
+        painter.setFont(make_ui_font(8))
         painter.drawText(QRectF(rect.left() + 8, plot.center().y() - 8, 40, 16), Qt.AlignmentFlag.AlignRight, f"{y1:.2f}")
         painter.drawText(QRectF(rect.left() + 8, plot.bottom() - 8, 40, 16), Qt.AlignmentFlag.AlignRight, f"{y0:.2f}")
         painter.drawText(QRectF(plot.left(), plot.bottom() + 4, plot.width(), 14), Qt.AlignmentFlag.AlignCenter, "负载系数")

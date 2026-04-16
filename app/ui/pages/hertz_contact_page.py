@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QEvent, Qt
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -31,6 +30,7 @@ from app.ui.input_condition_store import (
     read_input_conditions,
     write_input_conditions,
 )
+from app.ui.fonts import make_ui_font
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import export_report_lines
 from app.ui.widgets.hertz_input_diagram import HertzInputDiagramWidget
@@ -395,10 +395,10 @@ class HertzContactPage(BaseChapterPage):
 
         title = QLabel("输入条件图示说明", page)
         title.setObjectName("SectionTitle")
-        title.setFont(QFont("Avenir Next", 20, 700))
+        title.setFont(make_ui_font(20, 700))
         hint = QLabel("图示随输入实时变化，用于核对接触模型、载荷方向和关键参数。", page)
         hint.setObjectName("SectionHint")
-        hint.setFont(QFont("Avenir Next", 14))
+        hint.setFont(make_ui_font(14))
         hint.setWordWrap(True)
         self.diagram_widget = HertzInputDiagramWidget(page)
 

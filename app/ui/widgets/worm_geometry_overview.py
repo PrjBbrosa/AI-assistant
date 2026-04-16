@@ -5,8 +5,10 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QWidget
+
+from app.ui.fonts import make_ui_font
 
 
 class WormGeometryOverviewWidget(QWidget):
@@ -37,7 +39,7 @@ class WormGeometryOverviewWidget(QWidget):
             painter.drawRoundedRect(panel, 12, 12)
 
             painter.setPen(QPen(QColor("#2B2723"), 1.0))
-            painter.setFont(QFont("Avenir Next", 12, 600))
+            painter.setFont(make_ui_font(12, 600))
             painter.drawText(QRectF(panel.left() + 18, panel.top() + 12, panel.width() - 36, 20), Qt.AlignmentFlag.AlignLeft, self._title)
 
             diagram = QRectF(panel.left() + 22, panel.top() + 44, panel.width() * 0.67, panel.height() - 66)
@@ -99,7 +101,7 @@ class WormGeometryOverviewWidget(QWidget):
             painter.drawLine(QPointF(x_left, a_y), QPointF(x_right, a_y))
             painter.drawLine(QPointF(x_left, a_y - 8), QPointF(x_left, a_y + 8))
             painter.drawLine(QPointF(x_right, a_y - 8), QPointF(x_right, a_y + 8))
-            painter.setFont(QFont("Avenir Next", 9, 500))
+            painter.setFont(make_ui_font(9, 500))
             painter.drawText(QRectF((x_left + x_right) * 0.5 - 42, a_y - 22, 84, 16), Qt.AlignmentFlag.AlignCenter, "中心距 a")
 
             d1_x = worm_rect.left() + worm_rect.width() * 0.18
@@ -127,7 +129,7 @@ class WormGeometryOverviewWidget(QWidget):
             painter.drawText(QRectF(worm_rect.left() + 14, worm_rect.bottom() + 24, 88, 16), Qt.AlignmentFlag.AlignLeft, "右旋示意")
 
             painter.setPen(QPen(QColor("#5F584F"), 1.0))
-            painter.setFont(QFont("Avenir Next", 9))
+            painter.setFont(make_ui_font(9))
             painter.drawText(
                 info.adjusted(14, 14, -14, -14),
                 int(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap),

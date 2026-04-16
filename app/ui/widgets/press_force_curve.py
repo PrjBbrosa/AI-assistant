@@ -5,8 +5,10 @@ from __future__ import annotations
 from typing import Iterable
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QWidget
+
+from app.ui.fonts import make_ui_font
 
 
 class PressForceCurveWidget(QWidget):
@@ -57,7 +59,7 @@ class PressForceCurveWidget(QWidget):
 
         if len(self._x) < 2 or len(self._y) < 2:
             painter.setPen(QPen(QColor("#6B665E"), 1.0))
-            painter.setFont(QFont("Avenir Next", 11))
+            painter.setFont(make_ui_font(11))
             painter.drawText(panel, Qt.AlignmentFlag.AlignCenter, "执行校核后显示压入力曲线")
             return
 
@@ -111,7 +113,7 @@ class PressForceCurveWidget(QWidget):
         self._draw_arrow_head(painter, QPointF(plot.right() + 10, plot.bottom()), QPointF(1.0, 0.0), QColor("#5C574F"))
         self._draw_arrow_head(painter, QPointF(plot.left(), plot.top() - 10), QPointF(0.0, -1.0), QColor("#5C574F"))
 
-        painter.setFont(QFont("Avenir Next", 8))
+        painter.setFont(make_ui_font(8))
         for i in range(6):
             x_tick = plot.left() + plot.width() * i / 5.0
             painter.drawLine(QPointF(x_tick, plot.bottom()), QPointF(x_tick, plot.bottom() + 4))
@@ -133,7 +135,7 @@ class PressForceCurveWidget(QWidget):
 
         # Axis labels
         painter.setPen(QPen(QColor("#5C574F"), 1.0))
-        painter.setFont(QFont("Avenir Next", 10))
+        painter.setFont(make_ui_font(10))
         painter.drawText(QRectF(plot.left(), panel.bottom() - 22, plot.width(), 18), Qt.AlignmentFlag.AlignCenter, "过盈量 delta (um)")
         painter.save()
         painter.translate(panel.left() + 20, plot.center().y())
@@ -150,7 +152,7 @@ class PressForceCurveWidget(QWidget):
             f"delta_max={self._delta_max:.2f} um\n"
             f"delta_req={self._delta_req:.2f} um"
         )
-        painter.setFont(QFont("Avenir Next", 9))
+        painter.setFont(make_ui_font(9))
         painter.setPen(QPen(QColor("#6B665E"), 1.0))
         painter.drawText(
             QRectF(plot.right() - 130, plot.top() + 6, 124, 70),
@@ -165,7 +167,7 @@ class PressForceCurveWidget(QWidget):
         pen = QPen(color, 1.4, Qt.PenStyle.DashLine)
         painter.setPen(pen)
         painter.drawLine(QPointF(x_coord, plot.top()), QPointF(x_coord, plot.bottom()))
-        painter.setFont(QFont("Avenir Next", 8))
+        painter.setFont(make_ui_font(8))
         painter.drawText(QRectF(x_coord - 42, plot.top() + 3, 84, 14), Qt.AlignmentFlag.AlignCenter, name)
 
     def _interp_force(self, x: float) -> float:
