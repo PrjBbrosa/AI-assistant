@@ -144,6 +144,12 @@ class TestScenarioA:
         with pytest.raises(InputError, match="torque_required_nm"):
             calculate_spline_fit(case)
 
+    def test_torque_capacity_sf_matches_flank_sf(self):
+        """数学上 T_cap/T_design 与 p_zul/p_flank 相等。"""
+        result = calculate_spline_fit(make_scenario_a_case())
+        a = result["scenario_a"]
+        assert a["torque_capacity_sf"] == pytest.approx(a["flank_safety"], rel=1e-6)
+
     def test_k_alpha_default_matches_ui(self):
         """未指定 k_alpha 时 calculator 采用 1.3，与 UI FieldSpec.default 一致。"""
         data = {

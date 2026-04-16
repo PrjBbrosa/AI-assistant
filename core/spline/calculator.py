@@ -94,6 +94,9 @@ def _calculate_scenario_a(
 
     flank_sf = p_zul / p_flank if p_flank > 0 else math.inf
     flank_ok = flank_sf >= flank_safety_min
+    torque_capacity_sf = (
+        T_cap_nm / torque_design_nm if torque_design_nm > 0 else math.inf
+    )
     messages = list(geo.get("messages", []))
     not_covered_checks = [
         "齿根弯曲强度",
@@ -111,6 +114,7 @@ def _calculate_scenario_a(
         "p_allowable_mpa": p_zul,
         "flank_pressure_mpa": p_flank,
         "torque_capacity_nm": T_cap_nm,
+        "torque_capacity_sf": torque_capacity_sf,
         "torque_design_nm": torque_design_nm,
         "flank_safety": flank_sf,
         "flank_safety_min": flank_safety_min,
