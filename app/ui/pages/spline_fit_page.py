@@ -911,7 +911,10 @@ class SplineFitPage(BaseChapterPage):
             self.set_overall_status(status_text, "fail")
 
         msgs = result.get("messages", [])
-        self.set_info("\n".join(msgs) if msgs else "校核完成。")
+        info_text = "\n".join(msgs) if msgs else "校核完成。"
+        self.set_info(info_text)
+        if self.message_box is not None:
+            self.message_box.setPlainText(info_text if msgs else "")
 
     def _save_report(self) -> None:
         if self._last_result is None or self._last_payload is None:

@@ -64,7 +64,7 @@ class MainWindow(QMainWindow):
             ("螺栓连接", BoltPage(self)),
             ("轴向受力螺纹连接", BoltTappedAxialPage(self)),
             ("过盈配合", InterferenceFitPage(self)),
-            ("花键过盈配合", SplineFitPage(self)),
+            ("花键连接校核", SplineFitPage(self)),
             ("蜗轮蜗杆设计", WormGearPage(self)),
             ("赫兹应力", HertzContactPage(self)),
             ("材料与标准库", PlaceholderPage("材料与标准库", self)),
