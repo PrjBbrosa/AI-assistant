@@ -144,6 +144,28 @@ class TestScenarioA:
         with pytest.raises(InputError, match="torque_required_nm"):
             calculate_spline_fit(case)
 
+    def test_k_alpha_default_matches_ui(self):
+        """未指定 k_alpha 时 calculator 采用 1.3，与 UI FieldSpec.default 一致。"""
+        data = {
+            "mode": "spline_only",
+            "spline": {
+                "geometry_mode": "reference_dimensions",
+                "module_mm": 1.25,
+                "tooth_count": 12,
+                "reference_diameter_mm": 15.0,
+                "tip_diameter_shaft_mm": 14.75,
+                "root_diameter_shaft_mm": 12.1,
+                "tip_diameter_hub_mm": 12.5,
+                "engagement_length_mm": 40.0,
+                "p_allowable_mpa": 100.0,
+                # k_alpha 故意省略，应采用默认 1.3
+            },
+            "loads": {"torque_required_nm": 50.0, "application_factor_ka": 1.0},
+            "checks": {"flank_safety_min": 1.3},
+        }
+        result = calculate_spline_fit(data)
+        assert result["scenario_a"]["k_alpha"] == pytest.approx(1.3)
+
 
 def make_combined_case() -> dict:
     """Combined mode: scenario A + scenario B."""

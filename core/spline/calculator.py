@@ -48,8 +48,10 @@ def _calculate_scenario_a(
         float(_require(spline, "engagement_length_mm", "spline")),
         "spline.engagement_length_mm",
     )
+    # k_alpha 合成齿向与齿面载荷分布（DIN 6892-1 的 K_1·K_2 保守上限），
+    # 默认 1.3 对齐 UI 的 FieldSpec.default 与常规过盈固定连接经验值。
     k_alpha = _positive(
-        float(spline.get("k_alpha", 1.0)), "spline.k_alpha"
+        float(spline.get("k_alpha", 1.3)), "spline.k_alpha"
     )
     p_zul = _positive(
         float(_require(spline, "p_allowable_mpa", "spline")),
@@ -82,6 +84,9 @@ def _calculate_scenario_a(
 
     T_design_nmm = torque_design_nm * 1000.0
 
+    # p = 2·T·k_alpha / (z·h_w·d_m·L)
+    # K_A 已在 calculate_spline_fit 入口预乘（torque_design_nm = T_req * K_A），
+    # 此处只乘 k_alpha（合成齿向+齿面载荷分布，保守上限）。
     p_flank = (2.0 * T_design_nmm * k_alpha) / (z * h_w * d_m * L)
 
     T_cap_nmm = p_zul * z * h_w * d_m * L / (2.0 * k_alpha)

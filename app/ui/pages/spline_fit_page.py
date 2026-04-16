@@ -212,7 +212,8 @@ CHAPTERS: list[dict[str, Any]] = [
             ),
             FieldSpec(
                 "spline.k_alpha", "载荷分布系数 K_alpha", "-",
-                "齿面载荷分布不均匀的修正系数。过盈固定连接约 1.0~1.3，滑移连接约 1.5~2.0。",
+                "合成的齿向+齿面载荷分布系数（保守上限，未分解为 DIN 6892 的 K_1/K_2/K_3）。"
+                "过盈固定连接约 1.0~1.3，滑移连接约 1.5~2.0。",
                 mapping=("spline", "k_alpha"),
                 default="1.3", placeholder="例如 1.1~2.0",
             ),
