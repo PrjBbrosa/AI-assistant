@@ -1,0 +1,44 @@
+{
+  "fastener": {
+    "d": 10.0,
+    "p": 1.5,
+    "d2": 9.026,
+    "d3": 8.160,
+    "As": 58.0,
+    "Rp02": 640.0,
+    "E_bolt": 210000.0,
+    "grade": "8.8"
+  },
+  "assembly": {
+    "F_preload_min": 12000.0,
+    "alpha_A": 1.6,
+    "mu_thread": 0.11,
+    "mu_bearing": 0.13,
+    "bearing_d_inner": 11.0,
+    "bearing_d_outer": 18.0,
+    "prevailing_torque": 0.0,
+    "thread_flank_angle_deg": 60.0,
+    "tightening_method": "torque",
+    "utilization": 0.95
+  },
+  "service": {
+    "FA_min": 2000.0,
+    "FA_max": 20000.0
+  },
+  "fatigue": {
+    "load_cycles": 5000000.0,
+    "surface_treatment": "cut"
+  },
+  "thread_strip": {
+    "m_eff": 1.5,
+    "tau_BM": 220.0,
+    "tau_BS": 240.0,
+    "safety_required": 2.0
+  },
+  "checks": {
+    "yield_safety_operating": 1.2
+  },
+  "options": {
+    "report_mode": "compact"
+  }
+}
