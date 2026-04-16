@@ -67,18 +67,49 @@ class BoltTappedAxialPageTests(unittest.TestCase):
 
 
     def test_run_calculation_sets_result_title_pass(self) -> None:
+        """执行计算后标题非空，取值属于新三态中的任意一种（pass/fail/incomplete）."""
         page = BoltTappedAxialPage()
         page._field_widgets["service.FA_max"].setText("2000")
         page._run_calculation()
         self.assertIsNotNone(page._last_result)
-        self.assertIn(page.result_title.text(), ("校核通过", "校核不通过"))
+        self.assertIn(
+            page.result_title.text(),
+            ("校核通过", "校核不通过", "校核不完整"),
+        )
 
     def test_run_calculation_populates_check_badges(self) -> None:
+        """徽标文本允许 "通过/不通过/未校核" 三态；未校核对应 m_eff 未填的脱扣项."""
         page = BoltTappedAxialPage()
         page._field_widgets["service.FA_max"].setText("2000")
         page._run_calculation()
         for key, badge in page._check_badges.items():
-            self.assertIn(badge.text(), ("通过", "不通过"))
+            self.assertIn(badge.text(), ("通过", "不通过", "未校核"))
+
+    def test_missing_m_eff_shows_incomplete_status_and_unchecked_badge(self) -> None:
+        """Codex §3.3：未填啮合长度时，螺纹脱扣徽标为"未校核"，整体为校核不完整."""
+        page = BoltTappedAxialPage()
+        page._field_widgets["service.FA_max"].setText("2000")  # type: ignore[attr-defined]
+        page._run_calculation()
+        strip_badge = page._check_badges["thread_strip_ok"]
+        self.assertEqual(strip_badge.text(), "未校核")
+        self.assertEqual(strip_badge.objectName(), "WaitBadge")
+        # 总体结论标题
+        self.assertEqual(page.result_title.text(), "校核不完整")
+        # _last_result 反映 overall_status
+        self.assertEqual(page._last_result["overall_status"], "incomplete")  # type: ignore[index]
+        self.assertFalse(page._last_result["overall_pass"])  # type: ignore[index]
+
+    def test_m_eff_provided_shows_pass_or_fail_overall(self) -> None:
+        """填入 m_eff 与对手件参数后，脱扣徽标不再为"未校核"，整体在 pass/fail 二选一."""
+        page = BoltTappedAxialPage()
+        page._field_widgets["service.FA_max"].setText("2000")  # type: ignore[attr-defined]
+        page._field_widgets["thread_strip.m_eff"].setText("10.0")  # type: ignore[attr-defined]
+        page._field_widgets["thread_strip.tau_BM"].setText("350.0")  # type: ignore[attr-defined]
+        page._field_widgets["thread_strip.tau_BS"].setText("400.0")  # type: ignore[attr-defined]
+        page._run_calculation()
+        strip_badge = page._check_badges["thread_strip_ok"]
+        self.assertIn(strip_badge.text(), ("通过", "不通过"))
+        self.assertIn(page._last_result["overall_status"], ("pass", "fail"))  # type: ignore[index]
 
     def test_run_calculation_populates_metrics_text(self) -> None:
         page = BoltTappedAxialPage()

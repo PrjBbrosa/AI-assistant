@@ -293,10 +293,13 @@ def calculate_tapped_axial_joint(data: dict[str, Any]) -> dict[str, Any]:
     c1 = 0.75 if c1_input in (None, "") else _to_float(c1_input, "thread_strip.C1")
     c3 = 0.58 if c3_input in (None, "") else _to_float(c3_input, "thread_strip.C3")
     strip_active = m_eff is not None
-    strip_ok = True
-    strip_result = {
+    # Codex §3.3：未提供 m_eff 时，脱扣标记为 not_checked 而非 pass，
+    # thread_strip_ok 返回 None 让 overall_pass 不被虚假绿灯覆盖。
+    strip_ok: bool | None = None
+    strip_result: dict[str, Any] = {
         "active": False,
-        "check_passed": True,
+        "status": "not_checked",
+        "check_passed": None,
         "A_SB_mm2": 0.0,
         "A_SM_mm2": 0.0,
         "tau_BS_MPa": 0.0,
@@ -337,7 +340,8 @@ def calculate_tapped_axial_joint(data: dict[str, Any]) -> dict[str, Any]:
         )
         strip_result = {
             "active": True,
-            "check_passed": strip_ok,
+            "status": "pass" if strip_ok else "fail",
+            "check_passed": bool(strip_ok),
             "A_SB_mm2": a_sb,
             "A_SM_mm2": a_sm,
             "tau_BS_MPa": tau_bs,
@@ -387,16 +391,37 @@ def calculate_tapped_axial_joint(data: dict[str, Any]) -> dict[str, Any]:
         else:
             recommendations.append("脱扣由壳体侧控制：可提高对手件材料强度或增大有效啮合长度。")
 
-    checks_out = {
+    # Codex §3.3：thread_strip_ok=None 表示未校核，不应被 all() 当作通过；
+    # overall_status 区分 pass / fail / incomplete。
+    checks_out: dict[str, bool | None] = {
         "assembly_von_mises_ok": assembly_ok,
         "service_von_mises_ok": service_ok,
         "fatigue_ok": fatigue_ok,
         "thread_strip_ok": strip_ok,
     }
-    overall_pass = all(checks_out.values())
+    active_checks = [v for v in checks_out.values() if v is not None]
+    has_not_checked = any(v is None for v in checks_out.values())
+    all_active_pass = bool(active_checks) and all(active_checks)
+    any_active_fail = any(v is False for v in checks_out.values())
+
+    if any_active_fail:
+        overall_status = "fail"
+    elif has_not_checked:
+        # 没有任何显性失败，但仍有未校核项：不给绿灯，标 incomplete
+        overall_status = "incomplete"
+    else:
+        overall_status = "pass" if all_active_pass else "fail"
+    overall_pass = overall_status == "pass"
+
+    if has_not_checked and strip_ok is None:
+        warnings.append(
+            "螺纹脱扣未校核：未提供 thread_strip.m_eff 等必要输入；"
+            "请填写啮合长度与对手件材料剪切强度后再判定总体结论。"
+        )
 
     return {
         "overall_pass": overall_pass,
+        "overall_status": overall_status,
         "model_type": "tapped_axial_threaded_joint",
         "scope_note": (
             "仅适用于螺栓拧入螺纹对手件、中间无被夹件、纯轴向拉载荷工况。"

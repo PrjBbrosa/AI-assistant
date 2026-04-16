@@ -70,7 +70,11 @@ def test_returns_stable_result_shape_for_basic_case():
     assert "sigma_vm_service_max" in result["stresses_mpa"]
     assert "thread_strip_ok" in result["checks"]
     assert result["thread_strip"]["active"] is False
-    assert result["checks"]["thread_strip_ok"] is True
+    # Codex §3.3：未提供 m_eff 时 thread_strip_ok=None 表示"未校核"，
+    # 不再被当作通过。
+    assert result["checks"]["thread_strip_ok"] is None
+    assert result["thread_strip"]["status"] == "not_checked"
+    assert result["overall_status"] in ("fail", "incomplete")
     assert isinstance(result["warnings"], list)
     assert isinstance(result["recommendations"], list)
     assert "cycle_factor" in result["trace"]["intermediate"]
@@ -205,17 +209,61 @@ def test_assembly_failure_high_preload():
     assert any("装配" in r for r in result["recommendations"])
 
 
-def test_thread_strip_inactive_returns_fixed_shape():
-    """未提供 m_eff 时，脱扣返回固定 shape 且 overall_pass 不受影响."""
+def test_thread_strip_inactive_marks_not_checked():
+    """Codex §3.3：其它分项全绿但未提供 m_eff 时，整体不得判通过，应为 incomplete。"""
     data = _base_input()
+    # 构造其余分项都通过的工况，隔离 thread_strip not_checked 的影响
+    data["service"]["FA_max"] = 2000.0
     result = bolt.calculate_tapped_axial_joint(data)
+    # 先确认其余分项都通过
+    assert result["checks"]["assembly_von_mises_ok"] is True
+    assert result["checks"]["service_von_mises_ok"] is True
+    assert result["checks"]["fatigue_ok"] is True
     ts = result["thread_strip"]
     assert ts["active"] is False
-    assert ts["check_passed"] is True
+    assert ts["status"] == "not_checked"
+    assert ts["check_passed"] is None
     assert ts["A_SB_mm2"] == 0.0
     assert ts["critical_side"] == ""
     assert "未提供 m_eff" in ts["note"]
-    assert result["checks"]["thread_strip_ok"] is True
+    assert result["checks"]["thread_strip_ok"] is None
+    assert result["overall_status"] == "incomplete", (
+        "其它分项全绿但脱扣未校核时，overall_status 必须为 incomplete 而非 pass。"
+    )
+    assert result["overall_pass"] is False
+    assert any("脱扣未校核" in w for w in result["warnings"])
+
+
+def test_m_eff_provided_runs_strip_check_and_pass_status():
+    """提供 m_eff 后脱扣校核激活，status 为 pass/fail，overall_status 非 incomplete。"""
+    data = _base_input()
+    data["thread_strip"] = {
+        **data.get("thread_strip", {}),
+        "m_eff": 10.0,
+        "tau_BM": 350.0,
+        "tau_BS": 400.0,
+        "safety_required": 1.25,
+    }
+    result = bolt.calculate_tapped_axial_joint(data)
+    ts = result["thread_strip"]
+    assert ts["active"] is True
+    assert ts["status"] in ("pass", "fail")
+    assert ts["check_passed"] in (True, False)
+    assert result["checks"]["thread_strip_ok"] in (True, False)
+    assert result["overall_status"] in ("pass", "fail")
+
+
+def test_overall_status_fail_when_any_active_check_fails_even_if_strip_not_checked():
+    """fail 优先于 incomplete：有任何 active check = False，overall_status=fail。"""
+    data = _base_input()
+    data["assembly"]["F_preload_min"] = 80_000.0
+    data["assembly"]["alpha_A"] = 1.8
+    # 仍不提供 m_eff -> thread_strip_ok=None
+    result = bolt.calculate_tapped_axial_joint(data)
+    assert result["checks"]["assembly_von_mises_ok"] is False
+    assert result["checks"]["thread_strip_ok"] is None
+    assert result["overall_status"] == "fail"
+    assert result["overall_pass"] is False
 
 
 def test_thread_section_derived_when_as_d2_d3_missing():

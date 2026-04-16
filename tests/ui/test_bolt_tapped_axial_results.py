@@ -15,11 +15,12 @@ class BoltTappedAxialResultsTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_run_calculation_renders_result_and_inactive_thread_strip(self) -> None:
+        """未填 m_eff 的默认场景：结果渲染正常，总体结论为"校核不完整"（Codex §3.3）."""
         page = BoltTappedAxialPage()
         page._field_widgets["service.FA_max"].setText("2000")
         page._run_calculation()
         self.assertIsNotNone(page._last_result)
-        self.assertEqual(page.result_title.text(), "校核通过")
+        self.assertEqual(page.result_title.text(), "校核不完整")
         self.assertIn("预紧力范围", page.metrics_text.text())
         self.assertIn("未提供 m_eff", page.metrics_text.text())
         self.assertNotIn("FK_residual", page.metrics_text.text())

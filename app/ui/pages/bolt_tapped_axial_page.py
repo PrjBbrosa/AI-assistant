@@ -625,19 +625,32 @@ class BoltTappedAxialPage(BaseChapterPage):
         self.set_current_chapter(self.chapter_list.count() - 1)
 
     def _render_result(self, result: dict[str, Any]) -> None:
-        overall = bool(result.get("overall_pass"))
-        if overall:
+        # Codex §3.3：三态结论 pass / fail / incomplete
+        overall_status = result.get("overall_status", "fail" if not result.get("overall_pass") else "pass")
+        if overall_status == "pass":
             self.result_title.setText("校核通过")
             self.result_summary.setText("该工况满足全部校核要求。")
             self.set_overall_status("总体通过", "pass")
+        elif overall_status == "incomplete":
+            self.result_title.setText("校核不完整")
+            self.result_summary.setText(
+                "部分分项尚未校核（常见为螺纹脱扣未填啮合长度）。"
+                "请补齐输入后重新计算再给出结论。"
+            )
+            self.set_overall_status("校核不完整", "wait")
         else:
             self.result_title.setText("校核不通过")
             self.result_summary.setText("存在不满足校核要求的项目，请查看分项结果与建议。")
             self.set_overall_status("总体不通过", "fail")
 
         for key, badge in self._check_badges.items():
-            ok = bool(result.get("checks", {}).get(key, False))
-            self._set_badge(badge, "通过" if ok else "不通过", "pass" if ok else "fail")
+            raw = result.get("checks", {}).get(key)
+            if raw is None:
+                self._set_badge(badge, "未校核", "wait")
+            elif raw:
+                self._set_badge(badge, "通过", "pass")
+            else:
+                self._set_badge(badge, "不通过", "fail")
 
         asm = result.get("assembly", {})
         stresses = result.get("stresses_mpa", {})
@@ -719,10 +732,24 @@ class BoltTappedAxialPage(BaseChapterPage):
         lines.append("--- 分项校核结果 ---")
         checks = result.get("checks", {})
         for key, label in CHECK_LABELS.items():
-            ok = checks.get(key, False)
-            lines.append(f"  {label}: {'通过' if ok else '不通过'}")
-        overall = result.get("overall_pass", False)
-        lines.append(f"  总体结论: {'通过' if overall else '不通过'}")
+            raw = checks.get(key)
+            if raw is None:
+                text = "未校核"
+            elif raw:
+                text = "通过"
+            else:
+                text = "不通过"
+            lines.append(f"  {label}: {text}")
+        overall_status = result.get(
+            "overall_status",
+            "pass" if result.get("overall_pass") else "fail",
+        )
+        status_text = {
+            "pass": "通过",
+            "fail": "不通过",
+            "incomplete": "校核不完整",
+        }.get(overall_status, overall_status)
+        lines.append(f"  总体结论: {status_text}")
         lines.append("")
 
         lines.append("--- 关键数值 ---")
