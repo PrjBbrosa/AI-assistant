@@ -82,14 +82,19 @@ def derive_involute_geometry(
             "root_diameter_shaft_mm、tip_diameter_hub_mm。"
         )
     elif allow_approximation:
-        d = m * z                          # 近似参考直径
-        d_a1 = m * (z + 1.0)              # 近似外花键齿顶圆
-        d_f1 = m * (z - 1.25)             # 近似外花键齿根圆
-        d_a2 = m * (z - 1.0)              # 近似内花键齿顶圆
+        # DIN 5480-2:2015 30° 压力角近似（从公用 catalog W/N 15~50 反推的系数）
+        # d_a1 = d - 0.2m（外花键齿顶，7e 公差带中位）
+        # d_a2 = d - 2.0m（内花键齿顶）
+        # d_f1 = d - 2.3m（外花键齿根，含齿根倒角）
+        # h_w = (d_a1 - d_a2)/2 ≈ 0.9m，与 catalog 相符
+        d = m * z
+        d_a1 = d - 0.2 * m
+        d_a2 = d - 2.0 * m
+        d_f1 = d - 2.3 * m
         geometry_source = "approximation_from_module_and_tooth_count"
         approximation_used = True
         messages.append(
-            "当前花键几何采用 module + tooth_count 的近似推导，"
+            "当前花键几何采用 DIN 5480-2 近似（d=m·z，齿顶/齿根系数取 catalog 平均），"
             "仅适合简化预校核。"
         )
     else:
