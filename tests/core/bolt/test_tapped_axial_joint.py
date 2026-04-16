@@ -214,3 +214,75 @@ def test_thread_strip_inactive_returns_fixed_shape():
     assert ts["critical_side"] == ""
     assert "未提供 m_eff" in ts["note"]
     assert result["checks"]["thread_strip_ok"] is True
+
+
+def test_high_mean_stress_fails_fatigue_low_goodman():
+    """高平均应力场景：原始 Goodman 因子 < 0.1 时疲劳必须按真实许用判定，不能被人为抬高到 0.1。
+
+    复现 Codex 2026-04-16 adversarial review §3.1：此前代码使用
+    ``goodman_factor = max(0.1, ...)`` 会在高平均应力下把许用应力幅抬升约 8 倍，
+    让本该不通过的疲劳场景被误判为 PASS。
+
+    用例构造：d=10, p=1.5, Rp02=640, F_preload_min=33 kN, angle 法，μ=0.05。
+    实际 σ_m/(0.9·Rp02) ≈ 0.988，goodman_factor_raw ≈ 0.012（正但 < 0.1）。
+    σ_a 落在 [σ_asv·0.012, σ_asv·0.1] 区间（约 [0.52, 4.4] MPa），
+    原代码 PASS，修复后 FAIL。
+    """
+    data = _base_input()
+    data["fastener"].update({"d": 10.0, "p": 1.5, "Rp02": 640.0})
+    data["assembly"].update(
+        {
+            "tightening_method": "angle",
+            "mu_thread": 0.05,
+            "mu_bearing": 0.05,
+            "alpha_A": 1.0,
+            "F_preload_min": 33_000.0,
+        }
+    )
+    # FA_max=200 → σ_a ≈ 1.72 MPa，落在新旧许用之间
+    data["service"].update({"FA_min": 0.0, "FA_max": 200.0})
+
+    result = bolt.calculate_tapped_axial_joint(data)
+
+    raw = result["fatigue"].get("goodman_factor_raw")
+    assert raw is not None, "goodman_factor_raw 必须出现在 result['fatigue'] 中"
+    assert 0.0 < raw < 0.1, (
+        f"期望 0 < raw < 0.1 以验证旧 max(0.1,...) 下限生效的场景，实际 raw={raw}"
+    )
+    assert result["fatigue"]["goodman_factor"] == pytest.approx(raw), (
+        "正数 raw 应原样保留为 goodman_factor，不应被 clamp。"
+    )
+    assert result["checks"]["fatigue_ok"] is False, (
+        "σ_a 超出真实许用 (σ_asv · raw) 时疲劳必须不通过；"
+        "此前 max(0.1, raw) 会把许用抬高到 σ_asv · 0.1 造成非保守 PASS。"
+    )
+    assert any(
+        "Goodman" in w or "疲劳" in w for w in result["warnings"]
+    ), f"Expected Goodman/疲劳 warning, got: {result['warnings']}"
+
+
+def test_mean_stress_beyond_goodman_limit_forces_zero_factor():
+    """σ_m >= 0.9·Rp0.2 时 goodman_factor_raw <= 0，clamp 到 0 并直接判疲劳不通过。"""
+    data = _base_input()
+    data["fastener"].update({"d": 10.0, "p": 1.5, "Rp02": 640.0})
+    data["assembly"].update(
+        {
+            "tightening_method": "angle",
+            "mu_thread": 0.05,
+            "mu_bearing": 0.05,
+            "alpha_A": 1.0,
+            "F_preload_min": 40_000.0,  # 让 σ_m > 0.9·Rp02
+        }
+    )
+    data["service"].update({"FA_min": 0.0, "FA_max": 10.0})
+
+    result = bolt.calculate_tapped_axial_joint(data)
+
+    assert result["fatigue"]["goodman_factor_raw"] <= 0.0
+    assert result["fatigue"]["goodman_factor"] == 0.0, (
+        "raw <= 0 时 goodman_factor 应 clamp 为 0（而非 0.1 或负数）。"
+    )
+    assert result["checks"]["fatigue_ok"] is False
+    assert any(
+        "Goodman" in w for w in result["warnings"]
+    ), f"Expected Goodman warning, got: {result['warnings']}"

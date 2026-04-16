@@ -243,9 +243,12 @@ def calculate_tapped_axial_joint(data: dict[str, Any]) -> dict[str, Any]:
     sigma_a = f_amplitude / as_val
     cycle_factor = (2_000_000.0 / load_cycles) ** 0.08 if load_cycles < 2_000_000.0 else 1.0
     sigma_asv = _fatigue_limit_asv(d, surface_treatment) * cycle_factor
-    goodman_factor = max(0.1, 1.0 - sigma_m / (0.9 * rp02))
+    # Ref: Codex adversarial review 2026-04-16 §3.1 —— 不对 Goodman 因子设人为下限。
+    # 原始因子 <= 0 表示 σ_m 已超过 0.9·Rp0.2，物理上疲劳不通过。
+    goodman_factor_raw = 1.0 - sigma_m / (0.9 * rp02)
+    goodman_factor = goodman_factor_raw if goodman_factor_raw > 0.0 else 0.0
     sigma_a_allow = sigma_asv * goodman_factor
-    fatigue_ok = sigma_a <= sigma_a_allow
+    fatigue_ok = (goodman_factor > 0.0) and (sigma_a <= sigma_a_allow)
 
     m_eff = _float_or_none(thread_strip.get("m_eff"), "thread_strip.m_eff")
     tau_bm = _float_or_none(thread_strip.get("tau_BM"), "thread_strip.tau_BM")
@@ -325,8 +328,16 @@ def calculate_tapped_axial_joint(data: dict[str, Any]) -> dict[str, Any]:
         )
     if utilization > 0.95:
         warnings.append("装配利用系数偏高，建议复核摩擦散差与装配工艺能力。")
-    if goodman_factor <= 0.1000001:
-        warnings.append("平均应力很高，Goodman 折减已达到下限，疲劳结论偏保守。")
+    if goodman_factor_raw <= 0.0:
+        warnings.append(
+            "平均应力已超出 Goodman 折减范围（σ_m >= 0.9·Rp0.2），"
+            "疲劳许用幅为 0，疲劳不通过。"
+        )
+    elif goodman_factor_raw < 0.1:
+        warnings.append(
+            f"Goodman 因子偏低（{goodman_factor_raw:.3f} < 0.1），"
+            "疲劳裕度极小，建议降低平均应力或增大规格。"
+        )
 
     recommendations: list[str] = []
     if not assembly_ok:
@@ -388,6 +399,7 @@ def calculate_tapped_axial_joint(data: dict[str, Any]) -> dict[str, Any]:
         "fatigue": {
             "sigma_ASV": sigma_asv,
             "goodman_factor": goodman_factor,
+            "goodman_factor_raw": goodman_factor_raw,
             "sigma_a_allow": sigma_a_allow,
             "load_cycles": load_cycles,
             "surface_treatment": surface_treatment,
