@@ -34,11 +34,13 @@ C_PRIMARY = colors.HexColor("#D97757")
 C_BG = colors.HexColor("#F7F5F2")
 C_PASS = colors.HexColor("#4CAF50")
 C_FAIL = colors.HexColor("#E53935")
+C_INCOMPLETE = colors.HexColor("#F6A623")  # 橙色：三态校核中的"未校核/不完整"
 C_TEXT = colors.HexColor("#2D2D2D")
 C_MUTED = colors.HexColor("#888888")
 C_WHITE = colors.HexColor("#FFFFFF")
 C_LIGHT_PASS = colors.HexColor("#E8F5E9")
 C_LIGHT_FAIL = colors.HexColor("#FFEBEE")
+C_LIGHT_INCOMPLETE = colors.HexColor("#FFF4E5")  # 浅橙，三态副标题背景
 
 # ---------------------------------------------------------------------------
 # Page layout constants
@@ -212,11 +214,42 @@ def _header_bar(styles: dict, title: str, date_str: str) -> Table:
     return t
 
 
-def _verdict_block(styles: dict, overall_pass: bool, subtitle: str) -> Table:
-    """Large pass/fail badge + subtitle."""
-    badge_color = C_PASS if overall_pass else C_FAIL
-    badge_text = "ALL PASS" if overall_pass else "FAIL"
-    badge_style = styles["badge_pass"] if overall_pass else styles["badge_fail"]
+def _verdict_block(
+    styles: dict,
+    overall_pass: bool | str,
+    subtitle: str,
+) -> Table:
+    """Large verdict badge + subtitle.
+
+    For backward compatibility the first argument may still be a bool
+    (True = pass, False = fail). Callers that need the tri-state
+    semantics (pass / fail / incomplete) may pass the string
+    ``overall_status`` directly. ``incomplete`` renders in orange with a
+    "校核不完整" badge so PDF reports match the UI tri-state (Codex
+    follow-up 2026-04-16).
+    """
+    if isinstance(overall_pass, str):
+        status = overall_pass
+    else:
+        status = "pass" if overall_pass else "fail"
+
+    if status == "pass":
+        badge_color = C_PASS
+        badge_text = "ALL PASS"
+        badge_style = styles["badge_pass"]
+        sub_bg = C_LIGHT_PASS
+    elif status == "incomplete":
+        badge_color = C_INCOMPLETE
+        badge_text = "校核不完整"
+        # reuse badge_fail style for white text on coloured background
+        badge_style = styles["badge_fail"]
+        sub_bg = C_LIGHT_INCOMPLETE
+    else:  # fail (and any unknown falls here)
+        badge_color = C_FAIL
+        badge_text = "FAIL"
+        badge_style = styles["badge_fail"]
+        sub_bg = C_LIGHT_FAIL
+
     badge = Paragraph(badge_text, badge_style)
     sub = Paragraph(subtitle, styles["body"])
 
@@ -229,7 +262,7 @@ def _verdict_block(styles: dict, overall_pass: bool, subtitle: str) -> Table:
         ("RIGHTPADDING", (-1, -1), (-1, -1), 10),
         ("TOPPADDING", (0, 0), (-1, -1), 8),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-        ("BACKGROUND", (1, 0), (1, 0), C_LIGHT_PASS if overall_pass else C_LIGHT_FAIL),
+        ("BACKGROUND", (1, 0), (1, 0), sub_bg),
     ]))
     return t
 
@@ -261,19 +294,29 @@ def _metric_cards(styles: dict, metrics: list[tuple[str, str]]) -> Table:
 
 
 def _check_pills(styles: dict, checks: dict, check_labels: dict, refs: dict) -> Table:
-    """Horizontal row of pass/fail pills."""
+    """Horizontal row of check pills.
+
+    Supports a three-state ``checks[key]`` value (Codex follow-up 2026-04-16):
+      * ``True``  -> green "通过"
+      * ``False`` -> red   "不通过"
+      * ``None``  -> grey  "未校核"
+
+    The pill background is chosen accordingly so unchecked items no longer
+    render as red FAIL in PDF exports.
+    """
     cells = []
     for key, label in check_labels.items():
         if key == "additional_load_ok":
             passed = refs.get("additional_load_ok", True)
             short = label.split("\uff08")[0] if "\uff08" in label else label
-            color = C_MUTED
             text_str = f"{short}: {'\u901a\u8fc7' if passed else '\u8d85\u9650'}(\u53c2\u8003)"
         elif key in checks:
-            passed = checks[key]
+            raw = checks[key]
             short = label.split("\uff08")[0] if "\uff08" in label else label
-            color = C_PASS if passed else C_FAIL
-            text_str = f"{short}: {_pass_text(passed)}"
+            if raw is None:
+                text_str = f"{short}: \u672a\u6821\u6838"  # 未校核
+            else:
+                text_str = f"{short}: {_pass_text(bool(raw))}"
         else:
             continue
         cells.append(Paragraph(text_str, styles["pill"]))
@@ -292,10 +335,14 @@ def _check_pills(styles: dict, checks: dict, check_labels: dict, refs: dict) -> 
     for i, key in enumerate(k for k in check_labels if k in checks or k == "additional_load_ok"):
         if key == "additional_load_ok":
             bg = C_MUTED
-        elif checks.get(key, True):
-            bg = C_PASS
         else:
-            bg = C_FAIL
+            raw = checks.get(key)
+            if raw is None:
+                bg = C_MUTED
+            elif raw:
+                bg = C_PASS
+            else:
+                bg = C_FAIL
         style_cmds.append(("BACKGROUND", (i, 0), (i, 0), bg))
         style_cmds.append(("ROUNDEDCORNERS", [3, 3, 3, 3]))
     t.setStyle(TableStyle(style_cmds))

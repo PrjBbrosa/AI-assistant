@@ -51,16 +51,21 @@ def generate_tapped_axial_report(
     elems: list = []
 
     checks = result.get("checks", {})
-    overall = bool(result.get("overall_pass", False))
+    # Codex follow-up 2026-04-16：使用 overall_status 三态（pass/fail/incomplete），
+    # 避免 None 分项被 bool() 当作 fail 导出为红色 FAIL 报告。
+    overall_status = result.get(
+        "overall_status",
+        "pass" if result.get("overall_pass") else "fail",
+    )
     date_str = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
 
     # 1. Header bar
     elems.append(_header_bar(styles, "轴向受力螺纹连接校核报告", date_str))
     elems.append(Spacer(1, 8))
 
-    # 2. Verdict
+    # 2. Verdict（三态：pass / fail / incomplete）
     scope = result.get("scope_note", "")
-    elems.append(_verdict_block(styles, overall, scope))
+    elems.append(_verdict_block(styles, overall_status, scope))
     elems.append(Spacer(1, 8))
 
     # 3. Metric cards

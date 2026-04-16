@@ -110,6 +110,19 @@ def _sample_result() -> dict:
     }
 
 
+def _sample_result_incomplete() -> dict:
+    """默认未填 m_eff 的真实 core 输出：overall_status=incomplete、thread_strip_ok=None."""
+    from core.bolt.tapped_axial_joint import calculate_tapped_axial_joint
+
+    data = _sample_payload()
+    # 降 FA_max 让 assembly/service/fatigue 都过，隔离 thread_strip not_checked
+    data["service"]["FA_max"] = 500.0
+    result = calculate_tapped_axial_joint(data)
+    assert result["overall_status"] == "incomplete"
+    assert result["checks"]["thread_strip_ok"] is None
+    return result
+
+
 def test_generate_tapped_axial_pdf_report(tmp_path: Path) -> None:
     pytest.importorskip("reportlab")
 
@@ -120,3 +133,81 @@ def test_generate_tapped_axial_pdf_report(tmp_path: Path) -> None:
 
     assert out.exists()
     assert out.stat().st_size > 1000
+
+
+def test_pdf_verdict_receives_overall_status_string(tmp_path: Path, monkeypatch) -> None:
+    """Codex follow-up 2026-04-16：incomplete 场景导出 PDF 时，_verdict_block 必须
+    收到字符串 'incomplete'（否则退化到 bool(overall_pass) 会渲染为红色 FAIL）."""
+    pytest.importorskip("reportlab")
+
+    import app.ui.report_pdf_tapped_axial as mod
+    from app.ui.report_pdf_common import _verdict_block as original
+
+    captured: dict = {}
+
+    def _spy(styles, overall, subtitle):
+        captured["overall"] = overall
+        return original(styles, overall, subtitle)
+
+    monkeypatch.setattr(mod, "_verdict_block", _spy)
+
+    data = _sample_payload()
+    data["service"]["FA_max"] = 500.0
+    from core.bolt.tapped_axial_joint import calculate_tapped_axial_joint
+    result = calculate_tapped_axial_joint(data)
+
+    out = tmp_path / "incomplete.pdf"
+    mod.generate_tapped_axial_report(out, data, result)
+
+    assert captured["overall"] == "incomplete", (
+        f"incomplete 场景应把 'incomplete' 传给 _verdict_block，实际: {captured['overall']}"
+    )
+    assert out.exists()
+
+
+def test_pdf_check_pills_render_none_as_unchecked(tmp_path: Path) -> None:
+    """Codex follow-up 2026-04-16：checks[key] is None 的 pill 必须渲染为中性"未校核"，
+    其背景颜色为 C_MUTED（灰色），而不是 C_FAIL（红色）."""
+    pytest.importorskip("reportlab")
+
+    from app.ui.report_pdf_common import (
+        C_FAIL,
+        C_MUTED,
+        C_PASS,
+        _build_styles,
+        _check_pills,
+        _register_fonts,
+    )
+
+    _register_fonts()
+    styles = _build_styles()
+    check_labels = {
+        "assembly_von_mises_ok": "装配 von Mises 强度",
+        "service_von_mises_ok": "服役最大 von Mises 强度",
+        "fatigue_ok": "交变轴向疲劳",
+        "thread_strip_ok": "螺纹脱扣",
+    }
+    checks = {
+        "assembly_von_mises_ok": True,
+        "service_von_mises_ok": True,
+        "fatigue_ok": True,
+        "thread_strip_ok": None,  # 未校核
+    }
+
+    table = _check_pills(styles, checks, check_labels, refs={})
+    # 从 reportlab Table 内部的 _bkgrndcmds 读取每列的背景色
+    backgrounds: dict[int, object] = {}
+    for cmd in getattr(table, "_bkgrndcmds", []):
+        if cmd[0] == "BACKGROUND" and isinstance(cmd[1], tuple):
+            backgrounds[cmd[1][0]] = cmd[3]
+    # 第 4 列（未校核）期望灰色；前三列期望绿色；不应有红色
+    assert backgrounds.get(3) == C_MUTED, (
+        f"未校核项必须渲染为 C_MUTED 灰色，实际 {backgrounds}"
+    )
+    for i in (0, 1, 2):
+        assert backgrounds.get(i) == C_PASS, (
+            f"通过项第 {i} 列应为 C_PASS，实际 {backgrounds.get(i)}"
+        )
+    assert C_FAIL not in backgrounds.values(), (
+        f"incomplete 场景不应出现 C_FAIL 红色背景，实际 {backgrounds}"
+    )
