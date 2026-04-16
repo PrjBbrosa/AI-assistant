@@ -79,9 +79,10 @@ GEOMETRY_MODE_MAP: dict[str, str] = {
 }
 
 MATERIAL_LIBRARY: dict[str, dict[str, float] | None] = {
-    "45钢": {"e_mpa": 210000.0, "nu": 0.30},
-    "40Cr": {"e_mpa": 210000.0, "nu": 0.29},
-    "42CrMo": {"e_mpa": 210000.0, "nu": 0.29},
+    # yield_mpa 取 GB/T 699-2015（45 钢正火）与 GB/T 3077-2015（40Cr / 42CrMo 调质）下限
+    "45钢": {"e_mpa": 210000.0, "nu": 0.30, "yield_mpa": 355.0},
+    "40Cr": {"e_mpa": 210000.0, "nu": 0.29, "yield_mpa": 785.0},
+    "42CrMo": {"e_mpa": 210000.0, "nu": 0.29, "yield_mpa": 930.0},
     "自定义": None,
 }
 
@@ -644,22 +645,22 @@ class SplineFitPage(BaseChapterPage):
         material = MATERIAL_LIBRARY.get(material_name)
         e_fid = f"{field_prefix}_e_mpa"
         nu_fid = f"{field_prefix}_nu"
+        yield_fid = f"{field_prefix}_yield_mpa"
         if material is None:
-            if MODE_MAP.get(self._get_value("mode")) == "combined":
-                self._set_card_disabled(e_fid, False)
-                self._set_card_disabled(nu_fid, False)
+            # 用户选择"自定义"时始终解锁 E/ν/屈服强度字段，保持与载荷工况、
+            # 标准规格一致的"切回自定义即手填"语义。
+            # 切换 mode 时 _on_mode_changed 会根据当前模式重新锁定/解锁。
+            for fid in (e_fid, nu_fid, yield_fid):
+                self._set_card_disabled(fid, False)
             self._suspend_live_feedback = was_suspended
             if not self._suspend_live_feedback:
                 self._run_calculation(strict=False)
             return
-        e_widget = self._widgets.get(e_fid)
-        nu_widget = self._widgets.get(nu_fid)
-        if isinstance(e_widget, QLineEdit):
-            e_widget.setText(str(material["e_mpa"]))
-        if isinstance(nu_widget, QLineEdit):
-            nu_widget.setText(str(material["nu"]))
-        self._set_card_disabled(e_fid, True)
-        self._set_card_disabled(nu_fid, True)
+        for fid, key in ((e_fid, "e_mpa"), (nu_fid, "nu"), (yield_fid, "yield_mpa")):
+            widget = self._widgets.get(fid)
+            if isinstance(widget, QLineEdit):
+                widget.setText(str(material[key]))
+            self._set_card_disabled(fid, True)
         self._suspend_live_feedback = was_suspended
         if not self._suspend_live_feedback:
             self._run_calculation(strict=False)

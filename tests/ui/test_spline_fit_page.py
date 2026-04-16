@@ -89,10 +89,13 @@ class TestSplineFitPage:
             if card:
                 assert card.objectName() == "AutoCalcCard", f"{fid} should be AutoCalcCard in spline-only mode"
         # Switch back to "联合" — smooth_fit fields should be enabled (SubCard),
-        # except material-auto-filled e_mpa/nu fields which stay AutoCalcCard when non-custom material is selected
+        # except material-auto-filled E/ν/屈服强度 fields which stay AutoCalcCard
+        # when non-custom material is selected
         MATERIAL_AUTO_FILLED = {
             "smooth_materials.shaft_e_mpa", "smooth_materials.shaft_nu",
+            "smooth_materials.shaft_yield_mpa",
             "smooth_materials.hub_e_mpa", "smooth_materials.hub_nu",
+            "smooth_materials.hub_yield_mpa",
         }
         mode_combo.setCurrentText("联合")
         for fid in SMOOTH_FIT_FIELD_IDS:
@@ -174,12 +177,33 @@ class TestSplineFitPage:
         shaft_mat.setCurrentText("40Cr")
         e_card = page._field_cards.get("smooth_materials.shaft_e_mpa")
         nu_card = page._field_cards.get("smooth_materials.shaft_nu")
+        yield_card = page._field_cards.get("smooth_materials.shaft_yield_mpa")
         assert e_card.objectName() == "AutoCalcCard"
         assert nu_card.objectName() == "AutoCalcCard"
+        assert yield_card.objectName() == "AutoCalcCard"
         # 切自定义恢复
         shaft_mat.setCurrentText("自定义")
         assert e_card.objectName() == "SubCard"
         assert nu_card.objectName() == "SubCard"
+        assert yield_card.objectName() == "SubCard"
+
+    def test_material_choice_autofills_yield_strength(self, app):
+        """选材料后屈服强度自动填充，切自定义可编辑。"""
+        page = SplineFitPage()
+        shaft_material = page._widgets["smooth_materials.shaft_material"]
+        shaft_yield = page._widgets["smooth_materials.shaft_yield_mpa"]
+
+        shaft_material.setCurrentText("40Cr")
+        assert shaft_yield.text() == "785.0"
+
+        shaft_material.setCurrentText("42CrMo")
+        assert shaft_yield.text() == "930.0"
+
+        shaft_material.setCurrentText("45钢")
+        assert shaft_yield.text() == "355.0"
+
+        shaft_material.setCurrentText("自定义")
+        assert page._field_cards["smooth_materials.shaft_yield_mpa"].objectName() == "SubCard"
 
     def test_standard_designation_autofills_geometry_with_blue_style(self, app):
         page = SplineFitPage()
