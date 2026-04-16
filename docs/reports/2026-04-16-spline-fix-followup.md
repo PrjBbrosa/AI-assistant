@@ -45,6 +45,31 @@
 - `test_material_autofills_with_blue_style` — Step 2 扩展 yield_mpa + 无条件解锁
 - `test_main_window_uses_connection_check_name_for_spline_module` — 侧栏改名"花键连接校核"
 
+## Code Review 后续修复（Round 2）
+
+独立 code-reviewer 审查后追加 3 个 commit：
+
+| 主题 | Commit | 级别 |
+|------|--------|------|
+| 近似几何改为保守下限 h_w=0.5m | `56f58a7` | Critical |
+| material autofill 按 mode 权威锁定 | `c9038fe` | Important |
+| UI/PDF 标注 S_T ≡ flank_safety | `d0b8ade` | Important |
+
+**C1 关键修正**：Round 1 采用的 h_w=0.9m 在 m≥1.75 模数下非保守（catalog
+m=2/z=8 实测 h_w/m=0.525，近似高估 71% → p_flank 低估 42%，可能给假 PASS）。
+Round 2 改为 h_w=0.5m（catalog 最苛刻条目 W 25x2.5x8 的实测），增加
+`test_approximation_is_conservative_for_all_catalog_moduli` 对全部 33 条
+catalog 记录断言 h_w_approx ≤ h_w_ref，防止回退。
+
+示例案例 02 在新公式下：p_flank = 54.82 MPa, S = 1.82（Round 1 为 3.27）。
+仍 ≥ 1.3 通过阈值。
+
+**I1 关键修正**：`_on_material_changed` 在 material=自定义 时按 mode 决定
+锁定，恢复 "mode 权威" 不变量；加 `test_material_custom_respects_mode_authority`
+守住。
+
+最终测试：**396 passed / 0 failed**。
+
 ## 手工回归建议
 
 1. 启动 `python3 app/main.py`，切到"花键连接校核"；
