@@ -140,7 +140,9 @@ class WormCalculatorTests(unittest.TestCase):
         curve = result["curve"]
         self.assertEqual(len(curve["load_factor"]), len(curve["efficiency"]))
         self.assertEqual(len(curve["load_factor"]), len(curve["power_loss_kw"]))
-        self.assertEqual(len(curve["load_factor"]), len(curve["thermal_capacity_kw"]))
+        # curve 第三维度已改为 temperature_rise_k（替换旧 thermal_capacity_kw），兼容两者
+        third_series_key = "temperature_rise_k" if "temperature_rise_k" in curve else "thermal_capacity_kw"
+        self.assertEqual(len(curve["load_factor"]), len(curve[third_series_key]))
         self.assertGreaterEqual(curve["current_index"], 0)
         self.assertLess(curve["current_index"], len(curve["load_factor"]))
         self.assertIn("DIN 3996", result["load_capacity"]["status"])
@@ -404,11 +406,15 @@ class WormCalculatorTests(unittest.TestCase):
 
     # ---- Task 2 tests ----
 
-    def test_thermal_capacity_equals_power_loss(self) -> None:
+    def test_thermal_capacity_is_positive_and_exists(self) -> None:
+        # 旧断言 thermal_capacity_kw == power_loss_kw 已失效：
+        # core 已改为独立散热公式（Q_th = k*A*ΔT），两者不再相等。
+        # 弱化为：热容量字段存在且为正数。
         payload = self._base_payload()
         result = calculate_worm_geometry(payload)
         perf = result["performance"]
-        self.assertAlmostEqual(perf["thermal_capacity_kw"], perf["power_loss_kw"], places=9)
+        self.assertIn("thermal_capacity_kw", perf)
+        self.assertGreater(perf["thermal_capacity_kw"], 0.0)
 
     def test_lead_angle_downstream_uses_calculated_value(self) -> None:
         payload = self._base_payload()
@@ -464,15 +470,23 @@ class WormCalculatorTests(unittest.TestCase):
         for key in ("tangential_force_wheel_n", "axial_force_wheel_n", "radial_force_wheel_n", "normal_force_n"):
             self.assertIn(key, forces)
             self.assertGreater(forces[key], 0)
+        # 量级校验：防止力分解回归到 W26-01 bug（F_n/F_t2 曾被错算为 cot(γ)≈10 倍）
+        f_t2 = forces["tangential_force_wheel_n"]
+        # F_n = F_t2 / (cos(α_n)·cos(γ))，比值应 1.0~1.3
+        self.assertLess(forces["normal_force_n"] / f_t2, 1.5)
+        # F_a2 = F_t2·tan(γ+φ')，典型比值 0.05~0.4；绝不应到 cot(γ)≈10
+        self.assertLess(forces["axial_force_wheel_n"] / f_t2, 1.0)
+        # F_r = F_t2·tan(α_n)/cos(γ)，α_n=20° 下典型比值 0.36~0.40
+        self.assertLess(forces["radial_force_wheel_n"] / f_t2, 0.6)
 
     # ---- Regression tests: efficiency boundary and warnings ----
 
     def test_low_lead_angle_high_friction_efficiency_not_clamped(self) -> None:
         """z1=1, q=20 -> gamma = atan(1/20) ~ 2.86 deg.
         PA66+GF30 -> mu=0.22.
-        eta = tan(gamma) / tan(gamma + atan(mu))
-            = tan(0.04996) / tan(0.04996 + atan(0.22))
-            ~ 0.050 / 0.272 ~ 0.183
+        旧简化公式：eta = tan(gamma)/tan(gamma+atan(mu)) ~ 0.183
+        正确公式：phi'=atan(mu/cos(alpha_n))，eta = tan(gamma)/tan(gamma+phi') ~ 0.174
+        （core 已改为使用正确当量摩擦角公式，eta 约 0.174，不再是 0.183）
         The calculator must NOT clamp the result upward to 0.30.
         """
         payload = self._base_payload()
@@ -489,10 +503,12 @@ class WormCalculatorTests(unittest.TestCase):
         result = calculate_worm_geometry(payload)
 
         eta = result["performance"]["efficiency_estimate"]
-        # True physical value should be ~0.183 — must NOT be silently raised to 0.30
+        # 核心防回退断言：eta 不被夹紧到 0.30
         self.assertLess(eta, 0.30)
+        # eta 应大于 0.10（合理自锁临界以上的物理约束）
         self.assertGreater(eta, 0.10)
-        self.assertAlmostEqual(eta, 0.183, delta=0.005)
+        # 精确值：正确公式 phi'=atan(mu/cos(20°)) 给出 eta≈0.174，允许 ±1.5% 容差
+        self.assertAlmostEqual(eta, 0.174, delta=0.015)
 
     def test_low_efficiency_result_contains_warning(self) -> None:
         """When efficiency is below 0.30 a warning about low efficiency must appear
@@ -565,3 +581,210 @@ class WormCalculatorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ============================================================
+# Task 0.C — 力学量级测试（pytest 风格，Wave 0）
+# 参考案例：m=4, z1=1, z2=40, q=10, alpha_n=20 deg,
+#   mu=0.05 (friction_override), T2≈500 N·m
+# 手算（规格见 docs/superpowers/specs/）：
+#   d2=160 mm, F_t2=6250 N, gamma=5.7106 deg, phi'=3.0466 deg
+#   F_a2=F_t2·tan(gamma+phi')=6250·tan(8.757°)≈963 N
+#   F_r =F_t2·tan(20°)/cos(5.71°)=6250·0.3640/0.9950≈2286 N
+#   F_n =F_t2/(cos(20°)·cos(5.71°))=6250/0.9351≈6683 N
+#   eta =tan(gamma)/tan(gamma+phi')=0.1000/0.1540=0.6493
+# ============================================================
+
+import math as _math
+import pytest
+
+
+def _case_m4_z1_q10() -> dict:
+    """m=4, z1=1, z2=40, q=10, mu=0.05, T2=500 N·m 参考案例。
+
+    input_torque_nm 设为使 output_torque ≈ 500 N·m 的理论值：
+    T1 = T2 / (i * eta) = 500 / (40 * 0.6493) ≈ 19.24 N·m
+    （core 修正后 eta 采用 phi'=atan(mu/cos(alpha_n))=0.6493，修正前略有偏差。）
+    """
+    gamma_deg = _math.degrees(_math.atan(1.0 / 10.0))
+    return {
+        "geometry": {
+            "module_mm": 4.0,
+            "z1": 1,
+            "z2": 40,
+            "diameter_factor_q": 10.0,
+            "center_distance_mm": 100.0,   # (q+z2)/2 * m = (10+40)/2*4 = 100
+            "lead_angle_deg": gamma_deg,
+            "worm_face_width_mm": 32.0,
+            "wheel_face_width_mm": 28.0,
+            "x1": 0.0,
+            "x2": 0.0,
+        },
+        "operating": {
+            "input_torque_nm": 500.0 / 40.0 / 0.6493,  # ~19.24 N·m
+            "speed_rpm": 1500.0,
+            "application_factor": 1.0,
+        },
+        "materials": {
+            "worm_material": "37CrS4",
+            "wheel_material": "PA66",
+            "worm_e_mpa": 210000.0,
+            "worm_nu": 0.30,
+            "wheel_e_mpa": 3000.0,
+            "wheel_nu": 0.38,
+            "handedness": "right",
+            "lubrication": "grease",
+        },
+        "advanced": {
+            "friction_override": 0.05,
+            "normal_pressure_angle_deg": 20.0,
+        },
+        "load_capacity": {
+            "enabled": True,
+            "allowable_contact_stress_mpa": 42.0,
+            "allowable_root_stress_mpa": 55.0,
+            "required_contact_safety": 1.0,
+            "required_root_safety": 1.0,
+        },
+    }
+
+
+def test_force_decomposition_magnitude_m4_q10():
+    """参考案例力分解量级：F_t2≈6250, F_a2≈963, F_r≈2286, F_n≈6683 N。
+
+    修复前（sin_gamma）的错误值约为：
+      F_n≈62802, F_a2≈62500, F_r≈22856（高估 ~10×）。
+    修复后本测试应通过；core 未修复时本测试应 FAIL。
+    """
+    data = _case_m4_z1_q10()
+    result = calculate_worm_geometry(data)
+    forces = result["load_capacity"]["forces"]
+
+    # T2 ≈ 500 N·m → F_t2 = 2*T2/d2*1000 ≈ 6250 N（3% 容差）
+    assert forces["tangential_force_wheel_n"] == pytest.approx(6250.0, rel=3e-2)
+    # F_a2 = F_t2·tan(gamma+phi') ≈ 963 N（5% 容差）
+    assert forces["axial_force_wheel_n"] == pytest.approx(963.0, rel=5e-2)
+    # F_r = F_t2·tan(alpha_n)/cos(gamma) ≈ 2286 N（5% 容差）
+    assert forces["radial_force_wheel_n"] == pytest.approx(2286.0, rel=5e-2)
+    # F_n = F_t2/(cos(alpha_n)·cos(gamma)) ≈ 6683 N（5% 容差）
+    assert forces["normal_force_n"] == pytest.approx(6683.0, rel=5e-2)
+
+
+def test_efficiency_matches_tan_gamma_formula():
+    """效率 eta = tan(gamma)/tan(gamma+phi') 其中 phi'=atan(mu/cos(alpha_n))。
+
+    参考案例：eta ≈ 0.6493。
+    core 修复前效率用简化 atan(mu)（非当量摩擦角），eta≈0.6633，本测试应 FAIL。
+    core 修复后 phi'=atan(mu/cos(alpha_n))，eta≈0.6493，本测试应 PASS。
+    """
+    data = _case_m4_z1_q10()
+    result = calculate_worm_geometry(data)
+    eta = result["performance"]["efficiency_estimate"]
+    assert eta == pytest.approx(0.6493, rel=3e-2)
+
+
+def test_self_locking_warning_when_gamma_below_phi():
+    """当 gamma <= phi' 时，warnings 应包含'自锁'字样。
+
+    设置：z1=1, q=20（gamma=atan(1/20)≈2.86°），mu=0.25（phi'≈14.9°），
+    gamma << phi' → 应触发自锁警告。
+    """
+    data = _case_m4_z1_q10()
+    data["advanced"]["friction_override"] = 0.25  # 大摩擦系数
+    data["geometry"]["z1"] = 1
+    data["geometry"]["diameter_factor_q"] = 20.0  # 小导程角
+    data["geometry"]["lead_angle_deg"] = _math.degrees(_math.atan(1.0 / 20.0))
+    data["geometry"]["center_distance_mm"] = (20.0 + 40.0) / 2.0 * 4.0  # 120 mm
+    result = calculate_worm_geometry(data)
+    warnings = " ".join(result["performance"]["warnings"])
+    assert "自锁" in warnings
+
+
+def test_thermal_capacity_independent_of_power_loss():
+    """热容量应基于散热公式（Q_th = k*A*ΔT），不等于损失功率。
+
+    修复前 thermal_capacity_kw == power_loss_kw（直接赋值）。
+    修复后两者独立计算，除非恰好相等（极小概率），差值应 > 0.001 kW。
+    """
+    data = _case_m4_z1_q10()
+    result = calculate_worm_geometry(data)
+    perf = result["performance"]
+    assert perf["thermal_capacity_kw"] > 0.0
+    assert perf["power_loss_kw"] > 0.0
+    # 散热公式结果不等于损失功率
+    assert abs(perf["thermal_capacity_kw"] - perf["power_loss_kw"]) > 1e-3
+
+
+def test_nonstandard_q_does_not_fail_consistency_check():
+    """q=13 为工程实践中的非标准值，应只产生警告，不应令 geometry_consistent=False。
+
+    修复前：geometry_consistent = not geometry_warnings，q 非标警告会污染一致性判断。
+    修复后：geometry_consistent 仅看 lead_angle 偏差和 center_distance 偏差。
+    """
+    data = _case_m4_z1_q10()
+    data["geometry"]["diameter_factor_q"] = 13.0  # 非标准 q
+    data["geometry"]["lead_angle_deg"] = _math.degrees(_math.atan(1.0 / 13.0))
+    data["geometry"]["center_distance_mm"] = (13.0 + 40.0) / 2.0 * 4.0  # 106 mm
+
+    result = calculate_worm_geometry(data)
+
+    # q 非标应不影响 geometry_consistent
+    assert result["load_capacity"]["checks"]["geometry_consistent"] is True
+    # 但仍应产生 q 非标警告
+    geom_warnings = result["geometry"]["consistency"]["warnings"]
+    assert any("q" in w or "直径系数" in w for w in geom_warnings)
+
+
+def test_method_c_raises_input_error():
+    """Method C 尚未实现，应抛出 InputError 并提示切换 Method。
+
+    修复前：Method C 与 Method B 输出完全相同（无错误）。
+    修复后：应抛 InputError，消息含 'Method C'。
+    """
+    from core.worm.calculator import InputError as WormInputError
+
+    data = _case_m4_z1_q10()
+    data.setdefault("load_capacity", {})["method"] = "DIN 3996 Method C"
+    with pytest.raises(WormInputError, match="Method C"):
+        calculate_worm_geometry(data)
+
+
+def test_method_a_gives_lower_efficiency_than_b():
+    """Method A（手册系数法）应给出比 Method B 更低的效率。
+
+    修复前：Method A/B/C 三者输出完全相同。
+    修复后：Method A 乘以 0.92 折减系数，eta_A < eta_B。
+    """
+    data_a = _case_m4_z1_q10()
+    data_a.setdefault("load_capacity", {})["method"] = "DIN 3996 Method A"
+    result_a = calculate_worm_geometry(data_a)
+
+    data_b = _case_m4_z1_q10()
+    data_b.setdefault("load_capacity", {})["method"] = "DIN 3996 Method B"
+    result_b = calculate_worm_geometry(data_b)
+
+    eta_a = result_a["performance"]["efficiency_estimate"]
+    eta_b = result_b["performance"]["efficiency_estimate"]
+    assert eta_a < eta_b, f"Method A 效率 {eta_a:.4f} 应低于 Method B 效率 {eta_b:.4f}"
+
+
+def test_lubrication_dry_increases_friction():
+    """干摩擦（dry）应使摩擦系数高于油浴润滑（oil_bath）。
+
+    规格：LUB_MU_MULTIPLIER = {'oil_bath': 0.90, 'grease': 1.00, 'dry': 1.35}。
+    本测试在当前 core 已实现 lubrication 联动时即可通过。
+    """
+    data_oil = _case_m4_z1_q10()
+    data_oil["materials"]["lubrication"] = "oil_bath"
+    data_oil["advanced"].pop("friction_override", None)  # 用表格默认值
+    data_oil["advanced"]["friction_override"] = ""  # 使用材料对表格值
+    result_oil = calculate_worm_geometry(data_oil)
+
+    data_dry = _case_m4_z1_q10()
+    data_dry["materials"]["lubrication"] = "dry"
+    data_dry["advanced"]["friction_override"] = ""
+    result_dry = calculate_worm_geometry(data_dry)
+
+    mu_oil = result_oil["performance"]["friction_mu"]
+    mu_dry = result_dry["performance"]["friction_mu"]
+    assert mu_dry > mu_oil, f"干摩擦 mu={mu_dry:.4f} 应大于油浴摩擦 mu={mu_oil:.4f}"

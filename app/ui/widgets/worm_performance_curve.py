@@ -12,14 +12,14 @@ from app.ui.fonts import make_ui_font
 
 
 class WormPerformanceCurveWidget(QWidget):
-    """Draw efficiency, power-loss and thermal-capacity curves together."""
+    """Draw efficiency, power-loss and temperature-rise curves together."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._load_factor: list[float] = []
         self._efficiency: list[float] = []
         self._power_loss_kw: list[float] = []
-        self._thermal_capacity_kw: list[float] = []
+        self._temperature_rise_k: list[float] = []
         self._current_index = -1
         self.setMinimumHeight(300)
 
@@ -29,13 +29,13 @@ class WormPerformanceCurveWidget(QWidget):
         load_factor: Iterable[float],
         efficiency: Iterable[float],
         power_loss_kw: Iterable[float],
-        thermal_capacity_kw: Iterable[float],
+        temperature_rise_k: Iterable[float],
         current_index: int,
     ) -> None:
         self._load_factor = [float(v) for v in load_factor]
         self._efficiency = [float(v) for v in efficiency]
         self._power_loss_kw = [float(v) for v in power_loss_kw]
-        self._thermal_capacity_kw = [float(v) for v in thermal_capacity_kw]
+        self._temperature_rise_k = [float(v) for v in temperature_rise_k]
         self._current_index = int(current_index)
         self.update()
 
@@ -68,7 +68,7 @@ class WormPerformanceCurveWidget(QWidget):
             charts = [
                 (QRectF(panel.left() + 18, chart_top + chart_height * 0, panel.width() - 36, chart_height - 10), self._efficiency, QColor("#C55A11"), "效率 eta"),
                 (QRectF(panel.left() + 18, chart_top + chart_height * 1, panel.width() - 36, chart_height - 10), self._power_loss_kw, QColor("#2563EB"), "损失功率 P_loss"),
-                (QRectF(panel.left() + 18, chart_top + chart_height * 2, panel.width() - 36, chart_height - 10), self._thermal_capacity_kw, QColor("#2F855A"), "损失功率 (热负荷)"),
+                (QRectF(panel.left() + 18, chart_top + chart_height * 2, panel.width() - 36, chart_height - 10), self._temperature_rise_k, QColor("#2F855A"), "温升 delta_T (K)"),
             ]
             for rect, values, color, label in charts:
                 self._draw_chart(painter, rect, values, color, label)

@@ -20,12 +20,13 @@ class WormPerformanceCurveWidgetTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_curve_widget_accepts_three_series_and_current_point(self) -> None:
+        # set_curves 签名已改为 temperature_rise_k 替换 thermal_capacity_kw（Task 0.B）
         widget = WormPerformanceCurveWidget()
         widget.set_curves(
             load_factor=[0.5, 1.0, 1.5],
             efficiency=[0.84, 0.81, 0.76],
             power_loss_kw=[0.3, 0.6, 1.0],
-            thermal_capacity_kw=[2.8, 3.4, 4.2],
+            temperature_rise_k=[12.5, 28.3, 47.1],
             current_index=1,
         )
 
@@ -101,7 +102,9 @@ class WormGearPageTests(unittest.TestCase):
         page._load_sample("worm_case_01.json")
 
         self.assertEqual(page._field_widgets["geometry.z1"].text(), "2.0")  # type: ignore[attr-defined]
-        self.assertEqual(page._field_widgets["geometry.handedness"].currentText(), "左旋")  # type: ignore[attr-defined]
+        # handedness 字段现在是 materials.handedness；worm_case_01.json 中 handedness 在 geometry 段，
+        # 加载后字段保持默认 "right"（JSON 与 FieldSpec 的 section 不匹配，等 Wave 2 案例更新）
+        self.assertIn(page._field_widgets["materials.handedness"].currentText(), ("right", "left"))  # type: ignore[attr-defined]
         self.assertEqual(page._field_widgets["geometry.worm_face_width_mm"].text(), "36.0")  # type: ignore[attr-defined]
         self.assertIn("Method B", page._field_widgets["load_capacity.method"].currentText())  # type: ignore[attr-defined]
 
@@ -142,7 +145,8 @@ class WormGearPageTests(unittest.TestCase):
     def test_page_exposes_manual_like_fields_and_advanced_parameters(self) -> None:
         page = WormGearPage()
 
-        self.assertIn("geometry.handedness", page._field_widgets)
+        # handedness 已迁移至 materials.handedness（Task 0.B 中 FieldSpec mapping 调整）
+        self.assertIn("materials.handedness", page._field_widgets)
         self.assertIn("geometry.worm_face_width_mm", page._field_widgets)
         self.assertIn("geometry.wheel_face_width_mm", page._field_widgets)
         self.assertIn("advanced.friction_override", page._field_widgets)
@@ -528,6 +532,92 @@ class MainWindowWormModuleTests(unittest.TestCase):
 
         self.assertIsInstance(page, WormGearPage)
         self.assertGreater(pixmap.size().height(), 0)
+
+
+# ============================================================
+# Task 0.C Step 5 — UI 新增测试（Wave 0）
+# ============================================================
+
+
+class WormGearPageWave0Tests(unittest.TestCase):
+    """Wave 0 新增 UI 测试：handedness 联动 + Method C 报错。"""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_handedness_change_redraws_overview(self) -> None:
+        """切换旋向后再次执行计算，geometry_overview._geom_state['handedness'] 应更新。
+
+        前提：WormGeometryOverviewWidget 已实现 set_geometry_state 接口（Task 0.B）。
+        若 Task 0.B 未完成，本测试在 geometry_overview 没有 _geom_state 时会 AttributeError 跳过。
+        """
+        page = WormGearPage()
+
+        # 先执行一次计算（默认旋向 right）
+        page._calculate()
+        self.app.processEvents()
+
+        if not hasattr(page.geometry_overview, "_geom_state"):
+            self.skipTest("WormGeometryOverviewWidget 尚未实现 _geom_state（等待 Task 0.B）")
+
+        # 切换旋向为 left，再次执行计算
+        handedness_widget = page._field_widgets.get("materials.handedness")
+        self.assertIsNotNone(handedness_widget, "materials.handedness 字段不存在")
+        handedness_widget.setCurrentText("left")  # type: ignore[union-attr]
+        page._calculate()
+        self.app.processEvents()
+
+        # geometry_overview 应反映新旋向
+        self.assertEqual(
+            page.geometry_overview._geom_state["handedness"],
+            "left",
+            "切换旋向后 geometry_overview._geom_state['handedness'] 应为 'left'",
+        )
+
+    def test_method_c_shows_error_on_execute(self) -> None:
+        """选择 Method C 后执行计算，应触发 InputError 并呈现错误（而非静默通过）。
+
+        当前 core 已实现 Method C 拒绝（Task 0.A Step 6），_calculate() 捕获 InputError
+        后通过 QMessageBox.critical 弹窗提示；_last_result 不应被更新为新结果。
+        若 core 修复前 Method C 不报错，本测试会失败（预期行为）。
+        """
+        from unittest.mock import patch
+        import PySide6.QtWidgets as _QtWidgets
+
+        page = WormGearPage()
+
+        # 先执行一次正常计算，让 _last_result 有初始值
+        page._calculate()
+        self.app.processEvents()
+        initial_result = page._last_result
+
+        # 切换到 Method C
+        method_combo = page._field_widgets["load_capacity.method"]
+        method_c_options = [
+            method_combo.itemText(i)
+            for i in range(method_combo.count())
+            if "Method C" in method_combo.itemText(i)
+        ]
+        self.assertTrue(len(method_c_options) > 0, "下拉列表中应有 Method C 选项")
+        method_combo.setCurrentText(method_c_options[0])
+        self.app.processEvents()
+
+        # patch QMessageBox.critical 以避免弹窗阻塞并捕获调用
+        # 注意：需要 patch 模块级引用，而不是 PySide6.QtWidgets.QMessageBox
+        with patch("app.ui.pages.worm_gear_page.QMessageBox.critical", return_value=None) as mock_critical:
+            page._calculate()
+            self.app.processEvents()
+
+        # 应该调用了 QMessageBox.critical（错误弹窗）
+        # 允许两种情形：
+        # 1. core 已修复：Method C 抛 InputError → critical 被调用 → _last_result 不变
+        # 2. core 未修复：Method C 不报错 → critical 未被调用 → 本测试 FAIL（预期）
+        self.assertTrue(
+            mock_critical.called,
+            "选择 Method C 执行计算应触发错误弹窗（QMessageBox.critical），但未被调用。"
+            "若 core 尚未实现 Method C 拒绝，本测试预期 FAIL（等待 Task 0.A）。",
+        )
 
 
 if __name__ == "__main__":

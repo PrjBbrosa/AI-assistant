@@ -94,15 +94,6 @@ WORM_GEOMETRY_FIELDS = [
     FieldSpec("geometry.module_mm", "模数 m", "mm", "几何主输入。", default="4.0"),
     FieldSpec("geometry.diameter_factor_q", "直径系数 q", "-", "蜗杆直径系数。", default="10.0"),
     FieldSpec("geometry.lead_angle_deg", "导程角 gamma", "deg", "蜗杆导程角。默认值与 z1/q 保持自洽。", default="11.31"),
-    FieldSpec(
-        "geometry.handedness",
-        "旋向",
-        "-",
-        "仅记录用，不参与计算。",
-        widget_type="choice",
-        options=("右旋", "左旋"),
-        default="右旋",
-    ),
     FieldSpec("geometry.worm_face_width_mm", "蜗杆齿宽 b1", "mm", "蜗杆工作齿宽。", default="32.0"),
     FieldSpec("geometry.x1", "蜗杆变位系数 x1", "-", "蜗杆齿形变位系数。", default="0.0"),
 ]
@@ -136,6 +127,24 @@ MATERIAL_FIELDS = [
         options=("PA66", "PA66+GF30"),
         default="PA66",
     ),
+    FieldSpec(
+        "materials.handedness",
+        "旋向",
+        "-",
+        "影响摩擦力矩方向及几何总览螺旋示意。",
+        widget_type="choice",
+        options=("right", "left"),
+        default="right",
+    ),
+    FieldSpec(
+        "materials.lubrication",
+        "润滑方式",
+        "-",
+        "影响有效摩擦系数（oil_bath -10%，dry +35%）。",
+        widget_type="choice",
+        options=("oil_bath", "grease", "dry"),
+        default="grease",
+    ),
     FieldSpec("materials.worm_e_mpa", "蜗杆弹性模量 E1", "MPa", "Method B 最小子集使用的材料弹性参数。", default="210000"),
     FieldSpec("materials.worm_nu", "蜗杆泊松比 nu1", "-", "Method B 最小子集使用的材料弹性参数。", default="0.30"),
     FieldSpec("materials.wheel_e_mpa", "蜗轮弹性模量 E2", "MPa", "Method B 最小子集使用的材料弹性参数。", default="3000"),
@@ -147,15 +156,6 @@ OPERATING_FIELDS = [
     FieldSpec("operating.speed_rpm", "输入转速 n", "rpm", "蜗杆轴转速。", default="1450"),
     FieldSpec("operating.application_factor", "使用系数 KA", "-", "工况冲击影响的简化系数。", default="1.25"),
     FieldSpec("operating.torque_ripple_percent", "扭矩波动", "%", "围绕名义扭矩的峰值波动幅值。", default="0.0"),
-    FieldSpec(
-        "operating.lubrication",
-        "润滑方式",
-        "-",
-        "仅记录用，不参与计算。",
-        widget_type="choice",
-        options=("油浴润滑", "飞溅润滑", "强制润滑"),
-        default="油浴润滑",
-    ),
 ]
 
 ADVANCED_FIELDS = [
@@ -235,6 +235,7 @@ class WormGearPage(BaseChapterPage):
         self._build_results_step()
         self._apply_defaults()
         self._field_widgets["load_capacity.enabled"].currentTextChanged.connect(self._on_lc_enabled_changed)
+        self._field_widgets["load_capacity.method"].currentTextChanged.connect(self._on_method_changed)
         self._field_widgets["materials.worm_material"].currentTextChanged.connect(lambda: self._on_material_changed())
         self._field_widgets["materials.wheel_material"].currentTextChanged.connect(lambda: self._on_material_changed())
         self.set_current_chapter(0)
@@ -689,7 +690,7 @@ class WormGearPage(BaseChapterPage):
                 try:
                     value = float(raw)
                 except ValueError as exc:
-                    raise InputError(f"字段“{spec.label}”请输入数字，当前值: {raw}") from exc
+                    raise InputError(f"字段 {spec.label} 请输入数字，当前值: {raw}") from exc
             section, key = spec.field_id.split(".", 1)
             payload.setdefault(section, {})[key] = value
         return payload
@@ -713,6 +714,12 @@ class WormGearPage(BaseChapterPage):
         default_mu = MATERIAL_FRICTION_HINTS.get((worm_mat, wheel_mat), 0.20)
         self._field_widgets["advanced.friction_override"].setPlaceholderText(f"留空则自动 \u03bc={default_mu:.2f}")
         self._refresh_derived_geometry_preview()
+
+    def _on_method_changed(self, method_label: str) -> None:
+        if "Method C" in method_label:
+            self.set_info("提示：Method C 需要 FEA 输入，当前版本未实现；执行将报错。")
+        else:
+            self.set_info("按左侧顺序输入 DIN 3975 / Method B 参数，再执行计算。")
 
     def _on_lc_enabled_changed(self, text: str) -> None:
         disabled = text != "启用"
@@ -841,11 +848,24 @@ class WormGearPage(BaseChapterPage):
                 ]
             )
         )
+        # 温升曲线：优先用 core 提供的 temperature_rise_k，否则从热容量派生
+        thermal_cap_kw_curve = curve.get("thermal_capacity_kw", [])
+        power_loss_curve = curve.get("power_loss_kw", [])
+        if curve.get("temperature_rise_k"):
+            temp_rise_curve = curve["temperature_rise_k"]
+        elif thermal_cap_kw_curve and power_loss_curve:
+            # 简化派生：ΔT ≈ P_loss / Q_th * 50 K（50 K 为参考允许温升）
+            temp_rise_curve = [
+                p / max(q, 1e-6) * 50.0
+                for p, q in zip(power_loss_curve, thermal_cap_kw_curve)
+            ]
+        else:
+            temp_rise_curve = []
         self.performance_curve.set_curves(
             load_factor=curve["load_factor"],
             efficiency=curve["efficiency"],
             power_loss_kw=curve["power_loss_kw"],
-            thermal_capacity_kw=curve["thermal_capacity_kw"],
+            temperature_rise_k=temp_rise_curve,
             current_index=curve["current_index"],
         )
         stress_curve_data = load_capacity.get("stress_curve", {})
@@ -857,9 +877,22 @@ class WormGearPage(BaseChapterPage):
                 sigma_h_nominal_mpa=stress_curve_data.get("sigma_h_nominal_mpa", 0.0),
                 sigma_f_nominal_mpa=stress_curve_data.get("sigma_f_nominal_mpa", 0.0),
             )
+        # 更新几何总览动态绘制（Step 4）
+        inputs_echo = result.get("inputs_echo", {})
+        echo_geometry = inputs_echo.get("geometry", {})
+        echo_materials = inputs_echo.get("materials", {})
+        self.geometry_overview.set_geometry_state(
+            d1_mm=worm_dimensions.get("pitch_diameter_mm", geometry.get("pitch_diameter_worm_mm", 40.0)),
+            d2_mm=wheel_dimensions.get("pitch_diameter_mm", geometry.get("pitch_diameter_wheel_mm", 160.0)),
+            a_mm=geometry["center_distance_mm"],
+            gamma_deg=geometry.get("lead_angle_calc_deg", geometry.get("lead_angle_deg", 11.31)),
+            z1=int(echo_geometry.get("z1", payload.get("geometry", {}).get("z1", 2))),
+            z2=int(echo_geometry.get("z2", payload.get("geometry", {}).get("z2", 40))),
+            handedness=echo_materials.get("handedness", payload.get("materials", {}).get("handedness", "right")),
+        )
         self.geometry_overview.set_display_state(
             "几何总览",
-            f"i={geometry['ratio']:.2f}，a={geometry['center_distance_mm']:.1f} mm，gamma={geometry['lead_angle_deg']:.1f} deg",
+            f"i={geometry['ratio']:.2f}，a={geometry['center_distance_mm']:.1f} mm，gamma={geometry.get('lead_angle_calc_deg', geometry.get('lead_angle_deg', 0.0)):.1f} deg",
         )
         self.load_capacity_status.setText(load_capacity["status"])
 
@@ -1005,7 +1038,7 @@ class WormGearPage(BaseChapterPage):
             load_factor=[],
             efficiency=[],
             power_loss_kw=[],
-            thermal_capacity_kw=[],
+            temperature_rise_k=[],
             current_index=-1,
         )
         self.geometry_overview.set_display_state("几何总览", "按 DIN 3975 展示蜗杆、蜗轮、中心距与导程角关系。")

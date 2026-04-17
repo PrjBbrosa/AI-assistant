@@ -145,6 +145,9 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
 
     power_kw = input_torque_nm * speed_rpm / 9550.0
 
+    handedness = str(materials.get("handedness", "right")).strip().lower()
+    lubrication = str(materials.get("lubrication", "grease")).strip().lower()
+
     friction_override = advanced.get("friction_override", "")
     if friction_override in ("", None):
         friction_mu = _estimate_friction(worm_material, wheel_material)
@@ -152,12 +155,53 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
         friction_mu = float(friction_override)
         if not (0.01 <= friction_mu <= 0.30):
             raise InputError(f"摩擦系数覆盖值必须在 0.01~0.30 范围内，当前值 {friction_mu}")
-    efficiency_estimate = math.tan(lead_angle_calc_rad) / math.tan(lead_angle_calc_rad + math.atan(friction_mu))
+
+    # 润滑方式影响摩擦系数（塑料-钢副）
+    # 油浴润滑降摩擦约 10%，干摩擦升约 35%（工程经验）
+    LUB_MU_MULTIPLIER = {"oil_bath": 0.90, "grease": 1.00, "dry": 1.35}
+    friction_mu = friction_mu * LUB_MU_MULTIPLIER.get(lubrication, 1.00)
+    # 润滑修正后重新检查上限
+    friction_mu = min(friction_mu, 0.50)
+
+    # 提前读取法向压力角（效率和自锁公式共用）
+    normal_pressure_angle_deg = _positive(
+        float(advanced.get("normal_pressure_angle_deg", 20.0)),
+        "advanced.normal_pressure_angle_deg",
+    )
+    normal_pressure_angle_rad = math.radians(normal_pressure_angle_deg)
+
+    # 效率公式（含当量摩擦角 phi' = atan(mu / cos(alpha_n))）
+    # DIN 3975 / Niemann §24：eta = tan(gamma) / tan(gamma + phi')
+    phi_prime_rad = math.atan(friction_mu / max(math.cos(normal_pressure_angle_rad), 1e-6))
+    phi_prime_deg = math.degrees(phi_prime_rad)
+    efficiency_estimate = math.tan(lead_angle_calc_rad) / math.tan(lead_angle_calc_rad + phi_prime_rad)
     # Apply only physical upper limit (lossless is impossible); no lower clamp — caller sees true value.
     efficiency_estimate = min(0.98, efficiency_estimate)
 
+    # 自锁判定：gamma <= phi' 则无法反向驱动蜗杆
+    self_locking = lead_angle_calc_rad <= phi_prime_rad
+
+    output_power_kw = power_kw * efficiency_estimate
+    power_loss_kw = power_kw - output_power_kw
+    output_torque_nm = 9550.0 * output_power_kw / max(wheel_speed_rpm, 1e-6)
+
+    # 热容量按简化箱体散热公式（DIN 3996 简化）
+    # Q_th = k * A * ΔT / 1000  (kW)
+    # 塑料蜗轮散热系数 k 约 12-18 W/(m²·K)，此处取 14
+    # 接触面积 A 按 2·d2·b2 简化（单位 m²）
+    # 允许温升 ΔT = 50 K（PA66 工程上限约 80℃，环境 30℃）
+    thermal_heat_transfer_coefficient = float(advanced.get("thermal_k_w_m2k", 14.0))
+    thermal_allowable_delta_t_k = float(advanced.get("thermal_delta_t_k", 50.0))
+    thermal_area_m2 = (2.0 * pitch_diameter_wheel_mm * wheel_face_width_mm) / 1.0e6
+    thermal_capacity_kw = thermal_heat_transfer_coefficient * thermal_area_m2 * thermal_allowable_delta_t_k / 1000.0
+
     # Collect performance-level warnings (does not modify computed values)
     performance_warnings: list[str] = []
+    if self_locking:
+        performance_warnings.append(
+            f"自锁：gamma={lead_angle_calc_deg:.2f} deg <= phi'={phi_prime_deg:.2f} deg，"
+            f"不可反向驱动。"
+        )
     if efficiency_estimate <= 0:
         performance_warnings.append(
             f"效率估算值 eta={efficiency_estimate:.4f} <= 0，蜗轮副在当前导程角 gamma={lead_angle_calc_deg:.2f} deg"
@@ -169,16 +213,10 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
             f"对应导程角 gamma={lead_angle_calc_deg:.2f} deg、摩擦系数 mu={friction_mu:.3f}，"
             f"请确认设计参数是否合理。"
         )
-
-    output_power_kw = power_kw * efficiency_estimate
-    power_loss_kw = power_kw - output_power_kw
-    output_torque_nm = 9550.0 * output_power_kw / max(wheel_speed_rpm, 1e-6)
-    thermal_capacity_kw = power_loss_kw
-    normal_pressure_angle_deg = _positive(
-        float(advanced.get("normal_pressure_angle_deg", 20.0)),
-        "advanced.normal_pressure_angle_deg",
-    )
-    normal_pressure_angle_rad = math.radians(normal_pressure_angle_deg)
+    if power_loss_kw > thermal_capacity_kw:
+        performance_warnings.append(
+            f"热负荷超限：损失功率 P_loss={power_loss_kw:.3f} kW > 允许散热 Q_th={thermal_capacity_kw:.3f} kW。"
+        )
 
     # Geometry consistency warnings (needed by both enabled and disabled paths)
     geometry_warnings: list[str] = []
@@ -202,7 +240,7 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     load_factors: list[float] = []
     efficiency_curve: list[float] = []
     power_loss_curve: list[float] = []
-    thermal_capacity_curve: list[float] = []
+    temperature_rise_curve: list[float] = []
     current_index = 0
     closest_delta = float("inf")
     for idx in range(curve_points):
@@ -212,10 +250,11 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
         input_power_i = power_kw * factor
         output_power_i = input_power_i * eta_i
         p_loss_i = input_power_i - output_power_i
-        p_thermal_i = p_loss_i
+        # 温升 = 损失功率 / 散热容量 * 允许温升（线性比例）
+        delta_t_i = p_loss_i / max(thermal_capacity_kw, 1e-6) * thermal_allowable_delta_t_k
         efficiency_curve.append(eta_i)
         power_loss_curve.append(p_loss_i)
-        thermal_capacity_curve.append(p_thermal_i)
+        temperature_rise_curve.append(delta_t_i)
         if abs(factor - 1.0) < closest_delta:
             closest_delta = abs(factor - 1.0)
             current_index = idx
@@ -280,13 +319,15 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
         "output_torque_nm": output_torque_nm,
         "friction_mu": friction_mu,
         "application_factor": application_factor,
+        "self_locking": self_locking,
+        "phi_prime_deg": phi_prime_deg,
         "warnings": performance_warnings,
     }
     curve_out: Dict[str, Any] = {
         "load_factor": load_factors,
         "efficiency": efficiency_curve,
         "power_loss_kw": power_loss_curve,
-        "thermal_capacity_kw": thermal_capacity_curve,
+        "temperature_rise_k": temperature_rise_curve,
         "current_load_factor": 1.0,
         "current_index": current_index,
         "current_efficiency": efficiency_estimate,
@@ -317,6 +358,15 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
                 "stress_curve": {},
             },
         }
+
+    # ---- Method 解析（在所有参数解析之前，Method C 立即拒绝） ----
+    method = str(load_capacity.get("method", "DIN 3996 Method B")).strip()
+    method_normalized = method.upper().replace(" ", "")
+
+    if "METHODC" in method_normalized:
+        raise InputError(
+            "Method C 需要 FEA 输入，当前版本未实现。请使用 Method A 或 Method B。"
+        )
 
     # ---- Load capacity parameters (only parsed when enabled) ----
     dynamic_factor_kv = _positive(float(load_capacity.get("dynamic_factor_kv", 1.0)), "load_capacity.dynamic_factor_kv")
@@ -360,15 +410,31 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     tangential_force_wheel_rms_n = 2000.0 * output_torque_rms_nm / max(pitch_diameter_wheel_mm, 1e-6)
     tangential_force_wheel_min_n = 2000.0 * output_torque_min_nm / max(pitch_diameter_wheel_mm, 1e-6)
 
-    sin_gamma = max(math.sin(lead_angle_calc_rad), 1e-6)
-    cos_alpha_n = max(math.cos(normal_pressure_angle_rad), 1e-6)
-    tan_gamma = max(math.tan(lead_angle_calc_rad), 1e-6)
-    radial_factor = math.tan(normal_pressure_angle_rad) / sin_gamma
-    normal_force_n = tangential_force_wheel_n / (cos_alpha_n * sin_gamma)
-    normal_force_peak_n = tangential_force_wheel_peak_n / (cos_alpha_n * sin_gamma)
-    normal_force_rms_n = tangential_force_wheel_rms_n / (cos_alpha_n * sin_gamma)
-    axial_force_wheel_n = tangential_force_wheel_n / tan_gamma
-    radial_force_wheel_n = tangential_force_wheel_n * radial_factor
+    # 蜗杆力系分解（Niemann §24 / DIN 3975）
+    # 坐标约定：蜗杆轴向 ≡ 蜗轮切向（F_a1 = F_t2），蜗杆切向 ≡ 蜗轮轴向（F_t1 = F_a2）
+    # 参考案例（spec 验证）：m=4, z1=1, z2=40, q=10, alpha_n=20 deg, mu=0.05, T2=500 N·m
+    #   d2=160 mm, F_t2=6250 N, gamma=5.7106 deg, phi'=3.0466 deg
+    #   F_a2 = F_t2·tan(gamma+phi') = 6250·tan(8.757°) = 962.8 N
+    #   F_r  = F_t2·tan(alpha_n)/cos(gamma) = 6250·0.36397/0.99504 = 2285.8 N
+    #   F_n  = F_t2/(cos(alpha_n)·cos(gamma)) = 6250/(0.93969·0.99504) = 6683.5 N
+    #   eta  = tan(gamma)/tan(gamma+phi') = 0.1000/0.15401 = 0.6493
+    cos_alpha_n = math.cos(normal_pressure_angle_rad)
+    sin_gamma = math.sin(lead_angle_calc_rad)
+    cos_gamma = math.cos(lead_angle_calc_rad)
+    tan_gamma = math.tan(lead_angle_calc_rad)
+
+    # 当量摩擦角（法向摩擦角投影到轴向）phi' = atan(mu / cos(alpha_n))
+    phi_prime_force_rad = math.atan(friction_mu / max(cos_alpha_n, 1e-6))
+    tan_gamma_plus_phi = math.tan(lead_angle_calc_rad + phi_prime_force_rad)
+
+    # F_a2（蜗轮轴向力）= F_t1（蜗杆切向力）= F_t2·tan(gamma+phi')
+    axial_force_wheel_n = tangential_force_wheel_n * tan_gamma_plus_phi
+    # F_r（径向力）= F_t2·tan(alpha_n)/cos(gamma)
+    radial_force_wheel_n = tangential_force_wheel_n * math.tan(normal_pressure_angle_rad) / max(cos_gamma, 1e-6)
+    # F_n（法向力）= F_t2/(cos(alpha_n)·cos(gamma))
+    normal_force_n = tangential_force_wheel_n / max(cos_alpha_n * cos_gamma, 1e-6)
+    normal_force_peak_n = tangential_force_wheel_peak_n / max(cos_alpha_n * cos_gamma, 1e-6)
+    normal_force_rms_n = tangential_force_wheel_rms_n / max(cos_alpha_n * cos_gamma, 1e-6)
 
     design_normal_force_n = normal_force_n * design_force_factor
     design_normal_force_peak_n = normal_force_peak_n * design_force_factor
@@ -380,7 +446,8 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     equivalent_modulus_mpa = 1.0 / (((1.0 - worm_nu * worm_nu) / worm_e_mpa) + ((1.0 - wheel_nu * wheel_nu) / wheel_e_mpa))
     contact_length_mm = max(1e-6, min(worm_face_width_mm, wheel_face_width_mm))
     equivalent_radius_mm = 1.0 / ((2.0 / pitch_diameter_worm_mm) + (2.0 / pitch_diameter_wheel_mm))
-    tooth_root_thickness_mm = max(1.25 * module_mm, 1e-6)
+    # 齿根弦齿厚（DIN 3975 简化）: s_Ft ≈ π·m·cos(α_n)/2
+    tooth_root_thickness_mm = max(math.pi * module_mm * math.cos(normal_pressure_angle_rad) / 2.0, 1e-6)
 
     def _mean_hertz_stress(normal_force_value_n: float) -> float:
         specific_load = normal_force_value_n / contact_length_mm
@@ -398,6 +465,17 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     sigma_f_nominal_mpa = _root_stress(design_tangential_force_n)
     sigma_f_rms_mpa = _root_stress(design_tangential_force_rms_n)
     sigma_f_peak_mpa = _root_stress(design_tangential_force_peak_n)
+
+    # Method A：手册系数法，效率折减 0.92，接触应力折减 0.95（波 0 简化实现）
+    # Method B（默认）：DIN 3996 最小子集，直接使用上述计算结果
+    if "METHODA" in method_normalized:
+        method_efficiency_factor = 0.92
+        # 更新 performance_out 中的效率（Method A 使用手册保守系数）
+        performance_out["efficiency_estimate"] = performance_out["efficiency_estimate"] * method_efficiency_factor
+        # 接触应力乘以 0.95 折减（Method A 手册方式）
+        sigma_hm_nominal_mpa = sigma_hm_nominal_mpa * 0.95
+        sigma_hm_rms_mpa = sigma_hm_rms_mpa * 0.95
+        sigma_hm_peak_mpa = sigma_hm_peak_mpa * 0.95
 
     contact_safety_factor_nominal = allowable_contact_stress_mpa / max(sigma_hm_nominal_mpa, 1e-6)
     contact_safety_factor_peak = allowable_contact_stress_mpa / max(sigma_hm_peak_mpa, 1e-6)
@@ -485,8 +563,6 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
         "mesh_frequency_per_rev": int(z1),
     }
 
-    method = str(load_capacity.get("method", "DIN 3996 Method B"))
-
     return {
         "inputs_echo": data,
         "geometry": geometry_out,
@@ -496,9 +572,9 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
             "enabled": True,
             "method": method,
             "status": (
-                f"{method} 最小子集校核通过（当前版本各方法计算逻辑相同，仅作标记）"
+                f"{method} 最小子集校核通过"
                 if contact_ok and root_ok and not geometry_warnings
-                else f"{method} 最小子集已计算（存在警告或不通过项）（当前版本各方法计算逻辑相同，仅作标记）"
+                else f"{method} 最小子集已计算（存在警告或不通过项）"
             ),
             "warnings": geometry_warnings,
             "factors": {
@@ -531,6 +607,8 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
                 "design_normal_force_n": design_normal_force_n,
                 "design_normal_force_rms_n": design_normal_force_rms_n,
                 "design_normal_force_peak_n": design_normal_force_peak_n,
+                "handedness": handedness,
+                "radial_force_direction": "inward" if handedness == "right" else "outward",
             },
             "contact": {
                 "equivalent_modulus_mpa": equivalent_modulus_mpa,
@@ -556,7 +634,12 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
                 "safety_factor_peak": root_safety_factor_peak,
             },
             "checks": {
-                "geometry_consistent": not geometry_warnings,
+                # geometry_consistent 仅判断导程角和中心距是否自洽，
+                # q 不在推荐序列仅为提示性警告，不影响几何自洽判断
+                "geometry_consistent": (
+                    abs(lead_angle_delta_deg) <= 0.5
+                    and abs(center_distance_delta_mm) <= max(0.25 * module_mm, 0.5)
+                ),
                 "contact_ok": contact_ok,
                 "root_ok": root_ok,
             },
@@ -568,7 +651,7 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
                 "齿根应力采用等效悬臂梁近似。",
                 "蜗轮齿顶/齿根高系数与蜗杆相同（含变位修正），未单独处理间隙系数。",
                 "钢-塑料配对，许用应力为常温干态工程经验值。",
-                "当前版本各方法计算逻辑相同，仅作标记用途。",
+                "Method A: 手册系数法，接触应力乘 0.95 折减；Method B（默认）: DIN 3996 最小子集；Method C: 需 FEA 输入，当前版本拒绝。",
             ],
             "stress_curve": stress_curve_out,
         },
