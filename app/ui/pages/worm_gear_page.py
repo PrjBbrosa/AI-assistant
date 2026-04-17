@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -234,6 +234,12 @@ class WormGearPage(BaseChapterPage):
         self._field_specs: dict[str, FieldSpec] = {}
         self._last_result: dict[str, Any] | None = None
         self._last_payload: dict[str, Any] | None = None
+        # Step 1: throttle timer for geometry preview
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(300)
+        self._preview_timer.timeout.connect(self._do_refresh_preview)
+        self._preview_call_count = 0
         self.geometry_group_titles = [
             "蜗杆参数",
             "蜗轮参数",
@@ -251,6 +257,13 @@ class WormGearPage(BaseChapterPage):
         self.btn_save = self.add_action_button("导出结果说明")
         self.btn_load_1 = self.add_action_button("测试案例 1", side="right")
         self.btn_load_2 = self.add_action_button("测试案例 2", side="right")
+        # Step 3: dirty-state status label (reuses the base info area but also
+        # keeps a dedicated QLabel we can show inline in the action row)
+        self._result_status_label = QLabel("", self)
+        self._result_status_label.setObjectName("SectionHint")
+        self._result_status_label.setWordWrap(True)
+        # Export button starts disabled until a calculation completes
+        self.btn_save.setEnabled(False)
 
         self._build_input_steps()
         self._build_graphics_step()
@@ -274,6 +287,8 @@ class WormGearPage(BaseChapterPage):
         self.btn_save.clicked.connect(self._export_report)
         self.btn_load_1.clicked.connect(lambda: self._load_sample("worm_case_01.json"))
         self.btn_load_2.clicked.connect(lambda: self._load_sample("worm_case_02.json"))
+        # Step 3: connect every input widget change to dirty-state marker
+        self._connect_dirty_signals()
         self.set_info("按左侧顺序输入 DIN 3975 / Method B 参数，再执行计算。")
 
     def _build_input_steps(self) -> None:
@@ -471,7 +486,7 @@ class WormGearPage(BaseChapterPage):
                 if index >= 0:
                     combo.setCurrentIndex(index)
             if spec.field_id.startswith("geometry."):
-                combo.currentTextChanged.connect(lambda _text: self._refresh_derived_geometry_preview())
+                combo.currentTextChanged.connect(lambda _text: self._schedule_preview())
             self._field_widgets[spec.field_id] = combo
             self._field_specs[spec.field_id] = spec
             return combo
@@ -481,7 +496,7 @@ class WormGearPage(BaseChapterPage):
         if spec.placeholder:
             editor.setPlaceholderText(spec.placeholder)
         if spec.field_id.startswith("geometry."):
-            editor.textChanged.connect(lambda _text: self._refresh_derived_geometry_preview())
+            editor.textChanged.connect(lambda _text: self._schedule_preview())
         self._field_widgets[spec.field_id] = editor
         self._field_specs[spec.field_id] = spec
         return editor
@@ -863,12 +878,26 @@ class WormGearPage(BaseChapterPage):
         if worm_hints:
             self._field_widgets["materials.worm_e_mpa"].setText(str(worm_hints["e_mpa"]))
             self._field_widgets["materials.worm_nu"].setText(str(worm_hints["nu"]))
+            # 蜗杆弹性参数由材料下拉派生 -> AutoCalcCard
+            for fid in ("materials.worm_e_mpa", "materials.worm_nu"):
+                self._set_card_style(fid, auto=True)
+        else:
+            # 未知蜗杆材料：解锁手动输入
+            for fid in ("materials.worm_e_mpa", "materials.worm_nu"):
+                self._set_card_style(fid, auto=False)
         if wheel_hints:
             self._field_widgets["materials.wheel_e_mpa"].setText(str(wheel_hints["e_mpa"]))
             self._field_widgets["materials.wheel_nu"].setText(str(wheel_hints["nu"]))
+            for fid in ("materials.wheel_e_mpa", "materials.wheel_nu"):
+                self._set_card_style(fid, auto=True)
+        else:
+            for fid in ("materials.wheel_e_mpa", "materials.wheel_nu"):
+                self._set_card_style(fid, auto=False)
         if allowable_hints:
             self._field_widgets["load_capacity.allowable_contact_stress_mpa"].setText(str(allowable_hints["contact_mpa"]))
             self._field_widgets["load_capacity.allowable_root_stress_mpa"].setText(str(allowable_hints["root_mpa"]))
+            for fid in ("load_capacity.allowable_contact_stress_mpa", "load_capacity.allowable_root_stress_mpa"):
+                self._set_card_style(fid, auto=True)
         # 塑料材料库优先：若 PLASTIC_MATERIALS 中有该材料，覆盖上面的填充并设为 AutoCalcCard
         self._apply_plastic_defaults(wheel_mat)
         default_mu = MATERIAL_FRICTION_HINTS.get((worm_mat, wheel_mat), 0.20)
@@ -907,7 +936,25 @@ class WormGearPage(BaseChapterPage):
             if isinstance(widget, QLineEdit):
                 widget.setReadOnly(disabled)
 
+    def _schedule_preview(self) -> None:
+        """Throttled signal handler: restarts 300 ms timer on every keystroke.
+
+        Signals from input widgets connect here to avoid recalculating on every
+        intermediate keystroke.  The actual calculation fires via the timer.
+        """
+        self._preview_timer.start()
+
     def _refresh_derived_geometry_preview(self) -> None:
+        """Immediate geometry preview update (for programmatic callers and _apply_defaults).
+
+        Direct callers bypass the timer; signals from input widgets should use
+        _schedule_preview instead.
+        """
+        self._do_refresh_preview()
+
+    def _do_refresh_preview(self) -> None:
+        """Actual geometry preview calculation, called by timer or directly."""
+        self._preview_call_count += 1
         try:
             payload = self._build_payload()
             geometry = calculate_worm_geometry(payload)["geometry"]
@@ -922,6 +969,29 @@ class WormGearPage(BaseChapterPage):
     def _reset_dimension_preview_labels(self) -> None:
         for label in list(self.worm_dimension_labels.values()) + list(self.wheel_dimension_labels.values()):
             label.setText("待输入")
+
+    # ------------------------------------------------------------------
+    # Step 3: dirty-state helpers
+    # ------------------------------------------------------------------
+    def _mark_results_dirty(self) -> None:
+        """Called on any input change: disable export, show stale warning."""
+        self.btn_save.setEnabled(False)
+        self._result_status_label.setText("结果已过期，请重新执行计算。")
+        self._result_status_label.setStyleSheet("color: #C44536;")
+
+    def _mark_results_fresh(self) -> None:
+        """Called after successful calculation: enable export, clear warning."""
+        self.btn_save.setEnabled(True)
+        self._result_status_label.setText("")
+        self._result_status_label.setStyleSheet("")
+
+    def _connect_dirty_signals(self) -> None:
+        """Connect every FieldSpec widget's change signal to _mark_results_dirty."""
+        for fid, widget in self._field_widgets.items():
+            if isinstance(widget, QLineEdit):
+                widget.textEdited.connect(self._mark_results_dirty)
+            elif isinstance(widget, QComboBox):
+                widget.currentIndexChanged.connect(self._mark_results_dirty)
 
     def _set_dimension_group_values(
         self,
@@ -1140,6 +1210,7 @@ class WormGearPage(BaseChapterPage):
         self._life_card.setVisible(True)
 
         self.set_info("已完成蜗杆副几何、基础性能与 Method B 最小子集计算。")
+        self._mark_results_fresh()
         self.set_current_chapter(self.chapter_stack.count() - 1)
 
     def _export_report(self) -> None:
@@ -1207,6 +1278,7 @@ class WormGearPage(BaseChapterPage):
             QMessageBox.critical(self, "加载失败", f"输入条件加载失败：{exc}")
             return
         self._apply_input_data(data)
+        self._mark_results_dirty()
         self.set_info(f"已加载输入条件：{in_path}")
 
     def _load_sample(self, filename: str) -> None:
@@ -1220,6 +1292,7 @@ class WormGearPage(BaseChapterPage):
             QMessageBox.critical(self, "测试案例损坏", f"测试案例文件不是有效 JSON：{exc}")
             return
         self._apply_input_data(data)
+        self._mark_results_dirty()
         self.set_info(f"已加载测试案例：{filename}")
 
     def _clear(self) -> None:
@@ -1240,4 +1313,5 @@ class WormGearPage(BaseChapterPage):
         self.load_capacity_status.setText("DIN 3996 校核尚未开始")
         self.load_capacity_metrics.setPlainText("尚无 Load Capacity 结果。")
         self.set_overall_status("等待计算", "wait")
+        self._mark_results_dirty()
         self.set_info("参数已重置，可重新执行蜗杆副计算。")

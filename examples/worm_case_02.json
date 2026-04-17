@@ -1,48 +1,37 @@
 {
-  "meta": {
-    "note": "Method B 大变位塑料示例"
-  },
   "geometry": {
-    "z1": 1.0,
-    "z2": 55.0,
-    "module_mm": 5.0,
-    "center_distance_mm": 145.0,
-    "diameter_factor_q": 12.0,
-    "lead_angle_deg": 4.76,
-    "handedness": "右旋",
-    "worm_face_width_mm": 42.0,
-    "wheel_face_width_mm": 38.0,
-    "x1": 0.2,
-    "x2": 0.8
+    "module_mm": 3.0,
+    "z1": 1,
+    "z2": 50,
+    "diameter_factor_q": 10.0,
+    "center_distance_mm": 90.0,
+    "lead_angle_deg": 5.71,
+    "worm_face_width_mm": 24.0,
+    "wheel_face_width_mm": 21.0,
+    "x1": 0.0,
+    "x2": 0.0
+  },
+  "operating": {
+    "input_torque_nm": 10.0,
+    "speed_rpm": 1450.0,
+    "application_factor": 1.0,
+    "torque_ripple_percent": 0.0
   },
   "materials": {
     "worm_material": "37CrS4",
-    "wheel_material": "PA66+GF30",
-    "worm_e_mpa": 210000.0,
-    "worm_nu": 0.3,
-    "wheel_e_mpa": 10000.0,
-    "wheel_nu": 0.36
-  },
-  "operating": {
-    "input_torque_nm": 54.74,
-    "speed_rpm": 960.0,
-    "application_factor": 1.5,
-    "torque_ripple_percent": 20.0,
-    "lubrication": "强制润滑"
+    "wheel_material": "POM",
+    "handedness": "right",
+    "lubrication": "oil_bath"
   },
   "advanced": {
-    "friction_override": "",
-    "normal_pressure_angle_deg": 20.0
+    "normal_pressure_angle_deg": 20.0,
+    "operating_temp_c": 40.0,
+    "humidity_rh": 30.0
   },
   "load_capacity": {
     "enabled": true,
-    "method": "Niemann",
-    "allowable_contact_stress_mpa": 58.0,
-    "allowable_root_stress_mpa": 70.0,
-    "dynamic_factor_kv": 1.12,
-    "transverse_load_factor_kha": 1.02,
-    "face_load_factor_khb": 1.15,
-    "required_contact_safety": 1.0,
-    "required_root_safety": 1.0
+    "method": "DIN 3996 Method B",
+    "required_contact_safety": 1.2,
+    "required_root_safety": 1.4
   }
 }

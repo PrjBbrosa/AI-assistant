@@ -1,32 +1,32 @@
 {
   "geometry": {
-    "module_mm": 4.0,
-    "z1": 1,
-    "z2": 40,
+    "module_mm": 5.0,
+    "z1": 2,
+    "z2": 30,
     "diameter_factor_q": 10.0,
     "center_distance_mm": 100.0,
-    "lead_angle_deg": 5.71,
-    "worm_face_width_mm": 32.0,
-    "wheel_face_width_mm": 28.0,
+    "lead_angle_deg": 11.31,
+    "worm_face_width_mm": 40.0,
+    "wheel_face_width_mm": 35.0,
     "x1": 0.0,
     "x2": 0.0
   },
   "operating": {
-    "input_torque_nm": 19.5,
-    "speed_rpm": 1500.0,
-    "application_factor": 1.25,
+    "input_torque_nm": 40.0,
+    "speed_rpm": 1000.0,
+    "application_factor": 1.5,
     "torque_ripple_percent": 0.0
   },
   "materials": {
     "worm_material": "37CrS4",
-    "wheel_material": "PA66+GF30",
+    "wheel_material": "PEEK",
     "handedness": "right",
     "lubrication": "grease"
   },
   "advanced": {
     "normal_pressure_angle_deg": 20.0,
-    "operating_temp_c": 60.0,
-    "humidity_rh": 50.0
+    "operating_temp_c": 120.0,
+    "humidity_rh": 20.0
   },
   "load_capacity": {
     "enabled": true,

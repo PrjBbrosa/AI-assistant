@@ -101,11 +101,10 @@ class WormGearPageTests(unittest.TestCase):
 
         page._load_sample("worm_case_01.json")
 
-        self.assertEqual(page._field_widgets["geometry.z1"].text(), "2.0")  # type: ignore[attr-defined]
-        # handedness 字段现在是 materials.handedness；worm_case_01.json 中 handedness 在 geometry 段，
-        # 加载后字段保持默认 "right"（JSON 与 FieldSpec 的 section 不匹配，等 Wave 2 案例更新）
-        self.assertIn(page._field_widgets["materials.handedness"].currentText(), ("right", "left"))  # type: ignore[attr-defined]
-        self.assertEqual(page._field_widgets["geometry.worm_face_width_mm"].text(), "36.0")  # type: ignore[attr-defined]
+        # Wave 2 刷新后 worm_case_01.json: z1=1, worm_face_width=32, PA66+GF30, Method B
+        self.assertEqual(page._field_widgets["geometry.z1"].text(), "1")  # type: ignore[attr-defined]
+        self.assertEqual(page._field_widgets["materials.handedness"].currentText(), "right")  # type: ignore[attr-defined]
+        self.assertEqual(page._field_widgets["geometry.worm_face_width_mm"].text(), "32.0")  # type: ignore[attr-defined]
         self.assertIn("Method B", page._field_widgets["load_capacity.method"].currentText())  # type: ignore[attr-defined]
 
     def test_graphics_step_can_render_without_crashing(self) -> None:
@@ -762,4 +761,89 @@ class WormGearPagePlasticMaterialTests(unittest.TestCase):
         self.assertTrue(
             any(kw in combined_text for kw in ("疲劳寿命", "磨损", "life", "wear")),
             f"life 存在时寿命卡内应显示寿命/磨损文字，实际内容：{combined_text[:200]}"
+        )
+
+
+# ============================================================
+# Task 2.C Step 1 & 2 — 节流 + 脏状态测试（Wave 2）
+# ============================================================
+
+
+class WormGearPageWave2ThrottleTests(unittest.TestCase):
+    """Wave 2 新增 UI 测试：预览节流计数器 + 输入变更使导出按钮失效。
+
+    依赖 ui-engineer Task 2.B 在 WormGearPage 中曝光：
+      - _preview_call_count: int
+      - _mark_results_fresh(): 模拟刚计算完
+      - _mark_results_dirty(): 模拟输入已变更
+    若 ui-engineer 尚未完成，测试通过 hasattr/skipTest 保护，不硬失败。
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_preview_throttled_not_recalculating_per_keystroke(self) -> None:
+        """连续 5 次快速输入时，节流定时器应合并触发，不超过 count_before + 2 次。"""
+        from PySide6.QtCore import QEventLoop, QTimer
+
+        page = WormGearPage()
+
+        if not hasattr(page, "_preview_call_count"):
+            self.skipTest(
+                "_preview_call_count 未实现（等待 ui-engineer Task 2.B）"
+            )
+
+        count_before = page._preview_call_count
+
+        # 连续 5 次快速输入 —— 在节流窗口内不应每次都触发预览
+        for v in ("3", "3.5", "4", "4.5", "5"):
+            page._field_widgets["geometry.module_mm"].setText(v)
+            page._field_widgets["geometry.module_mm"].textEdited.emit(v)
+
+        # 300 ms 内最多允许 1 次额外触发（节流首次立即触发的实现允差）
+        count_immediate = page._preview_call_count
+        self.assertLessEqual(
+            count_immediate,
+            count_before + 1,
+            "快速连续输入 300ms 内不应超出 count_before+1 次触发",
+        )
+
+        # 等待 400 ms，让节流定时器触发最终合并计算
+        loop = QEventLoop()
+        QTimer.singleShot(400, loop.quit)
+        loop.exec()
+
+        count_after = page._preview_call_count
+        self.assertLessEqual(
+            count_after - count_before,
+            2,
+            "节流后总触发次数应 <= 2（远少于 5 次逐键触发）",
+        )
+
+    def test_input_change_disables_export_button(self) -> None:
+        """_mark_results_fresh() 后按钮 enabled；输入变更后按钮应变 disabled。"""
+        page = WormGearPage()
+
+        if not hasattr(page, "_mark_results_fresh"):
+            self.skipTest(
+                "_mark_results_fresh 未实现（等待 ui-engineer Task 2.B）"
+            )
+
+        # 模拟刚计算完，按钮应 enabled
+        page._mark_results_fresh()
+        export_btn = getattr(page, "_export_button", page.btn_save)
+        self.assertTrue(
+            export_btn.isEnabled(),
+            "_mark_results_fresh() 后导出按钮应 enabled",
+        )
+
+        # 输入变更 → 按钮应变 disabled
+        page._field_widgets["geometry.module_mm"].setText("7")
+        page._field_widgets["geometry.module_mm"].textEdited.emit("7")
+        self.app.processEvents()
+
+        self.assertFalse(
+            export_btn.isEnabled(),
+            "输入变化后导出按钮应失效（disabled）",
         )
