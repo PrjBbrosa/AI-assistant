@@ -181,9 +181,18 @@ class WormGearPageTests(unittest.TestCase):
 
     def test_wheel_material_change_updates_allowable_stresses(self) -> None:
         page = WormGearPage()
+        # 设成基准条件（23°C / 0%RH），避免降额影响验证材料值本身
+        page._field_widgets["advanced.operating_temp_c"].setText("23")
+        page._field_widgets["advanced.humidity_rh"].setText("0")
         page._field_widgets["materials.wheel_material"].setCurrentText("PA66+GF30")
-        self.assertEqual(page._field_widgets["load_capacity.allowable_contact_stress_mpa"].text(), "58.0")
-        self.assertEqual(page._field_widgets["load_capacity.allowable_root_stress_mpa"].text(), "70.0")
+        self.assertAlmostEqual(
+            float(page._field_widgets["load_capacity.allowable_contact_stress_mpa"].text()),
+            58.0, delta=0.01,
+        )
+        self.assertAlmostEqual(
+            float(page._field_widgets["load_capacity.allowable_root_stress_mpa"].text()),
+            70.0, delta=0.01,
+        )
 
     def test_load_capacity_disabled_shows_autocalc_style(self) -> None:
         page = WormGearPage()
@@ -622,3 +631,135 @@ class WormGearPageWave0Tests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ============================================================
+# Task 1.C Step 3 — 塑料材料下拉自动填充测试（Wave 1）
+# ============================================================
+
+
+class WormGearPagePlasticMaterialTests(unittest.TestCase):
+    """Wave 1 新增 UI 测试：塑料材料下拉自动填充许用应力与 AutoCalcCard 样式。
+
+    前提：ui-engineer Task 1.B Step 1 已将 _on_material_changed 改为
+    从 core.worm.materials.PLASTIC_MATERIALS 读取（而非仅查 MATERIAL_ALLOWABLE_HINTS）。
+    若 ui-engineer 尚未完成，本类测试预期 FAIL（等待 Task 1.B）。
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_wheel_material_pom_autofills_allowables(self) -> None:
+        """选择 POM 后 allowable_contact_stress_mpa 字段应自动填充为 48 MPa（POM sigma_Hlim）。
+
+        POM 在 PLASTIC_MATERIALS 中 sigma_hlim_mpa = 48.0 MPa。
+        """
+        page = WormGearPage()
+
+        page._field_widgets["materials.wheel_material"].setCurrentText("POM")
+        self.app.processEvents()
+
+        contact_text = page._field_widgets["load_capacity.allowable_contact_stress_mpa"].text()
+        contact_value = float(contact_text)
+        # POM sigma_Hlim = 48 MPa，允许 5% 容差
+        self.assertAlmostEqual(contact_value, 48.0, delta=48.0 * 0.05,
+            msg=f"选 POM 后 allowable_contact_stress_mpa 应 ≈ 48 MPa，实际 {contact_value}")
+
+    def test_wheel_material_pom_sets_autocalc_style(self) -> None:
+        """选择 POM 后 allowable_contact_stress_mpa 字段的父卡片应切换到 AutoCalcCard 样式。
+
+        前提：ui-engineer 在 _on_material_changed 中新增了 _set_card_style 调用。
+        若未实现，本测试预期 FAIL。
+        """
+        from PySide6.QtWidgets import QFrame
+
+        page = WormGearPage()
+        page._field_widgets["materials.wheel_material"].setCurrentText("POM")
+        self.app.processEvents()
+
+        # allowable_contact_stress_mpa 字段的 widget 应处于只读状态或父卡片为 AutoCalcCard
+        contact_widget = page._field_widgets["load_capacity.allowable_contact_stress_mpa"]
+        # 找到最近的 AutoCalcCard 父容器
+        parent = contact_widget.parent()
+        found_autocalc = False
+        while parent is not None:
+            if isinstance(parent, QFrame) and parent.objectName() == "AutoCalcCard":
+                found_autocalc = True
+                break
+            parent = parent.parent()
+        self.assertTrue(
+            found_autocalc or contact_widget.isReadOnly(),
+            "选 POM 后 allowable_contact_stress_mpa 字段应为只读或父卡片为 AutoCalcCard 样式"
+        )
+
+    def test_wheel_material_peek_autofills_high_allowables(self) -> None:
+        """选择 PEEK 后 allowable_contact_stress_mpa 字段应约为 90 MPa。
+
+        PEEK 在 PLASTIC_MATERIALS 中 sigma_hlim_mpa = 90.0 MPa。
+        """
+        page = WormGearPage()
+
+        page._field_widgets["materials.wheel_material"].setCurrentText("PEEK")
+        self.app.processEvents()
+
+        contact_text = page._field_widgets["load_capacity.allowable_contact_stress_mpa"].text()
+        contact_value = float(contact_text)
+        # PEEK sigma_Hlim = 90 MPa，允许 5% 容差
+        self.assertAlmostEqual(contact_value, 90.0, delta=90.0 * 0.05,
+            msg=f"选 PEEK 后 allowable_contact_stress_mpa 应 ≈ 90 MPa，实际 {contact_value}")
+
+    def test_wheel_material_pa46_autofills_correct_allowables(self) -> None:
+        """选择 PA46 后 allowable_contact_stress_mpa 字段应约为 52 MPa。
+
+        PA46 在 PLASTIC_MATERIALS 中 sigma_hlim_mpa = 52.0 MPa。
+        """
+        page = WormGearPage()
+
+        # 基准条件（23°C / 0%RH）下验证材料本身的名义值
+        page._field_widgets["advanced.operating_temp_c"].setText("23")
+        page._field_widgets["advanced.humidity_rh"].setText("0")
+        page._field_widgets["materials.wheel_material"].setCurrentText("PA46")
+        self.app.processEvents()
+
+        contact_text = page._field_widgets["load_capacity.allowable_contact_stress_mpa"].text()
+        contact_value = float(contact_text)
+        # PA46 sigma_Hlim = 52 MPa，允许 5% 容差
+        self.assertAlmostEqual(contact_value, 52.0, delta=52.0 * 0.05,
+            msg=f"选 PA46 后 allowable_contact_stress_mpa 应 ≈ 52 MPa，实际 {contact_value}")
+
+    def test_life_card_renders_after_calculate(self) -> None:
+        """执行计算后，若 load_capacity['life'] 存在，寿命相关文本应出现在结果区。
+
+        若 core 尚未实现寿命/磨损输出，本测试预期 SKIP（load_capacity_metrics 里无寿命字样）。
+        若 ui-engineer Task 1.B Step 5 也未完成，同样 SKIP。
+        """
+        page = WormGearPage()
+        page._calculate()
+        self.app.processEvents()
+
+        lc_result = page._last_result
+        if lc_result is None:
+            self.skipTest("计算未成功，跳过寿命卡渲染测试")
+
+        life_dict = lc_result.get("load_capacity", {}).get("life", {})
+        if not life_dict:
+            self.skipTest(
+                "load_capacity['life'] 不存在（core Task 1.A Step 3 未完成），跳过寿命卡测试"
+            )
+
+        # life 数据存在时，寿命卡（SubCard）应可见且包含疲劳寿命/磨损等字样
+        from PySide6.QtWidgets import QLabel
+
+        life_card = getattr(page, "_life_card", None)
+        self.assertIsNotNone(life_card, "寿命评估卡 _life_card 未创建")
+        self.assertFalse(life_card.isHidden(),
+                         "寿命评估卡在 load_capacity['life'] 存在时应可见")
+        life_texts = [
+            child.text() for child in life_card.findChildren(QLabel) if child.text()
+        ]
+        combined_text = "\n".join(life_texts)
+        self.assertTrue(
+            any(kw in combined_text for kw in ("疲劳寿命", "磨损", "life", "wear")),
+            f"life 存在时寿命卡内应显示寿命/磨损文字，实际内容：{combined_text[:200]}"
+        )

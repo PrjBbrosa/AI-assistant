@@ -453,11 +453,18 @@ class WormCalculatorTests(unittest.TestCase):
             calculate_worm_geometry(data)
 
     def test_extreme_profile_shift(self):
+        # DIN 3975 推荐变位范围 -0.5 ~ 1.0；测试两端极值可算
         data = self._base_payload()
         data["geometry"]["x1"] = 1.0
-        data["geometry"]["x2"] = -1.0
+        data["geometry"]["x2"] = -0.5
         result = calculate_worm_geometry(data)
         self.assertIn("geometry", result)
+
+    def test_profile_shift_out_of_range_rejected(self):
+        data = self._base_payload()
+        data["geometry"]["x2"] = -1.0
+        with self.assertRaises(InputError):
+            calculate_worm_geometry(data)
 
     def test_load_capacity_forces_output(self):
         data = self._base_payload()
@@ -788,3 +795,64 @@ def test_lubrication_dry_increases_friction():
     mu_oil = result_oil["performance"]["friction_mu"]
     mu_dry = result_dry["performance"]["friction_mu"]
     assert mu_dry > mu_oil, f"干摩擦 mu={mu_dry:.4f} 应大于油浴摩擦 mu={mu_oil:.4f}"
+
+
+# ============================================================
+# Task 1.C Step 2 — 寿命/磨损 & 温升曲线 & x1 校验测试（Wave 1）
+# ============================================================
+
+
+def test_life_and_wear_outputs_present_method_b():
+    """Method B 下 load_capacity['life'] 应含 fatigue_life_hours、
+    wear_depth_mm_per_hour、wear_life_hours_until_0p3mm，且均 > 0。
+
+    若 core 尚未实现寿命/磨损输出，本测试预期 FAIL（等待 Task 1.A Step 3）。
+    """
+    data = _case_m4_z1_q10()
+    data.setdefault("load_capacity", {})["method"] = "DIN 3996 Method B"
+    result = calculate_worm_geometry(data)
+    life = result["load_capacity"].get("life", {})
+    assert life.get("fatigue_life_hours", 0) > 0, (
+        "Method B 下 life['fatigue_life_hours'] 应 > 0"
+    )
+    assert life.get("wear_depth_mm_per_hour", 0) > 0, (
+        "Method B 下 life['wear_depth_mm_per_hour'] 应 > 0"
+    )
+    assert life.get("wear_life_hours_until_0p3mm", 0) > 0, (
+        "Method B 下 life['wear_life_hours_until_0p3mm'] 应 > 0"
+    )
+
+
+def test_temperature_rise_curve_nonconstant():
+    """温升曲线（temperature_rise_k）应独立于损失功率曲线（power_loss_kw）。
+
+    若 core 已实现 delta_T = P_loss / Q_th * delta_T_allowed，
+    则两列数值只有在 Q_th 恰好等于 delta_T_allowed（极小概率）时才相等，
+    实际情况下两列数组不应完全相等。
+    """
+    data = _case_m4_z1_q10()
+    result = calculate_worm_geometry(data)
+    curve = result["curve"]
+
+    # 优先检查 temperature_rise_k，若不存在则回退到 thermal_capacity_kw
+    rises = curve.get("temperature_rise_k") or curve.get("thermal_capacity_kw")
+    assert rises is not None, "curve 中应有 temperature_rise_k 或 thermal_capacity_kw 字段"
+
+    power_loss = curve["power_loss_kw"]
+    assert rises != power_loss, (
+        "温升曲线（temperature_rise_k）不应与损失功率曲线（power_loss_kw）完全相同。"
+        "若两者相等说明 core 未实现独立的温升公式（见 Task 1.A Step 5）。"
+    )
+
+
+def test_invalid_x1_raises():
+    """x1 = 1.5 超出 DIN 3975 推荐范围（-0.5 ~ 1.0），应抛出 InputError。
+
+    若 core 尚未实现 x1 范围验证，本测试预期 FAIL（等待 Task 1.A Step 4）。
+    """
+    from core.worm.calculator import InputError as WormInputError
+
+    data = _case_m4_z1_q10()
+    data["geometry"]["x1"] = 1.5
+    with pytest.raises(WormInputError, match="x1"):
+        calculate_worm_geometry(data)

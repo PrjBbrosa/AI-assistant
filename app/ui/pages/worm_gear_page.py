@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+# 尝试导入塑料材料库；若 core-engineer 尚未创建，延迟到实际使用时报错
+try:
+    from core.worm.materials import PLASTIC_MATERIALS
+    _PLASTIC_MATERIALS_AVAILABLE = True
+except ImportError:
+    PLASTIC_MATERIALS = {}
+    _PLASTIC_MATERIALS_AVAILABLE = False
 
 from app.ui.input_condition_store import (
     build_form_snapshot,
@@ -122,9 +131,9 @@ MATERIAL_FIELDS = [
         "materials.wheel_material",
         "蜗轮材料",
         "-",
-        "例如锡青铜。",
+        "塑料蜗轮材料，选择后自动填充弹性模量和许用应力。",
         widget_type="choice",
-        options=("PA66", "PA66+GF30"),
+        options=("PA66", "PA66+GF30", "POM", "PA46", "PEEK"),
         default="PA66",
     ),
     FieldSpec(
@@ -168,6 +177,20 @@ ADVANCED_FIELDS = [
         placeholder="留空则自动",
     ),
     FieldSpec("advanced.normal_pressure_angle_deg", "法向压力角 alpha_n", "deg", "力分解与最小齿面/齿根模型的几何参数。", default="20.0"),
+    FieldSpec(
+        "advanced.operating_temp_c",
+        "工作温度",
+        "℃",
+        "齿面工作温度，用于塑料材料降额计算（PA 系列高温强度下降明显）。",
+        default="23",
+    ),
+    FieldSpec(
+        "advanced.humidity_rh",
+        "相对湿度",
+        "%",
+        "环境相对湿度，PA 系列吸水后弹性模量和强度降额使用。",
+        default="50",
+    ),
 ]
 
 LOAD_CAPACITY_PARAMETER_FIELDS = [
@@ -238,6 +261,11 @@ class WormGearPage(BaseChapterPage):
         self._field_widgets["load_capacity.method"].currentTextChanged.connect(self._on_method_changed)
         self._field_widgets["materials.worm_material"].currentTextChanged.connect(lambda: self._on_material_changed())
         self._field_widgets["materials.wheel_material"].currentTextChanged.connect(lambda: self._on_material_changed())
+        # 温湿度变化时，塑料降额许用应力需要重新自动填充，保持与 core 一致
+        for fid in ("advanced.operating_temp_c", "advanced.humidity_rh"):
+            w = self._field_widgets.get(fid)
+            if isinstance(w, QLineEdit):
+                w.editingFinished.connect(lambda: self._on_material_changed())
         self.set_current_chapter(0)
         self.btn_save_inputs.clicked.connect(self._save_input_conditions)
         self.btn_load_inputs.clicked.connect(self._load_input_conditions)
@@ -613,10 +641,64 @@ class WormGearPage(BaseChapterPage):
         self.result_metrics.setReadOnly(True)
         self.result_metrics.setMinimumHeight(180)
         self.result_metrics.setPlainText("尚无结果。")
+
+        # 效率与自锁副标题卡
+        self._efficiency_subtitle_card = QFrame(page)
+        self._efficiency_subtitle_card.setObjectName("SubCard")
+        eff_layout = QVBoxLayout(self._efficiency_subtitle_card)
+        eff_layout.setContentsMargins(12, 10, 12, 10)
+        eff_layout.setSpacing(4)
+        eff_card_title = QLabel("效率与自锁分析", self._efficiency_subtitle_card)
+        eff_card_title.setObjectName("SubSectionTitle")
+        self._efficiency_subtitle_label = QLabel("执行计算后显示。", self._efficiency_subtitle_card)
+        self._efficiency_subtitle_label.setObjectName("SectionHint")
+        self._efficiency_subtitle_label.setWordWrap(True)
+        eff_layout.addWidget(eff_card_title)
+        eff_layout.addWidget(self._efficiency_subtitle_label)
+        self._efficiency_subtitle_card.setVisible(False)
+
+        # 寿命评估卡
+        self._life_card = QFrame(page)
+        self._life_card.setObjectName("SubCard")
+        life_layout = QVBoxLayout(self._life_card)
+        life_layout.setContentsMargins(12, 12, 12, 12)
+        life_layout.setSpacing(6)
+        life_card_title = QLabel("寿命评估", self._life_card)
+        life_card_title.setObjectName("SubSectionTitle")
+        life_layout.addWidget(life_card_title)
+
+        self._life_row_labels: dict[str, QLabel] = {}
+        for row_key, row_label_text in [
+            ("fatigue_life_hours", "疲劳寿命"),
+            ("wear_depth_mm_per_hour", "磨损速率"),
+            ("wear_life_hours_until_0p3mm", "磨损寿命 (至 0.3 mm)"),
+            ("sliding_velocity_mps", "滑动速度"),
+        ]:
+            row_frame = QFrame(self._life_card)
+            row_frame.setObjectName("AutoCalcCard")
+            row_h = QHBoxLayout(row_frame)
+            row_h.setContentsMargins(8, 6, 8, 6)
+            row_h.setSpacing(8)
+            row_name = QLabel(row_label_text, row_frame)
+            row_name.setObjectName("SectionHint")
+            row_val = QLabel("—", row_frame)
+            row_val.setObjectName("SectionHint")
+            row_val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            row_val.setStyleSheet("color: #3A4F63; font-weight: 600;")
+            row_h.addWidget(row_name)
+            row_h.addStretch(1)
+            row_h.addWidget(row_val)
+            life_layout.addWidget(row_frame)
+            self._life_row_labels[row_key] = row_val
+
+        self._life_card.setVisible(False)
+
         layout.addWidget(title)
         layout.addWidget(self.result_title)
         layout.addWidget(self.result_summary)
         layout.addWidget(self.result_metrics)
+        layout.addWidget(self._efficiency_subtitle_card)
+        layout.addWidget(self._life_card)
         self.add_chapter("结果与报告", page)
 
     def _read_widget_value(self, spec: FieldSpec) -> str:
@@ -695,6 +777,82 @@ class WormGearPage(BaseChapterPage):
             payload.setdefault(section, {})[key] = value
         return payload
 
+    def _set_card_style(self, field_id: str, *, auto: bool) -> None:
+        """将字段的外层 SubCard frame 切换为 AutoCalcCard（auto=True）或 SubCard（auto=False）。
+        同时设置 QLineEdit 的 readOnly 状态。
+        """
+        widget = self._field_widgets.get(field_id)
+        if widget is None:
+            return
+        # 找到直接父 frame（即 _create_input_row_card 返回的 card）
+        parent_frame = widget.parent()
+        if isinstance(parent_frame, QWidget):
+            # 向上找到 QFrame（SubCard 级别）
+            frame = parent_frame if isinstance(parent_frame, QFrame) else None
+            if frame is None:
+                return
+            obj_name = "AutoCalcCard" if auto else "SubCard"
+            frame.setObjectName(obj_name)
+            frame.style().unpolish(frame)
+            frame.style().polish(frame)
+            for child in frame.findChildren(QWidget):
+                child.style().unpolish(child)
+                child.style().polish(child)
+        if isinstance(widget, QLineEdit):
+            widget.setReadOnly(auto)
+        elif isinstance(widget, QComboBox):
+            widget.setEnabled(not auto)
+
+    def _apply_plastic_defaults(self, material_name: str) -> None:
+        """从塑料材料库自动填充弹性参数和许用应力，并切换为 AutoCalcCard 样式。
+
+        许用应力按当前 advanced.operating_temp_c 和 advanced.humidity_rh 降额，
+        与 core 计算保持一致，避免用户看到名义值而 core 用降额值导致的歧义。
+        """
+        if not _PLASTIC_MATERIALS_AVAILABLE:
+            return
+        mat = PLASTIC_MATERIALS.get(material_name)
+        if mat is None:
+            # 未知材料：解锁字段让用户手动输入
+            for fid in ("materials.wheel_e_mpa", "materials.wheel_nu",
+                        "load_capacity.allowable_contact_stress_mpa",
+                        "load_capacity.allowable_root_stress_mpa"):
+                self._set_card_style(fid, auto=False)
+            return
+        # 读取当前工况温湿度，与 core 降额模型保持一致
+        from core.worm.materials import apply_derate
+        try:
+            op_t = float(self._field_widgets["advanced.operating_temp_c"].text() or 23.0)
+        except (KeyError, ValueError):
+            op_t = 23.0
+        try:
+            rh = float(self._field_widgets["advanced.humidity_rh"].text() or 50.0)
+        except (KeyError, ValueError):
+            rh = 50.0
+        sigma_hlim_d, sigma_flim_d = apply_derate(mat, operating_temp_c=op_t, humidity_rh=rh)
+        # 填充默认值（E / ν 不随温湿度变化，σ 用降额后值）
+        w_e = self._field_widgets.get("materials.wheel_e_mpa")
+        if isinstance(w_e, QLineEdit):
+            w_e.setReadOnly(False)
+            w_e.setText(str(mat.e_mpa))
+        w_nu = self._field_widgets.get("materials.wheel_nu")
+        if isinstance(w_nu, QLineEdit):
+            w_nu.setReadOnly(False)
+            w_nu.setText(str(mat.nu))
+        w_contact = self._field_widgets.get("load_capacity.allowable_contact_stress_mpa")
+        if isinstance(w_contact, QLineEdit):
+            w_contact.setReadOnly(False)
+            w_contact.setText(f"{sigma_hlim_d:.2f}")
+        w_root = self._field_widgets.get("load_capacity.allowable_root_stress_mpa")
+        if isinstance(w_root, QLineEdit):
+            w_root.setReadOnly(False)
+            w_root.setText(f"{sigma_flim_d:.2f}")
+        # 切换为 AutoCalcCard 样式（setReadOnly 在 _set_card_style 里处理）
+        for fid in ("materials.wheel_e_mpa", "materials.wheel_nu",
+                    "load_capacity.allowable_contact_stress_mpa",
+                    "load_capacity.allowable_root_stress_mpa"):
+            self._set_card_style(fid, auto=True)
+
     def _on_material_changed(self) -> None:
         from core.worm.calculator import MATERIAL_ELASTIC_HINTS, MATERIAL_ALLOWABLE_HINTS, MATERIAL_FRICTION_HINTS
         worm_mat = self._field_widgets["materials.worm_material"].currentText()
@@ -711,6 +869,8 @@ class WormGearPage(BaseChapterPage):
         if allowable_hints:
             self._field_widgets["load_capacity.allowable_contact_stress_mpa"].setText(str(allowable_hints["contact_mpa"]))
             self._field_widgets["load_capacity.allowable_root_stress_mpa"].setText(str(allowable_hints["root_mpa"]))
+        # 塑料材料库优先：若 PLASTIC_MATERIALS 中有该材料，覆盖上面的填充并设为 AutoCalcCard
+        self._apply_plastic_defaults(wheel_mat)
         default_mu = MATERIAL_FRICTION_HINTS.get((worm_mat, wheel_mat), 0.20)
         self._field_widgets["advanced.friction_override"].setPlaceholderText(f"留空则自动 \u03bc={default_mu:.2f}")
         self._refresh_derived_geometry_preview()
@@ -944,6 +1104,41 @@ class WormGearPage(BaseChapterPage):
                 self._set_badge(badge, "未启用", "wait")
             self._set_badge(self._overall_lc_badge, "未启用", "wait")
             self.set_overall_status("Load Capacity 未启用", "wait")
+        # Step 4: 效率与自锁副标题
+        lead_angle_calc_deg = geometry.get("lead_angle_calc_deg", geometry.get("lead_angle_deg", 0.0))
+        friction_mu = performance.get("friction_mu", 0.0)
+        alpha_n_deg = result.get("inputs_echo", {}).get("advanced", {}).get("normal_pressure_angle_deg", 20.0)
+        try:
+            phi_prime_deg = math.degrees(math.atan(friction_mu / math.cos(math.radians(float(alpha_n_deg)))))
+        except (ValueError, ZeroDivisionError):
+            phi_prime_deg = 0.0
+        self_lock = lead_angle_calc_deg <= phi_prime_deg
+        self._efficiency_subtitle_label.setText(
+            f"gamma = {lead_angle_calc_deg:.2f} deg  /  phi' = {phi_prime_deg:.2f} deg  /  "
+            f"自锁：{'是' if self_lock else '否'}"
+        )
+        self._efficiency_subtitle_card.setVisible(True)
+
+        # Step 5: 寿命/磨损评估
+        life = load_capacity.get("life", {})
+        fatigue_h = life.get("fatigue_life_hours")
+        wear_rate = life.get("wear_depth_mm_per_hour")
+        wear_life = life.get("wear_life_hours_until_0p3mm")
+        sliding_v = life.get("sliding_velocity_mps")
+        self._life_row_labels["fatigue_life_hours"].setText(
+            f"{fatigue_h:.0f} h" if fatigue_h is not None else "—"
+        )
+        self._life_row_labels["wear_depth_mm_per_hour"].setText(
+            f"{wear_rate * 1000:.3f} \u00b5m/h" if wear_rate is not None else "—"
+        )
+        self._life_row_labels["wear_life_hours_until_0p3mm"].setText(
+            f"{wear_life:.0f} h" if wear_life is not None else "—"
+        )
+        self._life_row_labels["sliding_velocity_mps"].setText(
+            f"{sliding_v:.2f} m/s" if sliding_v is not None else "—"
+        )
+        self._life_card.setVisible(True)
+
         self.set_info("已完成蜗杆副几何、基础性能与 Method B 最小子集计算。")
         self.set_current_chapter(self.chapter_stack.count() - 1)
 

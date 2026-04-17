@@ -1,9 +1,15 @@
-"""DIN 3975 first-pass worm geometry and basic performance calculator."""
+"""DIN 3975 first-pass worm geometry and basic performance calculator.
+
+Wave 1 (2026-04-17): 新增塑料材料库降额（core/worm/materials.py）、DIN 3996 Method B
+寿命/磨损计算、变位系数边界校验、性能曲线温升数据。
+"""
 
 from __future__ import annotations
 
 import math
 from typing import Any, Dict
+
+from core.worm.materials import PLASTIC_MATERIALS, apply_derate
 
 
 class InputError(ValueError):
@@ -107,6 +113,28 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     wheel_elastic_defaults = MATERIAL_ELASTIC_HINTS.get(wheel_material, {"e_mpa": 3000.0, "nu": 0.38})
     wheel_allowable_defaults = MATERIAL_ALLOWABLE_HINTS.get(wheel_material, {"contact_mpa": 42.0, "root_mpa": 55.0})
 
+    # ---- 塑料材料库降额（Step 2：Wave 1）----
+    # 读取工况参数（默认值为常温 23℃、中等湿度 50%RH）
+    operating_temp_c = float(advanced.get("operating_temp_c", 23.0))
+    humidity_rh = float(advanced.get("humidity_rh", 50.0))
+    wheel_plastic = PLASTIC_MATERIALS.get(wheel_material)
+    if wheel_plastic is not None:
+        # 根据温度和湿度降额，覆盖许用值（优先于 MATERIAL_ALLOWABLE_HINTS 的常温干态值）
+        sigma_hlim_derated, sigma_flim_derated = apply_derate(
+            wheel_plastic,
+            operating_temp_c=operating_temp_c,
+            humidity_rh=humidity_rh,
+        )
+        wheel_allowable_defaults = {
+            "contact_mpa": sigma_hlim_derated,
+            "root_mpa": sigma_flim_derated,
+        }
+        # 若用户未在 materials 字典里显式覆盖 E / nu，用材料库默认值回填
+        if "wheel_e_mpa" not in materials:
+            wheel_elastic_defaults = {"e_mpa": wheel_plastic.e_mpa, "nu": wheel_plastic.nu}
+        if "wheel_nu" not in materials:
+            wheel_elastic_defaults["nu"] = wheel_plastic.nu
+
     worm_e_mpa = _positive(float(materials.get("worm_e_mpa", worm_elastic_defaults["e_mpa"])), "materials.worm_e_mpa")
     worm_nu = _nu(float(materials.get("worm_nu", worm_elastic_defaults["nu"])), "materials.worm_nu")
     wheel_e_mpa = _positive(float(materials.get("wheel_e_mpa", wheel_elastic_defaults["e_mpa"])), "materials.wheel_e_mpa")
@@ -114,6 +142,11 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
 
     x1 = float(geometry.get("x1", 0.0))
     x2 = float(geometry.get("x2", 0.0))
+    # 变位系数范围校验（DIN 3975 推荐范围）（Step 4：Wave 1）
+    if not (-0.5 <= x1 <= 1.0):
+        raise InputError(f"x1 必须在 -0.5 ~ 1.0 范围内（DIN 3975 推荐），当前值 {x1}")
+    if not (-0.5 <= x2 <= 1.0):
+        raise InputError(f"x2 必须在 -0.5 ~ 1.0 范围内（DIN 3975 推荐），当前值 {x2}")
 
     ratio = z2 / z1
     lead_angle_rad = math.radians(lead_angle_deg)  # user input, for comparison only
@@ -477,6 +510,41 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
         sigma_hm_rms_mpa = sigma_hm_rms_mpa * 0.95
         sigma_hm_peak_mpa = sigma_hm_peak_mpa * 0.95
 
+    # ---- Method B 寿命与磨损估算（DIN 3996 K9 简化子集）（Step 3：Wave 1）----
+    # 疲劳寿命 N_L（应力寿命曲线，塑料轮 Wohler 指数 m=6，基础循环 N_ref=10^7）
+    # N_L = (sigma_Hlim / sigma_H_peak)^6 * N_ref
+    # 寿命小时数 t_L = N_L / (n2 * 60)
+    sigma_hm_max = max(sigma_hm_peak_mpa, 1e-6)
+    n_life_cycles = (allowable_contact_stress_mpa / sigma_hm_max) ** 6 * 1.0e7
+    n_life_hours = n_life_cycles / max(wheel_speed_rpm * 60.0, 1e-6)
+
+    # 磨损率 J (mm³/N·m) 按 DIN 3996 K9 参考值（塑料-钢副，油脂润滑）
+    # 滑动速度 v_g (m/s) = pi * d1 * n1 / (60000 * cos(gamma))
+    wear_coeff_j = float(load_capacity.get("wear_coefficient_mm3_per_nm", 6.0e-7))
+    sliding_velocity_mps = (
+        math.pi * pitch_diameter_worm_mm * speed_rpm / 60000.0
+        / max(math.cos(lead_angle_calc_rad), 1e-6)
+    )
+    # 磨损深度速率 [mm/h]
+    # DeltaW = J * F_t2_design * v_g * 3600 / (b2 * pi * d2)
+    wear_depth_mm_per_hour = (
+        wear_coeff_j
+        * design_tangential_force_n
+        * sliding_velocity_mps
+        * 3600.0
+        / max(contact_length_mm * pitch_diameter_wheel_mm * math.pi, 1e-6)
+    )
+    # 磨损至许用深度 0.3mm 的寿命
+    wear_life_hours_until_0p3mm = 0.3 / max(wear_depth_mm_per_hour, 1e-9)
+
+    life_out: Dict[str, Any] = {
+        "fatigue_life_cycles": n_life_cycles,
+        "fatigue_life_hours": n_life_hours,
+        "wear_depth_mm_per_hour": wear_depth_mm_per_hour,
+        "wear_life_hours_until_0p3mm": wear_life_hours_until_0p3mm,
+        "sliding_velocity_mps": sliding_velocity_mps,
+    }
+
     contact_safety_factor_nominal = allowable_contact_stress_mpa / max(sigma_hm_nominal_mpa, 1e-6)
     contact_safety_factor_peak = allowable_contact_stress_mpa / max(sigma_hm_peak_mpa, 1e-6)
     root_safety_factor_nominal = allowable_root_stress_mpa / max(sigma_f_nominal_mpa, 1e-6)
@@ -643,6 +711,8 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
                 "contact_ok": contact_ok,
                 "root_ok": root_ok,
             },
+            # ---- 寿命与磨损估算（DIN 3996 Method B 简化子集）----
+            "life": life_out,
             "assumptions": [
                 "当前结果为 Method B 风格最小工程子集，不是完整 DIN 3996 / ISO/TS 14521。",
                 "齿形假设：ZK 型（锥面砂轮展成）。",
@@ -650,7 +720,9 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
                 "接触长度取 min(b1, b2)，未考虑包角影响。",
                 "齿根应力采用等效悬臂梁近似。",
                 "蜗轮齿顶/齿根高系数与蜗杆相同（含变位修正），未单独处理间隙系数。",
-                "钢-塑料配对，许用应力为常温干态工程经验值。",
+                "塑料蜗轮许用应力已按工作温度和环境湿度降额（DIN 3996 附录 A 参考数据）。",
+                "疲劳寿命采用 Wohler 指数 m=6 + 基础循环 N_ref=10^7（塑料轮常用值）。",
+                "磨损率采用 DIN 3996 K9 参考系数 J=6e-7 mm³/N·m（塑料-钢脂润滑）。",
                 "Method A: 手册系数法，接触应力乘 0.95 折减；Method B（默认）: DIN 3996 最小子集；Method C: 需 FEA 输入，当前版本拒绝。",
             ],
             "stress_curve": stress_curve_out,
