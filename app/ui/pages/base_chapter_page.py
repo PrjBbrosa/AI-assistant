@@ -120,6 +120,12 @@ class BaseChapterPage(QWidget):
         *,
         help_ref: str | None = None,
     ) -> int:
+        """Register a step page. When ``help_ref`` is provided, the returned
+        index points at a wrapper widget (not ``page``), so callers/tests that
+        rely on ``chapter_stack.widget(i)`` returning ``page`` must account for
+        the wrapper. Pages that pass ``help_ref`` should not render their own
+        chapter title — the wrapper renders it alongside the "?" button.
+        """
         self._chapter_step_index += 1
         self.chapter_list.addItem(QListWidgetItem(f"步骤 {self._chapter_step_index}. {title}"))
 
