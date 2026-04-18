@@ -54,6 +54,7 @@ class FieldSpec:
     options: tuple[str, ...] = ()
     default: str = ""
     placeholder: str = ""
+    help_ref: str = ""
 
 
 LOAD_CONDITION_OPTIONS: tuple[str, ...] = (

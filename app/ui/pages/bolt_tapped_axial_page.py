@@ -55,6 +55,7 @@ class FieldSpec:
     widget_type: str = "number"
     options: tuple[str, ...] = ()
     default: str = ""
+    help_ref: str = ""
 
     @property
     def mapping(self) -> tuple[str, str] | None:

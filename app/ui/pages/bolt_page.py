@@ -85,6 +85,7 @@ class FieldSpec:
     options: tuple[str, ...] = ()
     default: str = ""
     disabled: bool = False
+    help_ref: str = ""
 
 
 

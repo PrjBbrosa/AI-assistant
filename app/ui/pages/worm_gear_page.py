@@ -68,6 +68,7 @@ class FieldSpec:
     options: tuple[str, ...] = ()
     default: str = ""
     placeholder: str = ""
+    help_ref: str = ""
 
     @property
     def mapping(self) -> tuple[str, str] | None:

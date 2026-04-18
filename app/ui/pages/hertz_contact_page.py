@@ -63,6 +63,7 @@ class FieldSpec:
     options: tuple[str, ...] = ()
     default: str = ""
     placeholder: str = ""
+    help_ref: str = ""
 
 
 CHAPTERS: list[dict[str, Any]] = [
