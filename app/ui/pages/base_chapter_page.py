@@ -113,9 +113,39 @@ class BaseChapterPage(QWidget):
         # the shared action bar was split into fixed left/right groups.
         return None
 
-    def add_chapter(self, title: str, page: QWidget) -> int:
+    def add_chapter(
+        self,
+        title: str,
+        page: QWidget,
+        *,
+        help_ref: str | None = None,
+    ) -> int:
         self._chapter_step_index += 1
         self.chapter_list.addItem(QListWidgetItem(f"步骤 {self._chapter_step_index}. {title}"))
+
+        if help_ref:
+            # Wrap page in a container with a chapter-header row: title + HelpButton.
+            from app.ui.widgets.help_button import HelpButton
+            wrapper = QWidget(self)
+            wrapper_layout = QVBoxLayout(wrapper)
+            wrapper_layout.setContentsMargins(0, 0, 0, 0)
+            wrapper_layout.setSpacing(6)
+
+            header_row = QFrame(wrapper)
+            header_row.setObjectName("Card")
+            header_layout = QHBoxLayout(header_row)
+            header_layout.setContentsMargins(12, 6, 12, 6)
+            header_layout.setSpacing(8)
+            title_label = QLabel(title, header_row)
+            title_label.setObjectName("SectionTitle")
+            header_layout.addWidget(title_label, 0)
+            header_layout.addWidget(HelpButton(help_ref, parent=header_row), 0)
+            header_layout.addStretch(1)
+            wrapper_layout.addWidget(header_row)
+            wrapper_layout.addWidget(page, 1)
+
+            return self.chapter_stack.addWidget(wrapper)
+
         return self.chapter_stack.addWidget(page)
 
     def set_current_chapter(self, index: int) -> None:
