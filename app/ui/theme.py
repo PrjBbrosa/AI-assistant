@@ -314,5 +314,22 @@ def apply_theme(app: QApplication) -> None:
             border: none;
             background: transparent;
         }
+        QToolButton#HelpButton {
+            background: #E3E3DE;
+            color: #5F5E5B;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            min-width: 16px;
+            max-width: 16px;
+            min-height: 16px;
+            max-height: 16px;
+            padding: 0;
+            margin-left: 4px;
+        }
+        QToolButton#HelpButton:hover {
+            background: #EED9CF;
+            color: #D97757;
+        }
         """
     app.setStyleSheet(style_sheet.replace("__UI_FONT_FAMILY_CSS__", UI_FONT_FAMILY_CSS))
