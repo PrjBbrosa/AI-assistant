@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>帮助弹窗 — 方案 A Demo</title>
+<style>
+  :root {
+    --bg: #F7F5F2;
+    --card: #FFFFFF;
+    --sub-card: #FBF8F4;
+    --auto-card: #EDF1F5;
+    --primary: #D97757;
+    --primary-soft: #EED9CF;
+    --primary-tint: #FAF1EC;
+    --text: #2F2E2C;
+    --text-soft: #5F5E5B;
+    --text-mute: #8A8782;
+    --line: #E6E1DA;
+    --line-soft: #F0ECE4;
+    --code-bg: #F4EFE8;
+    --code-border: #E7DFD2;
+    --shadow: 0 20px 48px -12px rgba(60, 45, 30, 0.22),
+              0 4px 12px -2px rgba(60, 45, 30, 0.10);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, "SF Pro SC", "SF Pro Text", "PingFang SC",
+                 "HarmonyOS Sans SC", "Microsoft Yahei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  /* ===== 背景：模拟表单 ===== */
+  .stage {
+    min-height: 100vh;
+    padding: 40px;
+    position: relative;
+  }
+  .hint-bar {
+    position: fixed; top: 12px; right: 12px;
+    background: #fff; border: 1px solid var(--line);
+    border-radius: 10px; padding: 10px 14px;
+    font-size: 12px; color: var(--text-soft);
+    box-shadow: 0 2px 8px rgba(0,0,0,.04);
+    z-index: 10;
+  }
+  .hint-bar kbd {
+    background: var(--code-bg); border: 1px solid var(--code-border);
+    border-radius: 4px; padding: 1px 6px; font-family: ui-monospace, monospace;
+    font-size: 11px;
+  }
+  .mock-form {
+    max-width: 760px; margin: 0 auto;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 12px; padding: 20px 24px;
+  }
+  .mock-form h2 {
+    margin: 0 0 16px; font-size: 15px; font-weight: 600; color: var(--text);
+    border-bottom: 1px solid var(--line-soft); padding-bottom: 10px;
+  }
+  .field {
+    display: grid; grid-template-columns: 220px 1fr;
+    gap: 12px; align-items: center;
+    padding: 10px 0; border-bottom: 1px solid var(--line-soft);
+  }
+  .field:last-child { border-bottom: 0; }
+  .field-label {
+    display: flex; align-items: center; gap: 6px;
+    color: var(--text); font-size: 13px;
+  }
+  .field-hint { color: var(--text-mute); font-size: 12px; }
+  .field input, .field select {
+    padding: 6px 10px; border: 1px solid var(--line);
+    border-radius: 6px; background: #fff; font-size: 13px;
+    font-family: inherit; color: var(--text);
+  }
+  .field.auto input { background: var(--auto-card); color: #3A4F63; }
+
+  /* "?" 按钮 */
+  .help-btn {
+    width: 18px; height: 18px; border-radius: 50%;
+    border: none; cursor: pointer;
+    background: #EBE6DD; color: var(--text-soft);
+    font-size: 11px; font-weight: 700; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: all .15s ease;
+  }
+  .help-btn:hover { background: var(--primary-soft); color: var(--primary); }
+  .help-btn.active { background: var(--primary); color: #fff; }
+
+  /* ===== 弹窗卡片 ===== */
+  .backdrop {
+    position: fixed; inset: 0; background: transparent;
+    z-index: 50; display: none;
+  }
+  .backdrop.open { display: block; }
+
+  .popover {
+    position: fixed;
+    width: 520px; height: 640px;
+    min-width: 380px; min-height: 320px;
+    max-width: 90vw; max-height: 90vh;
+    background: var(--card);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--line-soft);
+    display: none; flex-direction: column;
+    overflow: hidden;
+    z-index: 100;
+    resize: both;
+    transform-origin: top left;
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+    transition: opacity .16s ease, transform .16s ease;
+  }
+  .popover.open {
+    display: flex;
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  /* 头部 */
+  .pop-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 14px 12px 18px;
+    border-bottom: 1px solid var(--line-soft);
+    cursor: grab;
+    user-select: none;
+    background: linear-gradient(180deg, #FFFDFB 0%, #FFFFFF 100%);
+  }
+  .pop-header:active { cursor: grabbing; }
+  .pop-title-wrap { flex: 1; min-width: 0; }
+  .pop-category {
+    display: inline-block;
+    font-size: 11px; color: var(--primary);
+    background: var(--primary-tint);
+    padding: 2px 8px; border-radius: 10px;
+    margin-bottom: 4px; letter-spacing: .2px;
+  }
+  .pop-title {
+    font-size: 15px; font-weight: 600; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .pop-actions { display: flex; gap: 2px; }
+  .icon-btn {
+    width: 28px; height: 28px; border-radius: 6px;
+    border: none; background: transparent; cursor: pointer;
+    color: var(--text-mute);
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: background .12s ease, color .12s ease;
+  }
+  .icon-btn:hover { background: var(--line-soft); color: var(--text); }
+  .icon-btn.pinned { color: var(--primary); background: var(--primary-tint); }
+  .icon-btn svg { width: 16px; height: 16px; }
+
+  /* 正文 */
+  .pop-body {
+    flex: 1; overflow-y: auto;
+    padding: 18px 22px 8px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+  .pop-body::-webkit-scrollbar { width: 8px; }
+  .pop-body::-webkit-scrollbar-thumb {
+    background: var(--line); border-radius: 4px;
+  }
+
+  /* Markdown 样式 */
+  .md p { margin: 0 0 12px; color: var(--text); }
+  .md p:first-child { margin-top: 0; }
+  .md strong { color: var(--text); font-weight: 600; }
+  .md h2 {
+    font-size: 15px; font-weight: 600; color: var(--text);
+    margin: 22px 0 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--line-soft);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .md h2::before {
+    content: ""; width: 3px; height: 14px;
+    background: var(--primary); border-radius: 2px;
+  }
+  .md h3 {
+    font-size: 13.5px; font-weight: 600; color: var(--text);
+    margin: 18px 0 8px;
+  }
+  .md ol, .md ul { padding-left: 22px; margin: 0 0 14px; }
+  .md li { margin-bottom: 6px; color: var(--text); }
+  .md li::marker { color: var(--primary); }
+
+  .md code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    background: var(--code-bg);
+    border: 1px solid var(--code-border);
+    color: #8A4A2E;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 12.5px;
+  }
+  .md pre {
+    background: #FAF7F4;
+    border: 1px solid var(--line-soft);
+    border-left: 3px solid var(--primary);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin: 0 0 14px;
+    overflow-x: auto;
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--text);
+  }
+  .md pre code {
+    background: transparent; border: 0; padding: 0; color: inherit;
+  }
+
+  .md table {
+    border-collapse: collapse; width: 100%; margin: 0 0 16px;
+    font-size: 12.5px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .md thead { background: var(--primary-tint); }
+  .md th {
+    text-align: left; padding: 8px 10px;
+    font-weight: 600; color: var(--text);
+    border-bottom: 1px solid var(--line);
+  }
+  .md td {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--line-soft);
+    color: var(--text);
+  }
+  .md tbody tr:nth-child(even) { background: var(--sub-card); }
+  .md tbody tr:last-child td { border-bottom: 0; }
+
+  .md blockquote {
+    margin: 0 0 14px;
+    padding: 10px 14px;
+    background: var(--sub-card);
+    border-left: 3px solid var(--text-mute);
+    border-radius: 0 6px 6px 0;
+    color: var(--text-soft);
+    font-size: 12.5px;
+  }
+  .md blockquote p:last-child { margin-bottom: 0; }
+
+  /* 页脚 */
+  .pop-footer {
+    padding: 10px 18px;
+    border-top: 1px solid var(--line-soft);
+    font-size: 11.5px; color: var(--text-mute);
+    background: var(--sub-card);
+    display: flex; align-items: center; gap: 6px;
+    flex-shrink: 0;
+  }
+  .pop-footer .src-label {
+    color: var(--text-soft); font-weight: 500;
+  }
+
+  /* 右下角 resize 指示 */
+  .resize-hint {
+    position: absolute; right: 4px; bottom: 4px;
+    width: 14px; height: 14px; pointer-events: none;
+    opacity: .35;
+  }
+  .resize-hint svg { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+  <div class="hint-bar">
+    <strong style="color:var(--primary)">方案 A Demo</strong> ·
+    点字段旁的 <span class="help-btn" style="vertical-align:middle">?</span> 试试 ·
+    <kbd>ESC</kbd>/<kbd>×</kbd>/点空白关闭 · 拖右下角缩放
+  </div>
+
+  <div class="stage">
+    <div class="mock-form">
+      <h2>螺栓强度参数（模拟背景表单）</h2>
+
+      <div class="field auto">
+        <div class="field-label">
+          屈服强度 Rp0.2
+          <button class="help-btn" data-help="rp02">?</button>
+        </div>
+        <div>
+          <input type="text" value="640" readonly style="width:100px">
+          <span class="field-hint"> MPa &nbsp;·&nbsp; 由强度等级 8.8 自动填入</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">
+          螺纹摩擦系数 μG
+          <button class="help-btn" data-help="mu">?</button>
+        </div>
+        <div>
+          <input type="text" value="0.12" style="width:100px">
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">
+          支承面摩擦系数 μK
+          <button class="help-btn" data-help="mu">?</button>
+        </div>
+        <div>
+          <input type="text" value="0.14" style="width:100px">
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="field-label">
+          牙型角
+        </div>
+        <div>
+          <input type="text" value="60.0" style="width:100px">
+          <span class="field-hint"> ° &nbsp;·&nbsp; 公制螺纹常用 60°</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="backdrop" id="backdrop"></div>
+
+  <div class="popover" id="popover" role="dialog" aria-labelledby="popTitle">
+    <div class="pop-header" id="popHeader">
+      <div class="pop-title-wrap">
+        <span class="pop-category" id="popCategory">螺栓 · 材料参数</span>
+        <div class="pop-title" id="popTitle">屈服强度（Rp0.2）</div>
+      </div>
+      <div class="pop-actions">
+        <button class="icon-btn" id="pinBtn" title="固定：禁止点外面关闭">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 17v5"/>
+            <path d="M9 10.76V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4.76a2 2 0 0 0 .6 1.43l2.1 2.1A1 1 0 0 1 17 16H7a1 1 0 0 1-.7-1.71l2.1-2.1A2 2 0 0 0 9 10.76Z"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="closeBtn" title="关闭 (ESC)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18 6 6 18"/>
+            <path d="m6 6 12 12"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="pop-body md" id="popBody">
+      <!-- 内容由 JS 注入 -->
+    </div>
+
+    <div class="pop-footer">
+      <span class="src-label">出处：</span>
+      <span id="popSource">GB/T 228.1-2010 / ISO 6892-1（Rp0.2 定义）；GB/T 3098.1-2010 / ISO 898-1（强度等级 → Rp0.2）</span>
+    </div>
+
+    <div class="resize-hint">
+      <svg viewBox="0 0 14 14" fill="currentColor">
+        <circle cx="11" cy="11" r="1.2"/>
+        <circle cx="11" cy="7" r="1.2"/>
+        <circle cx="7" cy="11" r="1.2"/>
+      </svg>
+    </div>
+  </div>
+
+<script>
+  const HELP = {
+    rp02: {
+      category: '螺栓 · 材料参数',
+      title: '屈服强度（Rp0.2）',
+      source: 'GB/T 228.1-2010 / ISO 6892-1（Rp0.2 定义）；GB/T 3098.1-2010 / ISO 898-1（强度等级 → Rp0.2）',
+      body: `
+        <p><strong>一句话</strong>：螺栓材料在 0.2% 残余塑性变形时的应力值，是螺栓"开始永久变形"的门槛，也是装配与服役应力校核的 <strong>allowable 值基准</strong>。</p>
+
+        <p><strong>怎么理解</strong>：金属拉伸曲线上没有像石头那样明确的"断点"，而是平滑过渡。工程上约定：<strong>当卸载后材料仍有 0.2% 永久变形时</strong>对应的应力，称为 Rp0.2 或 σ0.2。超过这个值螺栓就"拉松了"，即使卸载也不会回到原长。</p>
+
+        <p>Rp0.2 直接进入本模块最核心的两个校核：</p>
+
+        <pre><code>R4 装配等效应力  σ_vm,asm ≤ ν · Rp0.2            # ν 典型 0.9
+R5 服役等效应力  σ_vm,work ≤ Rp0.2 / S_F          # S_F 典型 1.1</code></pre>
+
+        <p>R8 螺纹脱扣也用 Rp0.2 作为 τ_BS 默认值：</p>
+        <pre><code>τ_BS (外螺纹剪切强度) 默认 = 0.6 · Rp0.2    [τ: MPa]</code></pre>
+
+        <h2>Rp0.2 从哪来</h2>
+        <ol>
+          <li><strong>从强度等级自动填入（首选）</strong>：选 "8.8" → Rp0.2 = 640 MPa，自动填入并锁定字段。</li>
+          <li><strong>选"自定义"手动输入</strong>：适用于不锈钢（A2-70 Rp0.2 ≈ 450 MPa）、铝合金螺栓、特殊材质。</li>
+          <li><strong>复查工厂证书</strong>：关键连接应取供应商实测值而非标称值；批次偏差 ±5% 常见。</li>
+        </ol>
+
+        <h2>常见材料的 Rp0.2 参考</h2>
+        <table>
+          <thead><tr><th>材料</th><th>Rp0.2 [MPa]</th><th>对应强度等级</th></tr></thead>
+          <tbody>
+            <tr><td>低碳钢退火（Q235）</td><td>235</td><td>4.6 (240)</td></tr>
+            <tr><td>中碳钢调质 45#</td><td>640</td><td>8.8 (640)</td></tr>
+            <tr><td>合金调质 40Cr</td><td>785</td><td>接近 9.8 (720)</td></tr>
+            <tr><td>合金调质 35CrMo</td><td>835</td><td>接近 10.9 (900)</td></tr>
+            <tr><td>合金调质 42CrMo</td><td>930</td><td>10.9 (900)</td></tr>
+            <tr><td>超高强 34CrMo4</td><td>1100</td><td>12.9 (1080)</td></tr>
+            <tr><td>不锈钢 A2-70</td><td>450</td><td>—</td></tr>
+            <tr><td>不锈钢 A4-80</td><td>600</td><td>—</td></tr>
+            <tr><td>铝合金 7075-T6</td><td>500</td><td>—</td></tr>
+            <tr><td>钛合金 TC4</td><td>830</td><td>—</td></tr>
+          </tbody>
+        </table>
+
+        <h2>与抗拉强度 Rm 的关系</h2>
+        <p>Rp0.2 &lt; Rm。两者之差称为"强化裕度"，反映材料到达屈服后还能继续承载多少：</p>
+        <ul>
+          <li><strong>中碳钢调质</strong>：Rp0.2 / Rm ≈ 0.8（8.8 级定义值）</li>
+          <li><strong>合金调质</strong>：Rp0.2 / Rm ≈ 0.9（10.9 / 12.9）</li>
+          <li><strong>延性铝合金</strong>：Rp0.2 / Rm 可低至 0.5–0.7</li>
+        </ul>
+        <p>强化裕度高 = 脆性风险高（延性差）。高强度螺栓虽然 Rp0.2 高，但<strong>断裂前塑性变形少</strong>，预警时间短。</p>
+
+        <h2>温度影响</h2>
+        <p>Rp0.2 随温度升高显著下降：</p>
+        <ul>
+          <li><strong>≤ 室温 25°C</strong>：使用表列名义值</li>
+          <li><strong>100°C</strong>：≈ 0.95 × 室温值</li>
+          <li><strong>200°C</strong>：≈ 0.85 × 室温值（8.8 级从 640 降到 ~540）</li>
+          <li><strong>300°C</strong>：≈ 0.70 × 室温值</li>
+          <li><strong>&gt; 350°C</strong>：强度急剧下降，超出常规螺栓使用范围</li>
+        </ul>
+
+        <h2>常见误用</h2>
+        <ul>
+          <li><strong>把 Rm 填入 Rp0.2</strong>：高估允许应力约 25%，所有安全系数虚高。</li>
+          <li><strong>选了"自定义"又没改默认值</strong>：下拉切到"自定义"后 Rp0.2 字段解锁，默认值仍是上次切之前的数；务必检查并手动修改。</li>
+          <li><strong>用标称 Rp0.2 校核长期高温螺栓</strong>：500°C 下 8.8 级螺栓的 Rp0.2 可能只有 300 MPa。</li>
+        </ul>
+
+        <blockquote>
+          <p><strong>⚠ Cannot verify against original ISO standard</strong>——Rp0.2 测试条件（应变速率、试件形式、计算引伸段）严格定义于 ISO 6892-1；本术语所列温度修正系数为公开工程手册常见区间，精确数值请以具体材料规格书或标准原文为准。</p>
+        </blockquote>
+      `
+    },
+    mu: {
+      category: '螺栓 · 摩擦参数',
+      title: '摩擦系数 μ',
+      source: 'VDI 2230:2015 Table A5',
+      body: `
+        <p><strong>一句话</strong>：μ 决定装配时预紧力 F_M 中有多少被"扭矩损耗"吃掉。</p>
+        <h2>典型区间</h2>
+        <table>
+          <thead><tr><th>表面</th><th>μ 区间</th></tr></thead>
+          <tbody>
+            <tr><td>干燥黑氧化</td><td>0.10 – 0.18</td></tr>
+            <tr><td>轻油润滑</td><td>0.08 – 0.14</td></tr>
+            <tr><td>MoS₂ 涂层</td><td>0.06 – 0.10</td></tr>
+          </tbody>
+        </table>
+        <p>此术语演示用，真实帮助以 docs/help/terms/ 下的 md 为准。</p>
+      `
+    }
+  };
+
+  const popover = document.getElementById('popover');
+  const backdrop = document.getElementById('backdrop');
+  const pinBtn = document.getElementById('pinBtn');
+  const closeBtn = document.getElementById('closeBtn');
+  const popTitle = document.getElementById('popTitle');
+  const popCategory = document.getElementById('popCategory');
+  const popBody = document.getElementById('popBody');
+  const popSource = document.getElementById('popSource');
+
+  let pinned = false;
+  let activeBtn = null;
+
+  function openPopover(btn) {
+    const key = btn.dataset.help;
+    const entry = HELP[key];
+    if (!entry) return;
+
+    popCategory.textContent = entry.category;
+    popTitle.textContent = entry.title;
+    popBody.innerHTML = entry.body;
+    popSource.textContent = entry.source;
+
+    // 定位：按钮右下 +8
+    const r = btn.getBoundingClientRect();
+    const w = 520, h = 640;
+    let x = r.right + 8;
+    let y = r.bottom + 8;
+    if (x + w > window.innerWidth - 16) x = window.innerWidth - w - 16;
+    if (y + h > window.innerHeight - 16) y = Math.max(16, window.innerHeight - h - 16);
+    popover.style.left = x + 'px';
+    popover.style.top = y + 'px';
+    popover.style.width = w + 'px';
+    popover.style.height = h + 'px';
+
+    backdrop.classList.add('open');
+    requestAnimationFrame(() => popover.classList.add('open'));
+
+    document.querySelectorAll('.help-btn.active').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeBtn = btn;
+  }
+
+  function closePopover() {
+    popover.classList.remove('open');
+    backdrop.classList.remove('open');
+    if (activeBtn) activeBtn.classList.remove('active');
+    activeBtn = null;
+    pinned = false;
+    pinBtn.classList.remove('pinned');
+  }
+
+  document.querySelectorAll('.help-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (activeBtn === btn) { closePopover(); return; }
+      openPopover(btn);
+    });
+  });
+
+  closeBtn.addEventListener('click', closePopover);
+  pinBtn.addEventListener('click', () => {
+    pinned = !pinned;
+    pinBtn.classList.toggle('pinned', pinned);
+    pinBtn.title = pinned ? '已固定：点击取消' : '固定：禁止点外面关闭';
+  });
+
+  backdrop.addEventListener('click', () => { if (!pinned) closePopover(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && popover.classList.contains('open')) closePopover();
+  });
+
+  // 头部拖动
+  const header = document.getElementById('popHeader');
+  let dragging = false, dx = 0, dy = 0;
+  header.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.icon-btn')) return;
+    dragging = true;
+    const r = popover.getBoundingClientRect();
+    dx = e.clientX - r.left; dy = e.clientY - r.top;
+    document.body.style.userSelect = 'none';
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    popover.style.left = (e.clientX - dx) + 'px';
+    popover.style.top = (e.clientY - dy) + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    dragging = false;
+    document.body.style.userSelect = '';
+  });
+</script>
+</body>
+</html>
