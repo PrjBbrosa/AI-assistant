@@ -5,7 +5,7 @@ from app.ui.help_provider import HelpProvider, HelpEntry
 
 @pytest.fixture
 def provider():
-    root = Path(__file__).resolve().parents[2] / "docs" / "help"
+    root = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "help"
     return HelpProvider(root=root)
 
 

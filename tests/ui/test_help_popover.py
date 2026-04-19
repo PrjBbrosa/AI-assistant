@@ -1,10 +1,13 @@
 import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from pathlib import Path
+
 import pytest
 from PySide6.QtWidgets import QApplication, QWidget
 from PySide6.QtCore import Qt
 
+from app.ui.help_provider import HelpProvider
 from app.ui.widgets.help_button import HelpButton
 from app.ui.widgets.help_popover import HelpPopover
 
@@ -14,7 +17,19 @@ def app():
     return QApplication.instance() or QApplication([])
 
 
-def test_popover_opens_with_title_and_body(app):
+@pytest.fixture
+def fixture_help_provider():
+    """用测试 fixture 树替换 HelpProvider 单例，测试结束后复原。"""
+    fixture_root = Path(__file__).resolve().parents[1] / "fixtures" / "help"
+    original = HelpProvider._instance
+    HelpProvider._instance = HelpProvider(root=fixture_root)
+    try:
+        yield HelpProvider._instance
+    finally:
+        HelpProvider._instance = original
+
+
+def test_popover_opens_with_title_and_body(app, fixture_help_provider):
     anchor = QWidget()
     popover = HelpPopover.show_for("terms/_sample", anchor=anchor)
     assert popover.isVisible()
