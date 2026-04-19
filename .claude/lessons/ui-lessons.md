@@ -86,3 +86,20 @@
 - **错误**：Stage 1.5 重命名 `terms/pressure_angle` 为 `terms/gear_pressure_angle` 时，若只改 page.py 而忘了 `tests/ui/test_worm_help_wiring.py:EXPECTED_FIELD_HELP_REFS` 字典，测试会失败但错误信息是"断言失败"，不是"引用 md 不存在"，排查很绕。
 - **正确做法**：修改 `FieldSpec.help_ref` 时，用 grep `help_ref=.*<old_name>` 找 page 引用，再 grep `<old_name>` 找 test 和 GUIDELINES master list，批量同步。每次重命名至少修 3 处：page.py、test_wiring.py、GUIDELINES §8.1。
 - **原因**：help_ref 是"字段 → md 文件"的外键，但没有运行时外键检查（只有弱检查 fixture）。重命名必须当成一次"修数据库迁移"处理，不是纯本地重命名。
+
+## 2026-04-19 QTextBrowser 的 CSS 只是子集，简写背景无效
+
+- **错误**：给 `QTextBrowser.document().setDefaultStyleSheet(...)` 写了 `background: #FAF7F4` / `border-left: 3px solid #D97757` 等规则，测试都通过了，app 跑起来却完全不渲染——代码块、blockquote、inline code 没有任何背景色。
+- **正确做法**：
+  1. `background:` 简写不被 Qt 文档引擎识别，必须用 `background-color:`。
+  2. `border-left` / `border` 在 `<pre>` `<blockquote>` 等块元素上不会渲染；只在 `<table>/<td>/<th>` 上部分支持。
+  3. 需要左侧 accent bar（装饰条）时，用 HTML 后处理把 `<pre>` 包进一个 2 列 table：`<td width="3" bgcolor="#D97757"></td><td>pre...</td>`，Qt 对 table cell 的 `bgcolor` 属性渲染是可靠的。
+  4. Qt 的 markdown parser 不发 `<blockquote>` tag（`>` 被转成缩进 `<p>`），因此 blockquote 得在调 `setMarkdown` 之前先把 `> ...` 行**预处理**成 raw HTML。
+  5. 测试不能只检查 toMarkdown/text 内容；必须检查 toHtml 里关键 color/attr（如 `assert "d97757" in html.lower()` 和 `assert 'border="1"' in html`）。
+- **原因**：QTextBrowser 用 Qt 自己的 rich text 引擎，只支持 CSS 2.1 的小子集，不是 WebKit。pytest headless 检查结构/objectName 不等于检查视觉渲染。
+
+## 2026-04-19 QSizeGrip 在 Frameless + macOS 默认无可见指示
+
+- **错误**：frameless 弹窗用 `QSizeGrip` 做缩放把手，功能上能拖，但 macOS 下没有任何视觉指示。用户看不见 grip 在哪，以为不能缩放。
+- **正确做法**：subclass `QSizeGrip` 覆盖 `paintEvent`，在右下角自绘 3 个对角排布的小灰点（或别的可辨识图案），并 `setFixedSize(16,16)` 保证 hit 区稳定。同时在 HBoxLayout 里 grip 前加 `addStretch(1)`，确保 source label 隐藏时 grip 仍 flush-right。
+- **原因**：QSizeGrip 默认依赖原生 window decoration 样式；frameless + translucent 没有 decoration，Qt 不画任何视觉。必须自绘。
