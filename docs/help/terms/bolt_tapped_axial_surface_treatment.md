@@ -80,6 +80,6 @@ _CUT_THREAD_FACTOR = 0.65      # core/bolt/tapped_axial_joint.py:32
 - 疲劳循环次数 → `terms/bolt_tapped_axial_load_cycles`
 - 载荷最小/最大值 → `terms/bolt_tapped_axial_axial_load_range`
 
-**出处**：VDI 2230-1:2015 Table A4（σ_ASV 与表面处理折减）
+**出处**：VDI 2230-1:2015（σ_ASV 与表面处理折减相关章节）
 
-> Cannot verify against original VDI standard —— σ_ASV 数值与 0.65 切削折减系数整理自公开工程文献；**未查证 VDI 2230-1:2015 Table A4 原文**，精确值请以标准原文为准。本工具实现位于 `core/bolt/tapped_axial_joint.py:19-153`。
+> Cannot verify against original VDI standard —— σ_ASV 数值与 0.65 切削折减系数整理自公开工程文献；**未查证 VDI 2230-1:2015 原文**，精确值请以标准原文为准。本工具实现位于 `core/bolt/tapped_axial_joint.py:19-153`。
