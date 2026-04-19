@@ -4,10 +4,10 @@
 
 ## 1. 文件命名
 
-- 术语：`docs/help/terms/<snake_case>.md`，例 `profile_shift.md`
+- 术语：`docs/help/terms/<snake_case>.md`，例 `gear_profile_shift.md`（若术语在多模块族语义不同，**必须加模块族前缀** `gear_*` / `worm_*` / `bolt_*` / `spline_*`；详见 §8.1 命名前缀约定）
 - 模块章节概念文：`docs/help/modules/<module_key>/_section_<section_id>.md`
 - 模块方法总览：`docs/help/modules/<module_key>/<snake_case_title>.md`
-- `FieldSpec.help_ref` 格式：无 `.md` 后缀，例 `terms/profile_shift`
+- `FieldSpec.help_ref` 格式：无 `.md` 后缀，例 `terms/gear_profile_shift`
 
 ## 2. 术语文章模板（深度 2）
 
@@ -117,13 +117,26 @@
 
 ### 8.1 蜗杆 Stage 1 已完工（14 篇）
 
-`module` / `diameter_factor_q` / `lead_angle` / `profile_shift` / `pressure_angle` / `elastic_modulus` / `poisson_ratio` / `lubrication` / `application_factor_ka` / `kv_factor` / `kh_alpha` / `kh_beta` / `allowable_contact_stress` / `allowable_root_stress`
+`module` / `diameter_factor_q` / `lead_angle` / `gear_profile_shift` / `gear_pressure_angle` / `elastic_modulus` / `poisson_ratio` / `worm_lubrication_mode` / `gear_application_factor_ka` / `kv_factor` / `kh_alpha` / `kh_beta` / `allowable_contact_stress` / `allowable_root_stress`
 
-**跨模块可复用的 4 篇**（其他模块直接引用 `terms/<ref>`）：
+> **命名前缀约定**（Stage 1.5 adversarial review 后加入）：当某个术语在不同模块族含义不同，却会被 `help_ref` 复用时，用前缀把语义域显式锁住：
+> - `gear_*` —— 齿轮 / 蜗轮族（涉及 DIN 3990/3996、ISO 6336 的齿形语境）
+> - `worm_*` —— 蜗杆副专属（滑动润滑、当量摩擦角等蜗杆独有概念）
+> - `bolt_*` / `spline_*` / `shaft_*` —— 后续模块类比使用
+> - 无前缀 —— 真正跨模块通用（弹性模量 E、泊松比 ν、模数 m 这类基础物理量）
+>
+> 新写术语时若拿不准是否通用，**默认加前缀**。后续模块发现真正通用后再做合并，比"先通用后拆分"风险低。
+
+**跨模块可复用的 3 篇**（其他模块直接引用 `terms/<ref>`）：
 - `terms/elastic_modulus` —— bolt / interference / hertz / spline 共 6 次引用
 - `terms/poisson_ratio` —— interference / hertz / spline 共 4 次引用
-- `terms/module` —— spline 1 次
-- `terms/application_factor_ka` —— interference / spline 共 2 次
+- `terms/module` —— spline 1 次（齿轮模数定义与蜗杆一致）
+
+**不再跨模块直接复用**（蜗杆专属 / gear-only 语义，已加前缀锁住）：
+- `terms/gear_application_factor_ka` —— interference / spline 需要时**新写** `terms/interference_application_factor_ka` 或 `terms/spline_application_factor_ka`（KA 在不同齿型族查表依据不同，直接复用会带入错误的 DIN 3990 齿轮背景）
+- `terms/gear_pressure_angle` —— 压力角在螺纹（bolt）、花键（spline）、蜗杆（worm）语义差异大，后续模块各自写独立术语
+- `terms/gear_profile_shift` —— 变位系数在蜗杆 / 外齿轮 / 内齿轮含义不同
+- `terms/worm_lubrication_mode` —— 蜗杆以滑动速度为主导的润滑判据，与螺纹 / 过盈的干 / 油润滑不是同一套分类
 
 ### 8.2 待新写 90 篇（按写作批次优先级）
 

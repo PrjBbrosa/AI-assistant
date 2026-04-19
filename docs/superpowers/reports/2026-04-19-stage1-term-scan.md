@@ -139,19 +139,21 @@
 
 ## 复用蜗杆既有术语映射
 
+> **2026-04-19 adversarial review 更新**：原计划让 `terms/application_factor_ka` 跨 interference / spline 复用，经 review 发现 KA 在不同齿型族（worm / spline / interference）查表依据差异大。Stage 1.5 已按"模块族前缀"约定（见 GUIDELINES §8.1）将 4 篇蜗杆专属术语重命名，后续模块**不再**直接复用这 4 篇，而是分别新写。
+
 | 蜗杆术语 | 被引用模块 | 次数 |
 |---|---|---|
 | terms/elastic_modulus | bolt, interference (轴/毂), hertz (E1/E2), spline | 6 次 |
 | terms/poisson_ratio | interference, hertz, spline | 4 次 |
 | terms/module | spline | 1 次 |
-| terms/application_factor_ka | interference, spline | 2 次 |
+| terms/gear_application_factor_ka | —— | 0（不再跨模块复用；interference / spline 自写） |
 | terms/diameter_factor_q | —— | 0（蜗杆专用） |
-| terms/lead_angle, profile_shift, pressure_angle | —— | 0（蜗杆专用） |
+| terms/lead_angle, gear_profile_shift, gear_pressure_angle | —— | 0（蜗杆/齿轮专用） |
 | terms/kh_alpha, kh_beta, kv_factor | —— | 0（齿轮专用） |
 | terms/allowable_contact_stress, allowable_root_stress | —— | 0（齿轮专用） |
-| terms/lubrication | —— | 0（润滑剂本身在其他模块未作为独立字段） |
+| terms/worm_lubrication_mode | —— | 0（蜗杆滑动润滑专属，其他模块另写） |
 
-**蜗杆 14 篇中 10 篇仅蜗杆使用**。复用率偏低，符合 DIN 3975/3996 的高度专业化特征。
+**蜗杆 14 篇中 3 篇真正跨模块（E、ν、m），其余 11 篇保留蜗杆/齿轮专属语义**。复用率从 Stage 1 初稿的 4/14 降到 3/14，换来后续模块零语义污染风险。
 
 ---
 

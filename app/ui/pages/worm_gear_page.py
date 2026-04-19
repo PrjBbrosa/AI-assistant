@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -106,13 +107,13 @@ WORM_GEOMETRY_FIELDS = [
     FieldSpec("geometry.diameter_factor_q", "直径系数 q", "-", "蜗杆直径系数。", default="10.0", help_ref="terms/diameter_factor_q"),
     FieldSpec("geometry.lead_angle_deg", "导程角 gamma", "deg", "蜗杆导程角。默认值与 z1/q 保持自洽。", default="11.31", help_ref="terms/lead_angle"),
     FieldSpec("geometry.worm_face_width_mm", "蜗杆齿宽 b1", "mm", "蜗杆工作齿宽。", default="32.0"),
-    FieldSpec("geometry.x1", "蜗杆变位系数 x1", "-", "蜗杆齿形变位系数。", default="0.0", help_ref="terms/profile_shift"),
+    FieldSpec("geometry.x1", "蜗杆变位系数 x1", "-", "蜗杆齿形变位系数。", default="0.0", help_ref="terms/gear_profile_shift"),
 ]
 
 WHEEL_GEOMETRY_FIELDS = [
     FieldSpec("geometry.z2", "蜗轮齿数 z2", "-", "蜗轮总齿数。", default="40"),
     FieldSpec("geometry.wheel_face_width_mm", "蜗轮齿宽 b2", "mm", "蜗轮工作齿宽。", default="28.0"),
-    FieldSpec("geometry.x2", "蜗轮变位系数 x2", "-", "蜗轮齿形变位系数。塑料蜗轮常用大正变位。", default="0.0", help_ref="terms/profile_shift"),
+    FieldSpec("geometry.x2", "蜗轮变位系数 x2", "-", "蜗轮齿形变位系数。塑料蜗轮常用大正变位。", default="0.0", help_ref="terms/gear_profile_shift"),
 ]
 
 MESH_GEOMETRY_FIELDS = [
@@ -155,7 +156,7 @@ MATERIAL_FIELDS = [
         widget_type="choice",
         options=("oil_bath", "grease", "dry"),
         default="grease",
-        help_ref="terms/lubrication",
+        help_ref="terms/worm_lubrication_mode",
     ),
     FieldSpec("materials.worm_e_mpa", "蜗杆弹性模量 E1", "MPa", "Method B 最小子集使用的材料弹性参数。", default="210000", help_ref="terms/elastic_modulus"),
     FieldSpec("materials.worm_nu", "蜗杆泊松比 nu1", "-", "Method B 最小子集使用的材料弹性参数。", default="0.30", help_ref="terms/poisson_ratio"),
@@ -166,7 +167,7 @@ MATERIAL_FIELDS = [
 OPERATING_FIELDS = [
     FieldSpec("operating.input_torque_nm", "输入扭矩 T1", "Nm", "蜗杆轴输入扭矩。", default="19.76"),
     FieldSpec("operating.speed_rpm", "输入转速 n", "rpm", "蜗杆轴转速。", default="1450"),
-    FieldSpec("operating.application_factor", "使用系数 KA", "-", "工况冲击影响的简化系数。", default="1.25", help_ref="terms/application_factor_ka"),
+    FieldSpec("operating.application_factor", "使用系数 KA", "-", "工况冲击影响的简化系数。", default="1.25", help_ref="terms/gear_application_factor_ka"),
     FieldSpec("operating.torque_ripple_percent", "扭矩波动", "%", "围绕名义扭矩的峰值波动幅值。", default="0.0"),
 ]
 
@@ -179,7 +180,7 @@ ADVANCED_FIELDS = [
         default="",
         placeholder="留空则自动",
     ),
-    FieldSpec("advanced.normal_pressure_angle_deg", "法向压力角 alpha_n", "deg", "力分解与最小齿面/齿根模型的几何参数。", default="20.0", help_ref="terms/pressure_angle"),
+    FieldSpec("advanced.normal_pressure_angle_deg", "法向压力角 alpha_n", "deg", "力分解与最小齿面/齿根模型的几何参数。", default="20.0", help_ref="terms/gear_pressure_angle"),
     FieldSpec(
         "advanced.operating_temp_c",
         "工作温度",
@@ -560,7 +561,8 @@ class WormGearPage(BaseChapterPage):
         self.add_chapter("图形与曲线", page)
 
     def _build_load_capacity_step(self) -> None:
-        page = QFrame(self)
+        # content widget：承载全部 Load Capacity 内容，高度由内容决定，不受 viewport 限制
+        page = QFrame()
         page.setObjectName("Card")
         layout = QVBoxLayout(page)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -658,7 +660,15 @@ class WormGearPage(BaseChapterPage):
         layout.addWidget(formulas_card)
         layout.addWidget(self.load_capacity_metrics)
         layout.addStretch(1)
-        self.add_chapter("Load Capacity", page, help_ref="modules/worm/_section_load_capacity")
+
+        # 用 QScrollArea 包裹内容，避免内容超出 viewport 时被 QVBoxLayout 压缩子控件
+        scroll = QScrollArea(self)
+        scroll.setWidget(page)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.add_chapter("Load Capacity", scroll, help_ref="modules/worm/_section_load_capacity")
 
     def _build_results_step(self) -> None:
         page = QFrame(self)
