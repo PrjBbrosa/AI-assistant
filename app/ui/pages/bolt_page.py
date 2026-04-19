@@ -519,10 +519,10 @@ CHAPTERS: list[dict[str, Any]] = [
                 "loads.embed_loss",
                 "嵌入损失 FZ",
                 "N",
-                "接触表面压平导致的预紧力损失。填 0 时若已选择接触面粗糙度，"
-                "将按 VDI 2230 表 5.4/1 自动估算。",
+                "接触面粗糙峰压实造成的预紧力损失。**填 0** 时若已选择接触面粗糙度，"
+                "将按本模块简化模型（粗糙度 × 界面数）自动估算；填非零值时使用你的手动值。",
                 mapping=("loads", "embed_loss"),
-                default="1000",
+                default="0",
                 help_ref="terms/bolt_embed_loss",
             ),
             FieldSpec(
@@ -582,6 +582,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "若有密封要求，填该值；否则可填 0。",
                 mapping=("loads", "seal_force_required"),
                 default="0",
+                help_ref="terms/bolt_seal_clamp_force",
             ),
             FieldSpec(
                 "loads.friction_interfaces",

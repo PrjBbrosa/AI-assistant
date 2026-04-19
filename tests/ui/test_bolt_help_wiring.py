@@ -43,6 +43,7 @@ EXPECTED_FIELD_HELP_REFS = {
     "loads.FM_min_input": "terms/bolt_preload_fm",
     # operating 章节
     "loads.FA_max": "terms/bolt_axial_load_fa",
+    "loads.seal_force_required": "terms/bolt_seal_clamp_force",
     # introduction 章节
     "stiffness.load_introduction_factor_n": "terms/bolt_load_intro_factor",
     "checks.yield_safety_operating": "terms/bolt_yield_safety",
