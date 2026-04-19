@@ -87,3 +87,15 @@ Stage 2 adversarial review Round 1 挖出 5 条 P0，其中 2 条（L1 doc-vs-ca
 - **错误**：修 P0-1 时一次改了 23 个文件（批量替换精确条款号），若不小心会顺手改坏别的位置。
 - **正确做法**：批量替换后必须重新 grep 一遍看残留；最后一次 commit 前跑完整 regression 测试（`pytest tests/ui/test_<module>_page.py tests/ui/test_<module>_help_wiring.py tests/core/<module>/` 全量）。Stage 2 实际跑了 167 passed，有效捕捉。
 - **原因**：大规模替换风险是"改错地方"或"未改全"。grep 残留扫描 + regression 测试是最便宜的双重保险。
+
+### 错误："跳过校核项" 被误写成 "标 incomplete"（P0-4 专项）
+
+- **错误**：bolt 的 R8 螺纹脱扣在 `core/bolt/calculator.py:512,620-621` 里对 `m_eff` 空值只是**把 `thread_strip_ok` 从 `checks_out` 里省掉**，不设 "incomplete" 标志，`overall_pass = all(checks_out.values())` 对缺失 key 视而不见 → 整体仍可 PASS。但 Stage 2 初版文档里多处写"留空则标 incomplete，不会给 PASS 绿灯"。这会让用户误以为工具在替他们把关。
+- **正确做法**：描述"跳过"语义时必须区分三种状态：**显式不通过** (key 存在且 False) / **显式通过** (key 存在且 True) / **根本没校** (key 不存在)。第三种不是 "incomplete" 也不是 "pass"，是工具默默让过。必须在文档中直白告诉用户"UI 不会警告你漏校"。
+- **原因**：工程工具的沉默失败比直接错误更危险。新手以为"工具没报错 = 连接合格"，实际是"工具没校这一项"。帮助文档的职责之一就是暴露这种静默的 skip，而不是把它美化成 incomplete。
+
+### 错误：写了术语却没 wiring （术语孤岛 → 需要反向守卫测试）
+
+- **错误**：Stage 2 写了 `terms/bolt_seal_clamp_force.md`，但 `loads.seal_force_required` 字段忘了加 `help_ref` → 用户点不到文章。正向测试（"help_ref 指向的 md 存在"）无法捕捉这种反向失效。
+- **正确做法**：在 `test_<module>_help_wiring.py` 加反向守卫：遍历 `docs/help/terms/<module>_*.md`，每篇必须至少被一个 FieldSpec 或 CHAPTER 引用，否则算孤岛→失败。Stage 2 已加 `test_no_orphan_bolt_term_files`。后续模块照抄此模式。
+- **原因**：双向守卫测试把"术语 ↔ 字段"当成外键约束处理。任何一端改动都会暴露不一致，避免"写了但没人用" 或 "指了但没写"两种对偶失效。

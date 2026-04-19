@@ -118,6 +118,31 @@ def test_all_chapter_help_refs_point_to_existing_markdown():
         )
 
 
+def test_no_orphan_bolt_term_files():
+    """每个 terms/bolt_*.md 至少要被一个 FieldSpec / CHAPTER 引用；孤岛术语一律视为失败。"""
+    bolt_term_files = sorted(HELP_ROOT.glob("terms/bolt_*.md"))
+    assert bolt_term_files, "期望至少一篇 terms/bolt_*.md 存在"
+
+    all_refs: set[str] = set()
+    for spec in _all_field_specs():
+        if spec.help_ref:
+            all_refs.add(spec.help_ref)
+    for chapter in CHAPTERS:
+        if chapter.get("help_ref"):
+            all_refs.add(chapter["help_ref"])
+
+    orphans: list[str] = []
+    for md in bolt_term_files:
+        ref = f"terms/{md.stem}"
+        if ref not in all_refs:
+            orphans.append(ref)
+
+    assert not orphans, (
+        f"发现孤岛 bolt 术语（写了文章但没有字段指向）：{orphans}\n"
+        "请在 bolt_page.py 的对应 FieldSpec 加 help_ref，或删除未用术语。"
+    )
+
+
 def test_page_renders_with_help_buttons(qapp):
     """实例化 bolt 页面并确认每个带 help_ref 的章节页都渲染了至少一个 HelpButton。"""
     page = BoltPage()
