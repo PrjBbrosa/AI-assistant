@@ -322,7 +322,7 @@ class WormGearPage(BaseChapterPage):
             "工况与润滑",
             self._create_form_page(
                 "工况与润滑",
-                "输入运行工况：输入扭矩 T1、转速 n、反映冲击的使用系数 KA、扭矩波动百分比。这些值直接影响齿面应力与动载系数 Kv 的计算。",
+                "输入运行工况：输入扭矩 T1、转速 n、表征冲击与载荷波动的使用系数 KA、扭矩波动百分比。这些值直接影响齿面应力与动载系数 Kv 的计算。",
                 OPERATING_FIELDS,
             ),
             help_ref="modules/worm/_section_operating",
@@ -532,7 +532,7 @@ class WormGearPage(BaseChapterPage):
 
         title = QLabel("图形与曲线", page)
         title.setObjectName("SectionTitle")
-        hint = QLabel("几何图先用高质量占位图，性能曲线在接入计算后展示真实结果。", page)
+        hint = QLabel("展示蜗杆副的几何示意与负载-安全系数曲线，辅助直观判断当前工况是否接近能力边界。", page)
         hint.setObjectName("SectionHint")
         hint.setWordWrap(True)
         layout.addWidget(title)
@@ -568,7 +568,7 @@ class WormGearPage(BaseChapterPage):
 
         title = QLabel("Load Capacity", page)
         title.setObjectName("SectionTitle")
-        hint = QLabel("齿面/齿根负载能力校核的参数：许用应力、动载系数 Kv、载荷分配系数 KHα/KHβ 以及目标安全系数。对齿面和齿根分别算出 SH/SF 后与目标值对比判断通过/不通过。", page)
+        hint = QLabel("齿面/齿根负载能力校核的参数：许用应力、动载系数 Kv、载荷分配系数 KHα/KHβ 以及目标安全系数（基于 DIN 3996 Method B / ISO 14521）。对齿面和齿根分别算出 SH/SF 后与目标值对比判断通过/不通过。", page)
         hint.setObjectName("SectionHint")
         hint.setWordWrap(True)
         self.load_capacity_status = QLabel("DIN 3996 校核尚未开始", page)
