@@ -75,6 +75,7 @@ class BaseChapterPage(QWidget):
         nav_layout.addWidget(self.chapter_list, 1)
         content_splitter.addWidget(nav_card)
         self._chapter_step_index = 0
+        self._chapter_pages: list[QWidget] = []
 
         self.chapter_stack = QStackedWidget(self)
         content_splitter.addWidget(self.chapter_stack)
@@ -120,11 +121,16 @@ class BaseChapterPage(QWidget):
         *,
         help_ref: str | None = None,
     ) -> int:
-        """Register a step page. When ``help_ref`` is provided, the returned
-        index points at a wrapper widget (not ``page``), so callers/tests that
-        rely on ``chapter_stack.widget(i)`` returning ``page`` must account for
-        the wrapper. Pages that pass ``help_ref`` should not render their own
-        chapter title — the wrapper renders it alongside the "?" button.
+        """Register a step page in ``chapter_stack``.
+
+        Callers that need the original page widget should use
+        ``chapter_page_at(i)``, not ``chapter_stack.widget(i)``. When
+        ``help_ref`` is set, ``chapter_stack.widget(i)`` returns a wrapper
+        (title row + HelpButton above ``page``); ``chapter_page_at(i)``
+        always returns the original ``page`` passed into this method.
+
+        Pages that pass ``help_ref`` should not render their own chapter
+        title — the wrapper renders it alongside the "?" button.
         """
         self._chapter_step_index += 1
         self.chapter_list.addItem(QListWidgetItem(f"步骤 {self._chapter_step_index}. {title}"))
@@ -150,9 +156,24 @@ class BaseChapterPage(QWidget):
             wrapper_layout.addWidget(header_row)
             wrapper_layout.addWidget(page, 1)
 
-            return self.chapter_stack.addWidget(wrapper)
+            index = self.chapter_stack.addWidget(wrapper)
+            self._chapter_pages.append(page)
+            return index
 
-        return self.chapter_stack.addWidget(page)
+        index = self.chapter_stack.addWidget(page)
+        self._chapter_pages.append(page)
+        return index
+
+    def chapter_page_at(self, index: int) -> QWidget:
+        """Return the original page widget registered via add_chapter(), regardless
+        of whether a help_ref wrapper was applied. Use this instead of
+        chapter_stack.widget(i) when you need the page itself."""
+        return self._chapter_pages[index]
+
+    def chapter_container_at(self, index: int) -> QWidget:
+        """Return the widget actually inserted into chapter_stack — which is the
+        help_ref wrapper if help_ref was set, otherwise the page itself."""
+        return self.chapter_stack.widget(index)
 
     def set_current_chapter(self, index: int) -> None:
         self.chapter_list.setCurrentRow(index)
