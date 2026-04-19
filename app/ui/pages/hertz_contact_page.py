@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
     QGridLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -33,6 +34,7 @@ from app.ui.input_condition_store import (
 from app.ui.fonts import make_ui_font
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import export_report_lines
+from app.ui.widgets.help_button import HelpButton
 from app.ui.widgets.hertz_input_diagram import HertzInputDiagramWidget
 from core.hertz.calculator import InputError, calculate_hertz_contact
 
@@ -68,8 +70,10 @@ class FieldSpec:
 
 CHAPTERS: list[dict[str, Any]] = [
     {
+        "id": "checks",
         "title": "校核目标",
-        "subtitle": "定义允许接触应力和曲线采样参数。",
+        "subtitle": "设置接触应力的许用值 [p0] 和结果曲线的采样参数：工具用 [p0] 对 p0 做 PASS/FAIL 判据，曲线参数仅影响可视化。",
+        "help_ref": "modules/hertz/_section_checks",
         "fields": [
             FieldSpec(
                 "checks.allowable_p0_mpa",
@@ -79,6 +83,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("checks", "allowable_p0_mpa"),
                 default="1500",
                 placeholder="例如 1500",
+                help_ref="terms/hertz_allowable_pressure",
             ),
             FieldSpec(
                 "options.curve_points",
@@ -88,6 +93,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("options", "curve_points"),
                 default="41",
                 placeholder="例如 41",
+                help_ref="terms/hertz_curve_sampling",
             ),
             FieldSpec(
                 "options.curve_force_scale",
@@ -97,12 +103,15 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("options", "curve_force_scale"),
                 default="1.30",
                 placeholder="1.05~2.0",
+                help_ref="terms/hertz_curve_sampling",
             ),
         ],
     },
     {
+        "id": "geometry",
         "title": "接触模型与几何",
-        "subtitle": "线接触和点接触共用输入；点接触时长度 L 不参与。",
+        "subtitle": "选择线接触 / 点接触并填写两接触体的曲率半径：模式决定使用哪套赫兹公式，R1/R2 决定等效曲率 R'。",
+        "help_ref": "modules/hertz/_section_geometry",
         "fields": [
             FieldSpec(
                 "geometry.contact_mode",
@@ -112,6 +121,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=CONTACT_MODE_OPTIONS,
                 default="线接触",
+                help_ref="terms/hertz_contact_mode",
             ),
             FieldSpec(
                 "geometry.r1_mm",
@@ -121,6 +131,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("geometry", "r1_mm"),
                 default="30.0",
                 placeholder="例如 30",
+                help_ref="terms/hertz_curvature_radius",
             ),
             FieldSpec(
                 "geometry.r2_mm",
@@ -130,6 +141,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("geometry", "r2_mm"),
                 default="0.0",
                 placeholder="平面填 0",
+                help_ref="terms/hertz_curvature_radius",
             ),
             FieldSpec(
                 "geometry.length_mm",
@@ -139,12 +151,15 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("geometry", "length_mm"),
                 default="20.0",
                 placeholder="例如 20",
+                help_ref="terms/hertz_contact_length",
             ),
         ],
     },
     {
+        "id": "materials",
         "title": "材料参数",
-        "subtitle": "两侧材料参数共同决定等效弹性模量 E'。",
+        "subtitle": "填写两接触体的弹性模量 E 和泊松比 ν：两组参数合成等效模量 E'，材料越硬 E' 越大、p0 也越高。",
+        "help_ref": "modules/hertz/_section_materials",
         "fields": [
             FieldSpec(
                 "materials.body1_material",
@@ -162,6 +177,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "接触体 1 弹性模量。",
                 mapping=("materials", "e1_mpa"),
                 default="210000",
+                help_ref="terms/elastic_modulus",
             ),
             FieldSpec(
                 "materials.nu1",
@@ -170,6 +186,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "接触体 1 泊松比。",
                 mapping=("materials", "nu1"),
                 default="0.29",
+                help_ref="terms/poisson_ratio",
             ),
             FieldSpec(
                 "materials.body2_material",
@@ -187,6 +204,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "接触体 2 弹性模量。",
                 mapping=("materials", "e2_mpa"),
                 default="210000",
+                help_ref="terms/elastic_modulus",
             ),
             FieldSpec(
                 "materials.nu2",
@@ -195,12 +213,15 @@ CHAPTERS: list[dict[str, Any]] = [
                 "接触体 2 泊松比。",
                 mapping=("materials", "nu2"),
                 default="0.30",
+                help_ref="terms/poisson_ratio",
             ),
         ],
     },
     {
+        "id": "loads",
         "title": "载荷输入",
-        "subtitle": "赫兹接触按法向载荷计算接触区与最大接触应力。",
+        "subtitle": "填写作用在接触区的法向载荷 F：赫兹公式只接受纯法向力，切向/冲击/动载需预先折算到峰值法向载荷。",
+        "help_ref": "modules/hertz/_section_loads",
         "fields": [
             FieldSpec(
                 "loads.normal_force_n",
@@ -287,10 +308,21 @@ class HertzContactPage(BaseChapterPage):
 
     def _build_input_chapters(self) -> None:
         for chapter in CHAPTERS:
-            page = self._create_chapter_page(chapter["title"], chapter["subtitle"], chapter["fields"])
+            page = self._create_chapter_page(
+                chapter["title"],
+                chapter["subtitle"],
+                chapter["fields"],
+                help_ref=chapter.get("help_ref", ""),
+            )
             self.add_chapter(chapter["title"], page)
 
-    def _create_chapter_page(self, title: str, subtitle: str, fields: list[FieldSpec]) -> QWidget:
+    def _create_chapter_page(
+        self,
+        title: str,
+        subtitle: str,
+        fields: list[FieldSpec],
+        help_ref: str = "",
+    ) -> QWidget:
         page = QFrame(self)
         page.setObjectName("Card")
         page_layout = QVBoxLayout(page)
@@ -299,10 +331,25 @@ class HertzContactPage(BaseChapterPage):
 
         title_label = QLabel(title, page)
         title_label.setObjectName("SectionTitle")
+        if help_ref:
+            # 章节标题 + HelpButton 同行布局
+            header_row = QWidget(page)
+            header_layout = QHBoxLayout(header_row)
+            header_layout.setContentsMargins(0, 0, 0, 0)
+            header_layout.setSpacing(6)
+            header_layout.addWidget(title_label)
+            header_layout.addWidget(
+                HelpButton(help_ref, parent=header_row),
+                0,
+                Qt.AlignmentFlag.AlignVCenter,
+            )
+            header_layout.addStretch(1)
+            page_layout.addWidget(header_row)
+        else:
+            page_layout.addWidget(title_label)
         subtitle_label = QLabel(subtitle, page)
         subtitle_label.setObjectName("SectionHint")
         subtitle_label.setWordWrap(True)
-        page_layout.addWidget(title_label)
         page_layout.addWidget(subtitle_label)
 
         scroll = QScrollArea(page)
@@ -322,14 +369,32 @@ class HertzContactPage(BaseChapterPage):
             row.setHorizontalSpacing(10)
             row.setVerticalSpacing(4)
 
-            label = QLabel(spec.label, field_card)
-            label.setObjectName("SubSectionTitle")
             editor = self._create_editor(spec, field_card)
             unit = QLabel(spec.unit, field_card)
             unit.setObjectName("UnitLabel")
             hint = QLabel(spec.hint, field_card)
             hint.setObjectName("SectionHint")
             hint.setWordWrap(True)
+
+            # 字段级 help_ref 存在时把 label + HelpButton 包在一个水平容器里
+            if spec.help_ref:
+                label_widget = QWidget(field_card)
+                label_layout = QHBoxLayout(label_widget)
+                label_layout.setContentsMargins(0, 0, 0, 0)
+                label_layout.setSpacing(4)
+                label_text = QLabel(spec.label, label_widget)
+                label_text.setObjectName("SubSectionTitle")
+                label_layout.addWidget(label_text)
+                label_layout.addWidget(
+                    HelpButton(spec.help_ref, parent=label_widget),
+                    0,
+                    Qt.AlignmentFlag.AlignVCenter,
+                )
+                label_layout.addStretch(1)
+                label: QWidget = label_widget
+            else:
+                label = QLabel(spec.label, field_card)
+                label.setObjectName("SubSectionTitle")
 
             row.addWidget(label, 0, 0)
             row.addWidget(editor, 0, 1)
@@ -643,17 +708,17 @@ class HertzContactPage(BaseChapterPage):
         try:
             payload = self._build_payload()
             result = calculate_hertz_contact(payload)
+            self._render_result(result)
+            self._last_payload = payload
+            self._last_result = result
+            self.set_current_chapter(self.chapter_stack.count() - 1)
         except InputError as exc:
             QMessageBox.critical(self, "输入参数错误", str(exc))
             return
         except Exception as exc:  # pragma: no cover
-            QMessageBox.critical(self, "计算异常", str(exc))
+            QMessageBox.critical(self, "渲染异常", str(exc))
+            self.set_info(f"结果渲染失败：{exc}")
             return
-
-        self._last_payload = payload
-        self._last_result = result
-        self._render_result(result)
-        self.set_current_chapter(self.chapter_stack.count() - 1)
 
     def _render_result(self, result: dict[str, Any]) -> None:
         overall = bool(result.get("overall_pass"))
@@ -686,7 +751,7 @@ class HertzContactPage(BaseChapterPage):
             f"• 最大接触应力: p0 = {contact['p0_mpa']:.2f} MPa",
             f"• 平均接触应力: p_mean = {contact['p_mean_mpa']:.2f} MPa",
             f"• 允许应力与安全系数: [p0]={check['allowable_p0_mpa']:.2f} MPa, S={check['safety_factor']:.3f}",
-            f"• 接触面积: A = {result['contact_area_mm2']:.4f} mm\u00b2",
+            f"• 接触面积: A = {result['contact']['contact_area_mm2']:.4f} mm\u00b2",
         ]
         self.metrics_text.setText("\n".join(lines))
 
@@ -836,12 +901,16 @@ class HertzContactPage(BaseChapterPage):
             f"- p_mean: {contact['p_mean_mpa']:.3f} MPa",
             f"- [p0]: {check['allowable_p0_mpa']:.3f} MPa",
             f"- Safety: {check['safety_factor']:.3f}",
-            f"- 接触面积: {result['contact_area_mm2']:.6f} mm²",
+            f"- 接触面积: {result['contact']['contact_area_mm2']:.6f} mm\u00b2",
         ]
         if result["mode"] == "line":
             lines.append(f"- b: {contact['semi_width_mm']:.6f} mm")
         else:
             lines.append(f"- a: {contact['contact_radius_mm']:.6f} mm")
+        warnings = result.get("warnings", [])
+        if warnings:
+            lines.extend(["", "提示:"])
+            lines.extend(f"- {msg}" for msg in warnings)
         lines.extend(["", "建议:"])
         lines.extend(f"- {msg}" for msg in self._build_recommendations(result))
         return lines

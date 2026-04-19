@@ -52,3 +52,12 @@
 - 本模块在 `core/hertz/calculator.py:138-148` 实现了上述两个公式分支，未引入椭圆接触 / 边缘修正 / 倾斜接触
 
 > Cannot verify against original standard — 赫兹接触公式来自 Hertz (1882) 的古典弹性力学解析解，本工具基于公开文献整理实现；**未逐字核对原始论文**，不给出精确页码。
+
+## 进一步阅读
+
+- `terms/hertz_contact_mode` — 线 / 点接触模式选择
+- `terms/hertz_curvature_radius` — R1 / R2 的输入约定（含平面 0 约定 / 凹面折算）
+- `terms/hertz_contact_length` — 线接触长度 L 与边缘效应
+- `terms/hertz_equivalent_radius` — R' 的派生与敏感度
+- `terms/hertz_max_contact_pressure` — p0 的物理含义
+- `terms/hertz_safety_factor` — S = [p0] / p0 的取值下限
