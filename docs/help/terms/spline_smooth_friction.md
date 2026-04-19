@@ -7,9 +7,9 @@
 过盈配合的防滑能力来自径向接触压力 p × 摩擦系数 μ × 接触面积：
 
 ```
-T_slip = p · A · μ_T · (d/2)      [抵抗切向滑移的扭矩]
-F_slip = p · A · μ_ax              [抵抗轴向拉拔的力]
-F_press = p · A · μ_M              [装配时需施加的压入力]
+T_slip  = p · A · μ_T  · (d/2)   [p: MPa, A: mm², μ: 无量纲, d: mm → T_slip: N·mm]
+F_slip  = p · A · μ_ax           [p: MPa, A: mm², μ: 无量纲 → F_slip: N]
+F_press = p · A · μ_M            [p: MPa, A: mm², μ: 无量纲 → F_press: N]
 ```
 
 三种摩擦系数数值上可以不同，主要原因：

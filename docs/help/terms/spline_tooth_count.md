@@ -7,7 +7,8 @@
 齿数 z 直接出现在齿面压力公式的分母：
 
 ```
-p_flank = 2·T_design·k_α / (z · h_w · d_m · L)   [MPa]
+p_flank = 2·T_design·k_α / (z · h_w · d_m · L)
+         [T_design: N·mm, k_α: 无量纲, z: 无量纲, h_w: mm, d_m: mm, L: mm → p_flank: MPa]
 ```
 
 齿数越多，每一颗齿分摊的载荷越少 —— **面压随 1/z 下降**。但在 DIN 5480 这类"齿在同一分度圆上均布"的标准里，增加 z 的同时模数 m 通常要相应减小才能保持 d = m · z 不变：

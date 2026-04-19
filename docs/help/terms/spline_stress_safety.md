@@ -7,12 +7,14 @@
 过盈配合产生的不只是接触压力，还同时在轴内产生压应力、在轮毂内产生拉应力（按 Lamé 厚壁筒解析解）。过盈量越大，应力越高 —— 因此**应力校核看最坏过盈情况 `δ_max`**：
 
 ```
-sigma_shaft  = Lamé公式(p_max, d, d_i, E_shaft, ν_shaft)   [MPa]
-sigma_hub    = Lamé公式(p_max, d, D,   E_hub,   ν_hub)     [MPa]
+sigma_shaft  = Lamé公式(p_max, d, d_i, E_shaft, ν_shaft)
+               [p_max: MPa, d/d_i: mm, E: MPa, ν: 无量纲 → sigma_shaft: MPa]
+sigma_hub    = Lamé公式(p_max, d, D,   E_hub,   ν_hub)
+               [p_max: MPa, d/D: mm, E: MPa, ν: 无量纲 → sigma_hub: MPa]
 
-stress_sf_shaft = Re_shaft / sigma_shaft_vm   [无量纲]
-stress_sf_hub   = Re_hub   / sigma_hub_vm
-PASS 条件：    两者都 >= S_sigma,min
+stress_sf_shaft = Re_shaft / sigma_shaft_vm   [Re: MPa, sigma_vm: MPa → SF: 无量纲]
+stress_sf_hub   = Re_hub   / sigma_hub_vm      [同上]
+PASS 条件：两者都 >= S_sigma,min                [所有项均无量纲]
 ```
 
 `sigma_vm` 是 von Mises 等效应力（由切向、径向、轴向三个主应力合成）。Re 是材料屈服极限（45 钢 ≈ 355 MPa、40Cr ≈ 785 MPa、42CrMo ≈ 930 MPa，见 UI 材料库下拉）。
