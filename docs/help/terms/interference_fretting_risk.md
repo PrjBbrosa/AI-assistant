@@ -35,7 +35,21 @@ fretting.mode = "on" + 简化条件不满足（空心轴、大弯矩、模量差
 ## 评分规则（本工具实现）
 
 ```
-risk_score = spectrum_score + duty_score + surface_score + importance_score + slip_reserve_bonus
+risk_score = torque_reserve_bonus + combined_reserve_bonus
+           + spectrum_score + duty_score + surface_score + importance_score
+max_score  = 14.0
+
+torque_reserve_bonus (S_torque 越接近 1 越扣分多):
+   S_torque ≤ 1.2    : +3
+   S_torque ≤ 1.5    : +2
+   S_torque ≤ 2.0    : +1
+   S_torque > 2.0    : 0
+
+combined_reserve_bonus (S_combined 分开再加一次):
+   S_combined ≤ 1.2  : +3
+   S_combined ≤ 1.5  : +2
+   S_combined ≤ 2.0  : +1
+   S_combined > 2.0  : 0
 
 spectrum_score (载荷谱):
    steady    : 0    （稳态单向）
@@ -57,17 +71,13 @@ importance_score (部件重要度):
    important : 1    （一般关键）
    critical  : 2    （安全相关）
 
-slip_reserve_bonus (扭矩 / 联合作用安全系数越接近 1，加分越多):
-   S_slip ≤ 1.2    : +3
-   S_slip ≤ 1.5    : +2
-   S_slip ≤ 2.0    : +1
-   S_slip > 2.0    : 0
-
-risk_level 分级:
+risk_level 分级（按 score 与 max_score=14 的比例）:
    score ≤ 3         : "low"
    3 < score ≤ 8     : "medium"
    score > 8         : "high"
 ```
+
+实现对照 `core/interference/fretting.py:148-217`。**扭矩储备与联合作用储备是两项独立的加分项**，不是一个"slip_reserve"——这意味着 S_torque 低且 S_combined 也低的工况会双倍惩罚（各加 3 分，共 6 分），反映两个独立的微滑移路径都在消耗裕度。
 
 **Cannot verify against original DIN standard** —— 上述规则**不是**标准评估方法；DIN 7190 没有规定 fretting 闭式判据。本规则是本工具内部基于若干公开经验指标整理的启发式分级。
 

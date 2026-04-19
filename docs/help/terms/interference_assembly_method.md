@@ -34,16 +34,21 @@ F_press = μ_Assy · p · π · d · L                       [F: N, p: MPa, d,L:
 2. **这个温度是否超出材料允许上限**
 
 ```
-装配间隙 clearance_um:
-   diameter_rule:   clearance = 0.001 · d             [um, d: mm]
-   direct_value:    clearance = 用户输入              [um]
+装配间隙 clearance_um（本工具实现）：
+   diameter_rule:   clearance_um = d_shaft            [d_shaft: mm → clearance: μm]
+                                   （每 1 mm 直径预留 1 μm 间隙，即 d / 1000 mm）
+   direct_value:    clearance_um = 用户输入           [μm]
 
-所需轮毂加热温度（本工具实现）:
-   required_expansion_um = δ_max + clearance          [um]
-   hub_growth_per_c      = α_h · d / 1000             [um/°C]
-   T_hub_required        = T_amb + required_expansion_um / hub_growth_per_c
-                                                      [°C]
+所需轮毂加热温度（本工具实现，对照 core/interference/assembly.py:116-124）：
+   required_expansion_um = δ_max + clearance_um       [δ: μm, clearance: μm → 累计: μm]
+   hub_growth_per_c      = α_h · d_shaft / 1000       [α_h: 10⁻⁶/°C, d: mm → μm/°C]
+   T_hub_required = T_amb
+                  + required_expansion_um / hub_growth_per_c
+                  + (α_shaft / α_hub) · (T_shaft − T_amb)
+                                       [最后一项为轴预冷修正，单位: °C]
 ```
+
+其中 `T_shaft` 若不等于室温（例如同时用干冰冷却轴 + 加热轮毂），修正项避免低估所需轮毂温度。本模块 `assembly.py:123` 明确叠加此项；此前版本误删了轴预冷修正。
 
 若 `T_hub_required > hub_temp_limit_c`（材料允许上限），本工具会发出警告。
 

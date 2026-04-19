@@ -70,7 +70,7 @@ F_cap = μ_Ax · p_min · π·d·L                            [F_cap: N]
 | 装配模式 | 关注量 | 输出 |
 |---|---|---|
 | `manual_only` | 仅压入力估算 | F_press = μ_Assy · p · π·d·L |
-| `shrink_fit`（热装） | 需求加热温度 | T_hub = T_amb + (δ_max + clearance) / (α_h · d) |
+| `shrink_fit`（热装） | 需求加热温度 | T_hub = T_amb + (δ_max + clearance_um)/(α_h·d/1000) + (α_s/α_h)·(T_shaft-T_amb) |
 | `force_fit`（压装） | 压入 / 压出力 | F_in = μ_in · p · π·d·L（μ_in, μ_out 分开） |
 
 ## 本模块实现的范围

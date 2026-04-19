@@ -20,8 +20,8 @@ Re 与 Rm（抗拉强度）的区别：
    σvm_hub,max   = p_max · VM_hub                 [MPa]
 
 安全系数:
-   S_shaft = Re_shaft / σvm_shaft,max
-   S_hub   = Re_hub   / σvm_hub,max
+   S_shaft = Re_shaft / σvm_shaft,max   [Re: MPa, σvm: MPa → S: 无量纲]
+   S_hub   = Re_hub   / σvm_hub,max     [同上]
 
 PASS 判据:
    S_shaft ≥ S_σ,min（来自"校核目标"章节）

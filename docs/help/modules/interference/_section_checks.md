@@ -30,7 +30,9 @@
 设计载荷       T_design = KA · T_req                   [N·m]
                F_design = KA · F_req                   [N]
 
-扭矩容量       T_cap = μ_T · p_min · π·d·L · (d/2) / 1000 [T,d,L: N·m/mm]
+扭矩容量       T_cap = μ_T · p_min · π·d·L · (d/2) / 1000
+                     [μ_T: 无量纲, p_min: MPa, d: mm, L: mm → T_cap: N·m]
+                     （除以 1000 把 N·mm 转 N·m）
 
 PASS 判据：
    扭矩能力         T_cap ≥ S_slip,min · T_design

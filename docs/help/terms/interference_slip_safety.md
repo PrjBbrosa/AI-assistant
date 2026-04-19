@@ -30,12 +30,21 @@ PASS 判据（本工具）：
    联合:     S_combined ≥ S_slip,min
              S_combined = 1 / sqrt( (T_design/T_cap_min)² + (F_design/F_cap_min)² )
 
-张口缝:      p_min ≥ p_gap       （非 S_slip,min 判据，但与滑脱同在一组）
-最大过盈覆盖: δ_max ≥ δ_required = 2 · c_total · p_required · 1000   [um]
-              其中 p_required = S_slip,min · max(p_req,T, p_req,Ax, p_req,comb, p_gap)
+张口缝:      p_min ≥ p_gap       （独立判据，不乘 S_slip,min）
+最大过盈覆盖: δ_max ≥ δ_required  [um]
+
+  其中 δ_required = δ_required_eff + subsidence_um
+           δ_required_eff = 2 · c_total · p_required · 1000
+                    [c_total: mm/N·mm², p_required: MPa → δ: μm]
+           subsidence_um = 粗糙度压平量 s（回加进需求过盈）
+           p_required = max(p_req,T, p_req,Ax, p_req,comb, p_gap)  [MPa]
+              其中 p_req,T    = S_slip,min · p_req,T_service
+                   p_req,Ax   = S_slip,min · p_req,Ax_service
+                   p_req,comb = S_slip,min · √(p_req,T_service² + p_req,Ax_service²)
+                   p_gap      = p_radial + p_bending  (与 S_slip 无关)
 ```
 
-关键点：**S_slip,min 进入需求接触压力放大环节**，不仅仅是"结果后校核"。它是**预设门槛**，决定需要多大的最小过盈才能 PASS。
+关键点：**S_slip,min 只进入防滑支线（扭矩 / 轴向 / 联合）放大需求接触压力；张口缝支线 p_gap 独立纳入 p_required 的 max，不乘 S_slip,min**。实现对照 `core/interference/calculator.py:295-311`。
 
 ## 典型值
 

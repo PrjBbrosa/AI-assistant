@@ -19,9 +19,9 @@
 配合面上微观凸峰在装配瞬间被**塑性压平**，带走一部分名义过盈量。**有效过盈量**决定接触压力，不是铭牌值：
 
 ```
-s = k · (Rz_shaft + Rz_hub)                  [um, k: 无量纲]
-δ_eff = max(0, δ − s)                        [um]
-p = (δ_eff / 2) / c_total · (1/1000)         [p: MPa]
+s     = k · (Rz_shaft + Rz_hub)              [Rz: μm, k: 无量纲 → s: μm]
+δ_eff = max(0, δ − s)                        [δ: μm, s: μm → δ_eff: μm]
+p     = (δ_eff / 2) / c_total · (1/1000)     [δ_eff: μm, c_total: mm/N·mm² → p: MPa]
 ```
 
 不扣 s 会把实际压力估高 20~40%，导致工具"通过"但实物不稳。

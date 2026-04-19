@@ -20,20 +20,22 @@
 需要解决两个问题：**轮毂加热到多少度才能刚好滑入**，以及**这个温度是否超出材料限制**。
 
 ```
-装配间隙 clearance_um 两种模式：
-   diameter_rule  → clearance_um = d (mm) × 1.0         [um, 即 0.001·d 风格]
-   direct_value   → 直接输入 clearance_um
+装配间隙 clearance_um（本工具实现）：
+   diameter_rule  → clearance_um = d_shaft   [d_shaft: mm → clearance_um: μm]
+                                  （每 1 mm 直径预留 1 μm，即 d/1000 mm；数值上等于 d 的毫米数）
+   direct_value   → 直接输入 clearance_um                          [μm]
 
-所需加热温度（本工具实现）：
-   required_expansion_um = δ_max + clearance_um                    [um]
-   hub_growth_per_c      = α_h · d / 1000                          [um/°C]
-   T_hub_required        = T_amb + required_expansion_um / hub_growth_per_c
-                                                                   [°C]
+所需加热温度（本工具实现，对照 core/interference/assembly.py:116-124）：
+   required_expansion_um = δ_max + clearance_um               [δ: μm, clearance: μm → μm]
+   hub_growth_per_c      = α_h · d_shaft / 1000               [α_h: 10⁻⁶/°C, d: mm → μm/°C]
+   T_hub_required = T_amb
+                  + required_expansion_um / hub_growth_per_c
+                  + (α_shaft / α_hub) · (T_shaft − T_amb)       [μm/(μm/°C) = °C]
 ```
 
 若 T_hub_required > `hub_temp_limit_c`（材料热处理允许上限），本工具会发出警告。典型限制：调质钢 250~300°C（再高回火性能退化）、铝合金 150~180°C（过时效）。
 
-预冷轴的情形：若轴用液氮或干冰冷却到低于环境温度，`shaft_temperature_c` 输入冷却后的温度，系统会按温差计算轴的收缩量（但主要收益仍来自轮毂加热）。
+**轴预冷修正（第三项）**：若轴用液氮或干冰冷却到低于环境温度，`shaft_temperature_c` 输入冷却后的温度，第三项 `(α_shaft/α_hub)·(T_shaft-T_amb)` 按两种材料膨胀系数的比值折算等效到"所需轮毂额外温度"，避免冷却轴的几何变化被漏算。
 
 ### `force_fit`（压装）
 
