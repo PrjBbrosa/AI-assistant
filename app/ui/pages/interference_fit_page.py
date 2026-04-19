@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
     QGridLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -34,6 +35,7 @@ from app.ui.input_condition_store import (
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import export_report_lines
+from app.ui.widgets.help_button import HelpButton
 from app.ui.widgets.press_force_curve import PressForceCurveWidget
 from core.interference.calculator import InputError, calculate_interference_fit
 from core.interference.fit_selection import (
@@ -144,8 +146,10 @@ class FieldSpec:
 
 CHAPTERS: list[dict[str, Any]] = [
     {
+        "id": "checks",
         "title": "校核目标",
-        "subtitle": "定义最小安全系数与工况系数 KA，按设计载荷执行校核。",
+        "subtitle": "设置防滑与应力安全系数门槛，填入工况系数 KA；所有 PASS/FAIL 判据都以这些值为基准。",
+        "help_ref": "modules/interference/_section_checks",
         "fields": [
             FieldSpec(
                 "checks.slip_safety_min",
@@ -155,6 +159,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("checks", "slip_safety_min"),
                 default="1.20",
                 placeholder="建议 1.1~1.5",
+                help_ref="terms/interference_slip_safety",
             ),
             FieldSpec(
                 "checks.stress_safety_min",
@@ -164,15 +169,17 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("checks", "stress_safety_min"),
                 default="1.20",
                 placeholder="建议 1.1~1.8",
+                help_ref="terms/interference_stress_safety",
             ),
             FieldSpec(
                 "loads.application_factor_ka",
                 "工况系数 KA",
                 "-",
-                "按 DIN 3990 取值，用于把名义载荷放大到设计载荷。",
+                "按工况类型放大名义载荷，所有载荷（扭矩、轴向、径向、弯矩）统一乘 KA 得到设计载荷。",
                 mapping=("loads", "application_factor_ka"),
                 default="1.20",
                 placeholder="建议 1.0~2.25",
+                help_ref="terms/interference_application_factor_ka",
             ),
             FieldSpec(
                 "options.curve_points",
@@ -186,8 +193,10 @@ CHAPTERS: list[dict[str, Any]] = [
         ],
     },
     {
+        "id": "geometry",
         "title": "几何与过盈",
-        "subtitle": "圆柱面过盈（实心轴/空心轴 + 厚壁轮毂）几何输入。",
+        "subtitle": "填入配合直径、轴内径（实心填 0）、轮毂外径与配合长度；过盈量可直接输入、选择优选配合或由轴孔偏差换算。",
+        "help_ref": "modules/interference/_section_geometry",
         "fields": [
             FieldSpec(
                 "geometry.shaft_d_mm",
@@ -197,6 +206,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("geometry", "shaft_d_mm"),
                 default="40.0",
                 placeholder="例如 40",
+                help_ref="terms/interference_fit_diameter",
             ),
             FieldSpec(
                 "geometry.shaft_inner_d_mm",
@@ -206,6 +216,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("geometry", "shaft_inner_d_mm"),
                 default="0.0",
                 placeholder="实心轴填 0，例如 20",
+                help_ref="terms/interference_hollow_shaft_bore",
             ),
             FieldSpec(
                 "geometry.hub_outer_d_mm",
@@ -215,6 +226,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("geometry", "hub_outer_d_mm"),
                 default="80.0",
                 placeholder="例如 80",
+                help_ref="terms/interference_hub_outer_diameter",
             ),
             FieldSpec(
                 "geometry.fit_length_mm",
@@ -224,6 +236,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("geometry", "fit_length_mm"),
                 default="45.0",
                 placeholder="例如 45",
+                help_ref="terms/interference_fit_length",
             ),
             FieldSpec(
                 "fit.mode",
@@ -233,6 +246,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("直接输入过盈量", "优选配合", "偏差换算"),
                 default="直接输入过盈量",
+                help_ref="terms/interference_fit_mode",
             ),
             FieldSpec(
                 "fit.preferred_fit_name",
@@ -242,6 +256,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=PREFERRED_FIT_OPTIONS,
                 default="H7/s6",
+                help_ref="terms/interference_preferred_fit",
             ),
             FieldSpec(
                 "fit.shaft_upper_deviation_um",
@@ -250,6 +265,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "偏差换算模式下使用；以名义尺寸为基准，正值表示大于名义尺寸。",
                 default="",
                 placeholder="例如 35",
+                help_ref="terms/interference_iso286_deviations",
             ),
             FieldSpec(
                 "fit.shaft_lower_deviation_um",
@@ -258,6 +274,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "偏差换算模式下使用；必须 <= 轴上偏差。",
                 default="",
                 placeholder="例如 20",
+                help_ref="terms/interference_iso286_deviations",
             ),
             FieldSpec(
                 "fit.hub_upper_deviation_um",
@@ -266,6 +283,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "偏差换算模式下使用；负值表示孔尺寸小于名义尺寸。",
                 default="",
                 placeholder="例如 -10",
+                help_ref="terms/interference_iso286_deviations",
             ),
             FieldSpec(
                 "fit.hub_lower_deviation_um",
@@ -274,6 +292,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "偏差换算模式下使用；必须 <= 孔上偏差。",
                 default="",
                 placeholder="例如 -20",
+                help_ref="terms/interference_iso286_deviations",
             ),
             FieldSpec(
                 "fit.delta_min_um",
@@ -283,6 +302,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("fit", "delta_min_um"),
                 default="20.0",
                 placeholder="例如 20",
+                help_ref="terms/interference_delta_min",
             ),
             FieldSpec(
                 "fit.delta_max_um",
@@ -292,12 +312,15 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("fit", "delta_max_um"),
                 default="45.0",
                 placeholder="例如 45",
+                help_ref="terms/interference_delta_max",
             ),
         ],
     },
     {
+        "id": "materials",
         "title": "材料参数",
-        "subtitle": "材料弹性与屈服参数（用于压力-应力转换与安全系数）。",
+        "subtitle": "填入轴与轮毂两侧的弹性模量 E、泊松比 ν 与屈服强度 Re；E/ν 影响接触压力，Re 决定应力安全系数。",
+        "help_ref": "modules/interference/_section_materials",
         "fields": [
             FieldSpec(
                 "materials.shaft_material",
@@ -316,6 +339,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("materials", "shaft_e_mpa"),
                 default="210000",
                 placeholder="例如 210000",
+                help_ref="terms/elastic_modulus",
             ),
             FieldSpec(
                 "materials.shaft_nu",
@@ -325,6 +349,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("materials", "shaft_nu"),
                 default="0.30",
                 placeholder="0<nu<0.5",
+                help_ref="terms/poisson_ratio",
             ),
             FieldSpec(
                 "materials.shaft_yield_mpa",
@@ -334,6 +359,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("materials", "shaft_yield_mpa"),
                 default="600",
                 placeholder="例如 600",
+                help_ref="terms/interference_yield_strength",
             ),
             FieldSpec(
                 "materials.hub_material",
@@ -352,6 +378,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("materials", "hub_e_mpa"),
                 default="210000",
                 placeholder="例如 210000",
+                help_ref="terms/elastic_modulus",
             ),
             FieldSpec(
                 "materials.hub_nu",
@@ -361,6 +388,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("materials", "hub_nu"),
                 default="0.30",
                 placeholder="0<nu<0.5",
+                help_ref="terms/poisson_ratio",
             ),
             FieldSpec(
                 "materials.hub_yield_mpa",
@@ -370,12 +398,15 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("materials", "hub_yield_mpa"),
                 default="320",
                 placeholder="例如 320",
+                help_ref="terms/interference_yield_strength",
             ),
         ],
     },
     {
+        "id": "loads",
         "title": "载荷与附加载荷",
-        "subtitle": "输入扭矩、轴向力、径向力和弯矩，校核防滑与张口缝风险。",
+        "subtitle": "填入扭矩、轴向力、径向力和弯矩需求；工具内部按 KA 放大为设计载荷，再校核防滑能力与张口缝风险。",
+        "help_ref": "modules/interference/_section_loads",
         "fields": [
             FieldSpec(
                 "loads.torque_required_nm",
@@ -385,6 +416,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("loads", "torque_required_nm"),
                 default="350",
                 placeholder="例如 350",
+                help_ref="terms/interference_torque_required",
             ),
             FieldSpec(
                 "loads.axial_force_required_n",
@@ -394,6 +426,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("loads", "axial_force_required_n"),
                 default="0",
                 placeholder="例如 0",
+                help_ref="terms/interference_axial_force_required",
             ),
             FieldSpec(
                 "loads.radial_force_required_n",
@@ -403,6 +436,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("loads", "radial_force_required_n"),
                 default="0",
                 placeholder="例如 0",
+                help_ref="terms/interference_radial_force",
             ),
             FieldSpec(
                 "loads.bending_moment_required_nm",
@@ -412,12 +446,15 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("loads", "bending_moment_required_nm"),
                 default="0",
                 placeholder="例如 0",
+                help_ref="terms/interference_bending_moment",
             ),
         ],
     },
     {
+        "id": "friction",
         "title": "摩擦与粗糙度",
-        "subtitle": "分开输入服役摩擦与装配摩擦，并按 DIN 7190 粗糙度压平修正有效过盈。",
+        "subtitle": "分开输入服役摩擦 μ_T / μ_Ax 与装配摩擦 μ_Assy；按粗糙度压平模型扣减有效过盈量。",
+        "help_ref": "modules/interference/_section_friction",
         "fields": [
             FieldSpec(
                 "friction.surface_condition",
@@ -436,6 +473,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("friction", "mu_torque"),
                 default="0.14",
                 placeholder="建议 0.08~0.20",
+                help_ref="terms/interference_friction_coefficient",
             ),
             FieldSpec(
                 "friction.mu_axial",
@@ -445,6 +483,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("friction", "mu_axial"),
                 default="0.14",
                 placeholder="建议 0.08~0.20",
+                help_ref="terms/interference_friction_coefficient",
             ),
             FieldSpec(
                 "friction.mu_assembly",
@@ -454,6 +493,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("friction", "mu_assembly"),
                 default="0.12",
                 placeholder="建议 0.06~0.18",
+                help_ref="terms/interference_assembly_mu",
             ),
             FieldSpec(
                 "roughness.profile",
@@ -463,6 +503,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=ROUGHNESS_PROFILE_OPTIONS,
                 default="DIN 7190-1:2017（k=0.4）",
+                help_ref="terms/interference_roughness_profile",
             ),
             FieldSpec(
                 "roughness.smoothing_factor",
@@ -472,6 +513,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("roughness", "smoothing_factor"),
                 default="0.40",
                 placeholder="建议 0.4 或 0.8",
+                help_ref="terms/interference_smoothing_factor_k",
             ),
             FieldSpec(
                 "roughness.shaft_rz_um",
@@ -481,6 +523,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("roughness", "shaft_rz_um"),
                 default="6.3",
                 placeholder="例如 6.3",
+                help_ref="terms/interference_surface_roughness_rz",
             ),
             FieldSpec(
                 "roughness.hub_rz_um",
@@ -490,12 +533,15 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("roughness", "hub_rz_um"),
                 default="6.3",
                 placeholder="例如 6.3",
+                help_ref="terms/interference_surface_roughness_rz",
             ),
         ],
     },
     {
+        "id": "assembly",
         "title": "装配流程",
-        "subtitle": "区分 manual_only、shrink_fit、force_fit，并追溯服役摩擦与装配摩擦的角色。",
+        "subtitle": "选择装配模式（仅压入估算 / 热装 / 压装）；此项不改变 DIN 核心结论，只影响压入力与热装温度估算。",
+        "help_ref": "modules/interference/_section_assembly",
         "fields": [
             FieldSpec(
                 "assembly.method",
@@ -505,6 +551,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("manual_only", "shrink_fit", "force_fit"),
                 default="manual_only",
+                help_ref="terms/interference_assembly_method",
             ),
             FieldSpec(
                 "assembly.clearance_mode",
@@ -577,6 +624,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("assembly", "mu_press_in"),
                 default="0.08",
                 placeholder="例如 0.08",
+                help_ref="terms/interference_assembly_mu",
             ),
             FieldSpec(
                 "assembly.mu_press_out",
@@ -586,12 +634,15 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("assembly", "mu_press_out"),
                 default="0.06",
                 placeholder="例如 0.06",
+                help_ref="terms/interference_assembly_mu",
             ),
         ],
     },
     {
+        "id": "fretting",
         "title": "Fretting 风险评估",
-        "subtitle": "Step 5 增强结果：评估微动腐蚀风险等级与建议，不参与基础 DIN verdict。",
+        "subtitle": "开启后按规则给出微动腐蚀风险分级（low/medium/high）；属于增强结果，不改变 DIN 主 verdict。",
+        "help_ref": "modules/interference/_section_fretting",
         "fields": [
             FieldSpec(
                 "fretting.mode",
@@ -601,6 +652,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("off", "on"),
                 default="off",
+                help_ref="terms/interference_fretting_risk",
             ),
             FieldSpec(
                 "fretting.load_spectrum",
@@ -798,10 +850,21 @@ class InterferenceFitPage(BaseChapterPage):
 
     def _build_input_chapters(self) -> None:
         for chapter in CHAPTERS:
-            page = self._create_chapter_page(chapter["title"], chapter["subtitle"], chapter["fields"])
+            page = self._create_chapter_page(
+                chapter["title"],
+                chapter["subtitle"],
+                chapter["fields"],
+                help_ref=chapter.get("help_ref", ""),
+            )
             self.add_chapter(chapter["title"], page)
 
-    def _create_chapter_page(self, title: str, subtitle: str, fields: list[FieldSpec]) -> QWidget:
+    def _create_chapter_page(
+        self,
+        title: str,
+        subtitle: str,
+        fields: list[FieldSpec],
+        help_ref: str = "",
+    ) -> QWidget:
         page = QFrame(self)
         page.setObjectName("Card")
         page_layout = QVBoxLayout(page)
@@ -810,10 +873,25 @@ class InterferenceFitPage(BaseChapterPage):
 
         title_label = QLabel(title, page)
         title_label.setObjectName("SectionTitle")
+        if help_ref:
+            # 章节标题 + HelpButton 同行布局（与 bolt_page 一致）
+            header_row = QWidget(page)
+            header_layout = QHBoxLayout(header_row)
+            header_layout.setContentsMargins(0, 0, 0, 0)
+            header_layout.setSpacing(6)
+            header_layout.addWidget(title_label)
+            header_layout.addWidget(
+                HelpButton(help_ref, parent=header_row),
+                0,
+                Qt.AlignmentFlag.AlignVCenter,
+            )
+            header_layout.addStretch(1)
+            page_layout.addWidget(header_row)
+        else:
+            page_layout.addWidget(title_label)
         subtitle_label = QLabel(subtitle, page)
         subtitle_label.setObjectName("SectionHint")
         subtitle_label.setWordWrap(True)
-        page_layout.addWidget(title_label)
         page_layout.addWidget(subtitle_label)
 
         scroll = QScrollArea(page)
@@ -833,8 +911,25 @@ class InterferenceFitPage(BaseChapterPage):
             row.setHorizontalSpacing(10)
             row.setVerticalSpacing(4)
 
-            label = QLabel(spec.label, field_card)
-            label.setObjectName("SubSectionTitle")
+            # 字段级 help_ref 存在时，把 label 与 HelpButton 包成水平布局（与 bolt_page 一致）
+            if spec.help_ref:
+                label_widget = QWidget(field_card)
+                label_layout = QHBoxLayout(label_widget)
+                label_layout.setContentsMargins(0, 0, 0, 0)
+                label_layout.setSpacing(4)
+                label_text = QLabel(spec.label, label_widget)
+                label_text.setObjectName("SubSectionTitle")
+                label_layout.addWidget(label_text)
+                label_layout.addWidget(
+                    HelpButton(spec.help_ref, parent=label_widget),
+                    0,
+                    Qt.AlignmentFlag.AlignVCenter,
+                )
+                label_layout.addStretch(1)
+                label: QWidget = label_widget
+            else:
+                label = QLabel(spec.label, field_card)
+                label.setObjectName("SubSectionTitle")
             editor = self._create_editor(spec, field_card)
             unit = QLabel(spec.unit, field_card)
             unit.setObjectName("UnitLabel")
