@@ -39,6 +39,7 @@ from app.ui.input_condition_store import (
     write_input_conditions,
 )
 from app.ui.widgets.clamping_diagram import ClampingDiagramWidget, ThreadForceTriangleWidget
+from app.ui.widgets.help_button import HelpButton
 from app.ui.report_export import export_report_lines
 from app.ui.pages.bolt_flowchart import (
     FlowchartNavWidget, RStepDetailPage, R_STEPS,
@@ -189,7 +190,8 @@ CHAPTERS: list[dict[str, Any]] = [
     {
         "id": "elements",
         "title": "连接件参数",
-        "subtitle": "螺栓规格、材料与摩擦系数",
+        "subtitle": "确定这颗螺栓的规格、强度与摩擦：填这些后，所有应力校核都有了几何与材料基础。",
+        "help_ref": "modules/bolt_vdi/_section_elements",
         "fields": [
             FieldSpec(
                 "elements.joint_type",
@@ -210,6 +212,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=tuple(METRIC_THREAD_TABLE.keys()) + ("自定义",),
                 default="M10",
+                help_ref="terms/bolt_thread_nominal",
             ),
             FieldSpec(
                 "fastener.d_custom",
@@ -217,6 +220,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "mm",
                 "手动输入非标螺纹公称直径。",
                 mapping=None,
+                help_ref="terms/bolt_thread_nominal",
             ),
             FieldSpec(
                 "fastener.p",
@@ -227,6 +231,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("1.5",),
                 default="1.5",
+                help_ref="terms/bolt_thread_pitch",
             ),
             FieldSpec(
                 "fastener.p_custom",
@@ -234,6 +239,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "mm",
                 "手动输入非标螺距。",
                 mapping=None,
+                help_ref="terms/bolt_thread_pitch",
             ),
             FieldSpec(
                 "fastener.d2",
@@ -255,6 +261,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "mm²",
                 "由所选规格自动填入。自定义模式可手动输入或留空（系统估算）。",
                 mapping=("fastener", "As"),
+                help_ref="terms/bolt_stress_area",
             ),
             FieldSpec(
                 "fastener.grade",
@@ -265,6 +272,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=tuple(BOLT_GRADE_TABLE.keys()) + ("自定义",),
                 default="8.8",
+                help_ref="terms/bolt_grade",
             ),
             FieldSpec(
                 "fastener.Rp02",
@@ -273,6 +281,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "由强度等级自动填入。自定义模式可手动输入。",
                 mapping=("fastener", "Rp02"),
                 default="640",
+                help_ref="terms/bolt_yield_strength",
             ),
             FieldSpec(
                 "tightening.mu_thread",
@@ -281,6 +290,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "影响螺纹扭矩与扭转载荷。",
                 mapping=("tightening", "mu_thread"),
                 default="0.12",
+                help_ref="terms/bolt_friction_thread",
             ),
             FieldSpec(
                 "tightening.mu_bearing",
@@ -289,6 +299,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "影响支承面扭矩。",
                 mapping=("tightening", "mu_bearing"),
                 default="0.14",
+                help_ref="terms/bolt_friction_bearing",
             ),
             FieldSpec(
                 "tightening.thread_flank_angle_deg",
@@ -324,13 +335,15 @@ CHAPTERS: list[dict[str, Any]] = [
                 "bearing.p_G_allow", "许用支承面压强 p_G", "MPa",
                 "支承面许用面压强度。钢约 700 MPa，铝合金约 300 MPa。",
                 mapping=("bearing", "p_G_allow"), default="700",
+                help_ref="terms/bolt_bearing_pressure_allowable",
             ),
         ],
     },
     {
         "id": "clamped",
         "title": "被夹紧件和实体",
-        "subtitle": "被夹件刚度与基础实体",
+        "subtitle": "描述螺栓所夹零件的厚度与软硬：被夹件柔度 δp 与螺栓柔度 δs 共同决定载荷因数 Φ_N。",
+        "help_ref": "modules/bolt_vdi/_section_clamped",
         "fields": [
             FieldSpec(
                 "clamped.basic_solid",
@@ -398,6 +411,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "钢约 210000 MPa。自动柔度计算需要。",
                 mapping=("stiffness", "E_bolt"),
                 default="210000",
+                help_ref="terms/elastic_modulus",
             ),
             FieldSpec(
                 "stiffness.E_clamped",
@@ -406,6 +420,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "钢 210000 / 铝 70000 MPa。自动柔度计算需要。",
                 mapping=("stiffness", "E_clamped"),
                 default="210000",
+                help_ref="terms/elastic_modulus",
             ),
             FieldSpec(
                 "stiffness.auto_compliance",
@@ -417,6 +432,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("手动输入", "自动计算"),
                 default="手动输入",
+                help_ref="terms/bolt_compliance",
             ),
             FieldSpec(
                 "stiffness.bolt_compliance",
@@ -426,6 +442,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "与被夹件柔度配套输入；若改用刚度输入可留空。",
                 mapping=("stiffness", "bolt_compliance"),
                 default="2.2e-06",
+                help_ref="terms/bolt_compliance",
             ),
             FieldSpec(
                 "stiffness.clamped_compliance",
@@ -435,6 +452,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "与螺栓柔度配套输入。",
                 mapping=("stiffness", "clamped_compliance"),
                 default="3.1e-06",
+                help_ref="terms/bolt_compliance",
             ),
             FieldSpec(
                 "stiffness.bolt_stiffness",
@@ -443,6 +461,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "刚度 = 1/柔度，即产生 1mm 变形所需的力。"
                 "若使用刚度输入，填 cs 与 cp，柔度可留空。",
                 mapping=("stiffness", "bolt_stiffness"),
+                help_ref="terms/bolt_compliance",
             ),
             FieldSpec(
                 "stiffness.clamped_stiffness",
@@ -450,13 +469,15 @@ CHAPTERS: list[dict[str, Any]] = [
                 "N/mm",
                 "刚度 = 1/柔度。与 cs 配套输入。",
                 mapping=("stiffness", "clamped_stiffness"),
+                help_ref="terms/bolt_compliance",
             ),
         ],
     },
     {
         "id": "assembly",
         "title": "装配属性",
-        "subtitle": "装配方式与预紧散差",
+        "subtitle": "设定装配工艺与散差：拧紧方式决定 αA，利用系数 ν 决定装配允许应力；嵌入与热损失在此扣除。",
+        "help_ref": "modules/bolt_vdi/_section_assembly",
         "fields": [
             FieldSpec(
                 "assembly.tightening_method",
@@ -466,6 +487,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("扭矩法", "转角法", "液压拉伸法", "热装法"),
                 default="扭矩法",
+                help_ref="terms/bolt_tightening_method",
             ),
             FieldSpec(
                 "tightening.alpha_A",
@@ -474,6 +496,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "FMmax/FMmin，反映装配散差。扭矩法常见 1.4~1.8。",
                 mapping=("tightening", "alpha_A"),
                 default="1.6",
+                help_ref="terms/bolt_tightening_factor_alpha_a",
             ),
             FieldSpec(
                 "tightening.utilization",
@@ -482,6 +505,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "装配阶段允许屈服利用比例，常见 0.8~0.95。",
                 mapping=("tightening", "utilization"),
                 default="0.9",
+                help_ref="terms/bolt_utilization_nu",
             ),
             FieldSpec(
                 "tightening.prevailing_torque",
@@ -499,6 +523,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "将按 VDI 2230 表 5.4/1 自动估算。",
                 mapping=("loads", "embed_loss"),
                 default="1000",
+                help_ref="terms/bolt_embed_loss",
             ),
             FieldSpec(
                 "loads.thermal_force_loss",
@@ -507,6 +532,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "热膨胀差异折算的预紧力损失。",
                 mapping=("loads", "thermal_force_loss"),
                 default="0",
+                help_ref="terms/bolt_thermal_loss",
             ),
             FieldSpec(
                 "loads.FM_min_input",
@@ -514,13 +540,15 @@ CHAPTERS: list[dict[str, Any]] = [
                 "N",
                 "校核模式下使用：输入已知的最小预紧力值。",
                 mapping=("loads", "FM_min_input"),
+                help_ref="terms/bolt_preload_fm",
             ),
         ],
     },
     {
         "id": "operating",
         "title": "工况数据",
-        "subtitle": "工况载荷与工况条件",
+        "subtitle": "填服役实际承受的外载、温度与循环次数：驱动 R3 残余夹紧、R5 服役应力、疲劳与热损失校核。",
+        "help_ref": "modules/bolt_vdi/_section_operating",
         "fields": [
             FieldSpec(
                 "operating.setup_case",
@@ -537,6 +565,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "N",
                 "外部轴向拉载，作用于连接上的最大工作载荷。",
                 mapping=("loads", "FA_max"),
+                help_ref="terms/bolt_axial_load_fa",
             ),
             FieldSpec(
                 "loads.FQ_max",
@@ -645,7 +674,8 @@ CHAPTERS: list[dict[str, Any]] = [
     {
         "id": "introduction",
         "title": "载荷导入",
-        "subtitle": "载荷导入与安全系数",
+        "subtitle": "决定外力从哪进入连接（n 越小螺栓分担越少）并设定服役屈服安全系数 S_F。",
+        "help_ref": "modules/bolt_vdi/_section_introduction",
         "fields": [
             FieldSpec(
                 "stiffness.load_introduction_factor_n",
@@ -654,6 +684,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "修正外载导入比例。轴向端部导入通常取 1。",
                 mapping=("stiffness", "load_introduction_factor_n"),
                 default="1.0",
+                help_ref="terms/bolt_load_intro_factor",
             ),
             FieldSpec(
                 "introduction.position",
@@ -671,6 +702,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "服役轴向应力允许值：Rp0.2 / S_F。",
                 mapping=("checks", "yield_safety_operating"),
                 default="1.1",
+                help_ref="terms/bolt_yield_safety",
             ),
             FieldSpec(
                 "introduction.eccentric_clamp",
@@ -693,7 +725,8 @@ CHAPTERS: list[dict[str, Any]] = [
     {
         "id": "thread_strip",
         "title": "螺纹脱扣校核",
-        "subtitle": "检查螺纹是否会被拉滑丝",
+        "subtitle": "检查螺纹是否会在最大预紧力下被剪断（滑牙），尤其关键于铝 / 铸铁基体或浅孔螺纹。",
+        "help_ref": "modules/bolt_vdi/_section_thread_strip",
         "fields": [
             FieldSpec(
                 "thread_strip.m_eff",
@@ -703,6 +736,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "标准螺母高度约 0.8d~1.0d；螺纹孔连接需实测。"
                 "留空则跳过脱扣校核。",
                 mapping=("thread_strip", "m_eff"),
+                help_ref="terms/bolt_thread_engagement",
             ),
             FieldSpec(
                 "thread_strip.tau_BM",
@@ -712,6 +746,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "钢螺母一般可取 Rp0.2 x 0.6；"
                 "铝合金壳体约 150~200 MPa；铸铁约 200~250 MPa。",
                 mapping=("thread_strip", "tau_BM"),
+                help_ref="terms/bolt_thread_strip_tau",
             ),
             FieldSpec(
                 "thread_strip.tau_BS",
@@ -719,6 +754,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "MPa",
                 "螺栓材料的剪切强度。留空时自动取 Rp0.2 x 0.6。",
                 mapping=("thread_strip", "tau_BS"),
+                help_ref="terms/bolt_thread_strip_tau",
             ),
             FieldSpec(
                 "thread_strip.safety_required",
@@ -1078,7 +1114,12 @@ class BoltPage(QWidget):
 
         for chapter in CHAPTERS:
             self._add_step_item(chapter["title"])
-            page = self._create_chapter_page(chapter["title"], chapter["subtitle"], chapter["fields"])
+            page = self._create_chapter_page(
+                chapter["title"],
+                chapter["subtitle"],
+                chapter["fields"],
+                help_ref=chapter.get("help_ref", ""),
+            )
             if chapter["id"] == "assembly":
                 self._append_assembly_guide(page)
             self.chapter_stack.addWidget(page)
@@ -1152,7 +1193,13 @@ class BoltPage(QWidget):
         layout.addStretch(1)
         return page
 
-    def _create_chapter_page(self, title: str, subtitle: str, fields: list[FieldSpec]) -> QWidget:
+    def _create_chapter_page(
+        self,
+        title: str,
+        subtitle: str,
+        fields: list[FieldSpec],
+        help_ref: str = "",
+    ) -> QWidget:
         page = QFrame(self)
         page.setObjectName("Card")
         page_layout = QVBoxLayout(page)
@@ -1161,10 +1208,21 @@ class BoltPage(QWidget):
 
         title_label = QLabel(title, page)
         title_label.setObjectName("SectionTitle")
+        if help_ref:
+            # 章节标题 + HelpButton 同行布局
+            header_row = QWidget(page)
+            header_layout = QHBoxLayout(header_row)
+            header_layout.setContentsMargins(0, 0, 0, 0)
+            header_layout.setSpacing(6)
+            header_layout.addWidget(title_label)
+            header_layout.addWidget(HelpButton(help_ref, parent=header_row), 0, Qt.AlignmentFlag.AlignVCenter)
+            header_layout.addStretch(1)
+            page_layout.addWidget(header_row)
+        else:
+            page_layout.addWidget(title_label)
         subtitle_label = QLabel(subtitle, page)
         subtitle_label.setObjectName("SectionHint")
         subtitle_label.setWordWrap(True)
-        page_layout.addWidget(title_label)
         page_layout.addWidget(subtitle_label)
 
         scroll = QScrollArea(page)
@@ -1189,14 +1247,32 @@ class BoltPage(QWidget):
             row.setHorizontalSpacing(10)
             row.setVerticalSpacing(4)
 
-            label = QLabel(spec.label, field_card)
-            label.setObjectName("SubSectionTitle")
             editor = self._create_editor(spec, field_card)
             unit = QLabel(spec.unit, field_card)
             unit.setObjectName("UnitLabel")
             hint = QLabel(spec.hint, field_card)
             hint.setObjectName("SectionHint")
             hint.setWordWrap(True)
+
+            # 字段级 help_ref 存在时，把 label 与 HelpButton 包成一个水平布局放在 col 0
+            if spec.help_ref:
+                label_widget = QWidget(field_card)
+                label_layout = QHBoxLayout(label_widget)
+                label_layout.setContentsMargins(0, 0, 0, 0)
+                label_layout.setSpacing(4)
+                label_text = QLabel(spec.label, label_widget)
+                label_text.setObjectName("SubSectionTitle")
+                label_layout.addWidget(label_text)
+                label_layout.addWidget(
+                    HelpButton(spec.help_ref, parent=label_widget),
+                    0,
+                    Qt.AlignmentFlag.AlignVCenter,
+                )
+                label_layout.addStretch(1)
+                label: QWidget = label_widget
+            else:
+                label = QLabel(spec.label, field_card)
+                label.setObjectName("SubSectionTitle")
 
             if spec.disabled:
                 badge = QLabel("暂未启用", field_card)
