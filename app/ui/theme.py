@@ -331,5 +331,63 @@ def apply_theme(app: QApplication) -> None:
             background: #EED9CF;
             color: #D97757;
         }
+        /* ===== HelpPopover ===== */
+        QFrame#HelpPopoverRoot {
+            background: #FFFFFF;
+            border: 1px solid #F0ECE4;
+            border-radius: 14px;
+        }
+        QFrame#HelpPopoverHeader {
+            background: #FFFDFB;
+            border-bottom: 1px solid #F0ECE4;
+            border-top-left-radius: 14px;
+            border-top-right-radius: 14px;
+        }
+        QFrame#HelpPopoverFooter {
+            background: #FBF8F4;
+            border-top: 1px solid #F0ECE4;
+            border-bottom-left-radius: 14px;
+            border-bottom-right-radius: 14px;
+        }
+        QLabel#HelpPopoverCategory {
+            color: #D97757;
+            background: #FAF1EC;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+        }
+        QLabel#HelpPopoverTitle {
+            color: #2F2E2C;
+            font-size: 15px;
+            font-weight: 600;
+        }
+        QLabel#HelpPopoverSource {
+            color: #8A8782;
+            font-size: 11px;
+        }
+        QLabel#HelpPopoverSourcePrefix {
+            color: #8A8782;
+            font-size: 11px;
+        }
+        QToolButton#HelpPopoverIconBtn {
+            background: transparent;
+            border: none;
+            color: #8A8782;
+            padding: 4px;
+            border-radius: 6px;
+        }
+        QToolButton#HelpPopoverIconBtn:hover {
+            background: #F0ECE4;
+            color: #2F2E2C;
+        }
+        QToolButton#HelpPopoverIconBtn[pinned="true"] {
+            background: #FAF1EC;
+            color: #D97757;
+        }
+        QTextBrowser#HelpPopoverBody {
+            background: #FFFFFF;
+            border: none;
+            padding: 4px 6px;
+        }
         """
     app.setStyleSheet(style_sheet.replace("__UI_FONT_FAMILY_CSS__", UI_FONT_FAMILY_CSS))
