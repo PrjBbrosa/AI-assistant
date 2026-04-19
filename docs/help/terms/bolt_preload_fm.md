@@ -81,6 +81,6 @@ FM,min 上限 = 0.9 · 640 · 58 / 1.6 = 20.9 kN
 - **"推荐 MA" 的数值就是实际装配 MA**：工具推荐的是"按 FM,max 反算"的理论值，实际工艺中要考虑扳手校准误差、工人手感偏差、反复拆装衰减等。
 - **忽略 FZ 和 Fth 的损失**：装配完立刻测的 FM 是 "FM,装配完"，不等于 "FM,工作时" —— 嵌入和热差会吃掉 10–30%。
 
-**出处**：VDI 2230-1:2015 §5.1（预紧力定义）、§5.4（预紧力损失）、§5.5（R1 反推流程）
+**出处**：VDI 2230-1:2015（预紧力定义、预紧力损失、R1 反推流程相关章节）
 
-> Cannot verify against original VDI standard —— FM,min / FM,max 的区间约定与 αA 关系整理自 VDI 2230 公开条款与 `core/bolt/calculator.py:216-500` 实现对照；精确公式请以 VDI 2230-1:2015 原文为准。
+> Cannot verify against original VDI standard —— FM,min / FM,max 的区间约定与 αA 关系整理自 `core/bolt/calculator.py:216-500` 实现对照；**未查证 VDI 2230-1:2015 原文**，故不给出精确节号。精确公式请以标准原文为准。

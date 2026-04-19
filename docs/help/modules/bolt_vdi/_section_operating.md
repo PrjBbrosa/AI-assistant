@@ -28,7 +28,7 @@
 - 螺栓热膨胀系数 α_bolt、被夹件热膨胀系数 α_parts
 - 总夹紧长度 lK、螺栓柔度 δs、被夹件柔度 δp
 
-按 VDI 2230 温差公式自动估算（`core/bolt/calculator.py:312`）。工具会把估算值回填到装配章节的 Fth 字段。
+按 VDI 2230 温差公式自动估算（`core/bolt/calculator.py:312-399`）。工具会把估算值回填到装配章节的 Fth 字段。
 
 **关键**：热损失与装配损失分开计算，但都扣除在 FM,min 基础上：
 
@@ -44,12 +44,12 @@ R3 要求: FM,work,available ≥ FK,req
 ```
 σ_a = Φ_N · FA,max / (2·As)                       # 交变幅值 [MPa]
 σ_m = (FM,max + 0.5·Φ_N·FA,max) / As              # 平均应力 [MPa]
-σ_ASV = VDI 2230 表 A1 内插值（按 d）·（2×10⁶/ND）^0.08
+σ_ASV = VDI 2230 疲劳极限参考值（按 d 内插）·（2×10⁶/ND）^0.08
 σ_a_allow = σ_ASV · max(0.1, 1 − σ_m / (0.9·Rp0.2))   # Goodman 折减
 R9 通过: σ_a ≤ σ_a_allow
 ```
 
-表面处理：**轧制螺纹 σASV 明显高于切削螺纹**（VDI 2230 表 A1），轧制是工业螺栓标配；切削螺纹一般只见于自制件或特殊材质。
+表面处理：**轧制螺纹 σASV 明显高于切削螺纹**（VDI 2230 疲劳参考表），轧制是工业螺栓标配；切削螺纹一般只见于自制件或特殊材质。
 
 ## 输入 / 产出
 
@@ -79,6 +79,6 @@ R9 通过: σ_a ≤ σ_a_allow
 
 ## 参考标准
 
-- VDI 2230-1:2015 §5.5（工况载荷）、§7.6（疲劳 Goodman 简化法）、表 A1（σ_ASV 按 d 插值）、§5.4.1（热损失）
+- VDI 2230-1:2015（工况载荷、疲劳 Goodman 简化法、σ_ASV 疲劳极限参考、热损失相关章节）
 
-> Cannot verify against original VDI standard —— 本章所列公式对齐于 `core/bolt/calculator.py:312, 441-485`；精确的 σ_ASV 表值与热损失推导未逐条比对 VDI 2230-1:2015 原文。正式评审以标准为准。
+> Cannot verify against original VDI standard —— 本章所列公式对齐于 `core/bolt/calculator.py:312-399, 441-485` 的本模块实现；**未查证 VDI 2230-1:2015 原文**，故不给出精确节号 / 表号。正式评审以标准为准。

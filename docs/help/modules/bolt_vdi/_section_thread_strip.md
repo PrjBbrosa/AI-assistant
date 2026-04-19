@@ -64,6 +64,6 @@ R8 通过: S_strip ≥ S_strip,req
 
 ## 参考标准
 
-- VDI 2230-1:2015 §5.5.5（螺纹脱扣 R8 / 螺纹剪切）、ISO 898-2（螺母剪切强度）
+- VDI 2230-1:2015（螺纹脱扣 / R8 螺纹剪切相关章节）、ISO 898-2（螺母剪切强度）
 
-> Cannot verify against original VDI standard —— 本章公式实现于 `core/bolt/calculator.py:500-560`，与 VDI 2230 R8 的原始条款仅做形态一致性自检，未逐条比对 VDI 2230-1:2015 标准原文。C1 = 0.75、C3 = 0.58 是公开教科书常用近似值；精确取值请以标准或 ISO 898-2 为准。
+> Cannot verify against original VDI standard —— 本章公式实现于 `core/bolt/calculator.py:500-560`，与 VDI 2230 R8 原始条款仅做形态自检；**未查证 VDI 2230-1:2015 原文**，故不给出精确节号。C1 = 0.75、C3 = 0.58 是公开教科书常用近似值；精确取值请以标准或 ISO 898-2 为准。
