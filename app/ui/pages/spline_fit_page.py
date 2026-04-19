@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
     QGridLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -34,6 +35,7 @@ from app.ui.input_condition_store import (
     write_input_conditions,
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
+from app.ui.widgets.help_button import HelpButton
 from app.ui.widgets.press_force_curve import PressForceCurveWidget
 from core.spline.calculator import InputError, calculate_spline_fit
 from core.spline.din5480_table import all_designations, lookup_by_designation
@@ -54,6 +56,7 @@ class FieldSpec:
     options: tuple[str, ...] = ()
     default: str = ""
     placeholder: str = ""
+    help_ref: str = ""
     help_ref: str = ""
 
 
@@ -114,8 +117,10 @@ _STANDARD_GEOMETRY_FIELD_IDS: list[str] = [
 
 CHAPTERS: list[dict[str, Any]] = [
     {
+        "id": "targets",
         "title": "校核目标",
-        "subtitle": "选择校核模式、安全系数与工况系数。",
+        "subtitle": "设置校核范围和门槛：选仅花键/联合模式，填三类最小安全系数与工况系数 K_A。",
+        "help_ref": "modules/spline/_section_targets",
         "fields": [
             FieldSpec(
                 "mode", "校核模式", "-",
@@ -123,36 +128,43 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("仅花键", "联合"),
                 default="仅花键",
+                help_ref="terms/spline_mode",
             ),
             FieldSpec(
                 "checks.flank_safety_min", "齿面最小安全系数 S_flank,min", "-",
                 "场景 A 齿面承压校核使用的最小安全系数。",
                 mapping=("checks", "flank_safety_min"),
                 default="1.30", placeholder="建议 1.2~1.5",
+                help_ref="terms/spline_flank_safety",
             ),
             FieldSpec(
                 "checks.slip_safety_min", "防滑最小安全系数 S_slip,min", "-",
                 "场景 B 光滑段防滑校核使用的最小安全系数。",
                 mapping=("checks", "slip_safety_min"),
                 default="1.50", placeholder="建议 1.2~2.0",
+                help_ref="terms/spline_slip_safety",
             ),
             FieldSpec(
                 "checks.stress_safety_min", "材料最小安全系数 S_sigma,min", "-",
                 "场景 B 轴/轮毂应力校核使用的最小安全系数。",
                 mapping=("checks", "stress_safety_min"),
                 default="1.20", placeholder="建议 1.1~1.8",
+                help_ref="terms/spline_stress_safety",
             ),
             FieldSpec(
                 "loads.application_factor_ka", "工况系数 KA", "-",
                 "考虑驱动/负载特性引起的动态过载，同时放大场景 A 和 B 的设计载荷。电机驱动约 1.0~1.25，内燃机约 1.25~1.75。",
                 mapping=("loads", "application_factor_ka"),
                 default="1.25", placeholder="建议 1.0~2.25",
+                help_ref="terms/spline_application_factor_ka",
             ),
         ],
     },
     {
+        "id": "geometry",
         "title": "花键几何",
-        "subtitle": "渐开线花键 (DIN 5480) 优先使用公开目录/图纸尺寸；近似模式仅用于预估。",
+        "subtitle": "录入 DIN 5480 花键几何：选标准规格或手动填 m/z/d/d_a1/d_a2/d_f1；再设 L、k_α、p_zul。",
+        "help_ref": "modules/spline/_section_geometry",
         "fields": [
             FieldSpec(
                 "spline.standard_designation", "标准花键规格", "-",
@@ -160,6 +172,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=tuple(all_designations()) + ("自定义",),
                 default="自定义",
+                help_ref="terms/spline_din5480_spec",
             ),
             FieldSpec(
                 "spline.geometry_mode", "几何输入模式", "-",
@@ -168,48 +181,56 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=GEOMETRY_MODE_OPTIONS,
                 default="公开/图纸尺寸",
+                help_ref="terms/spline_geometry_mode",
             ),
             FieldSpec(
                 "spline.module_mm", "模数 m", "mm",
                 "渐开线花键模数。",
                 mapping=("spline", "module_mm"),
                 default="1.25", placeholder="例如 0.8, 1.25",
+                help_ref="terms/module",
             ),
             FieldSpec(
                 "spline.tooth_count", "齿数 z", "-",
                 "花键齿数，最小 6。",
                 mapping=("spline", "tooth_count"),
                 default="10", placeholder="例如 10, 16",
+                help_ref="terms/spline_tooth_count",
             ),
             FieldSpec(
                 "spline.reference_diameter_mm", "参考直径 d_B", "mm",
                 "DIN 5480 花键的基本尺寸参考直径。例如 '外花键 W 15x1.25x10' 表示 d_B=15mm, m=1.25, z=10。",
                 mapping=("spline", "reference_diameter_mm"),
                 default="15.0", placeholder="例如 15",
+                help_ref="terms/spline_reference_diameter",
             ),
             FieldSpec(
                 "spline.tip_diameter_shaft_mm", "轴齿顶圆 d_a1", "mm",
                 "优先使用目录或图纸尺寸。公开样例 W15x1.25x10 约为 14.75 mm。",
                 mapping=("spline", "tip_diameter_shaft_mm"),
                 default="14.75", placeholder="例如 14.75",
+                help_ref="terms/spline_tip_root_diameter",
             ),
             FieldSpec(
                 "spline.root_diameter_shaft_mm", "轴齿根圆 d_f1", "mm",
                 "优先使用目录或图纸尺寸。公开样例 W15x1.25x10 约为 12.1 mm。",
                 mapping=("spline", "root_diameter_shaft_mm"),
                 default="12.1", placeholder="例如 12.1",
+                help_ref="terms/spline_tip_root_diameter",
             ),
             FieldSpec(
                 "spline.tip_diameter_hub_mm", "内花键齿顶圆 d_a2", "mm",
                 "优先使用目录或图纸尺寸。公开样例 N15x1.25x10 约为 12.5 mm。",
                 mapping=("spline", "tip_diameter_hub_mm"),
                 default="12.5", placeholder="例如 12.5",
+                help_ref="terms/spline_tip_root_diameter",
             ),
             FieldSpec(
                 "spline.engagement_length_mm", "有效啮合长度 L", "mm",
                 "花键齿面轴向有效接触长度。",
                 mapping=("spline", "engagement_length_mm"),
                 default="40.0", placeholder="例如 25, 40",
+                help_ref="terms/spline_engagement_length",
             ),
             FieldSpec(
                 "spline.k_alpha", "载荷分布系数 K_alpha", "-",
@@ -217,6 +238,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "过盈固定连接约 1.0~1.3，滑移连接约 1.5~2.0。",
                 mapping=("spline", "k_alpha"),
                 default="1.3", placeholder="例如 1.1~2.0",
+                help_ref="terms/spline_k_alpha",
             ),
             FieldSpec(
                 "spline.load_condition", "载荷工况", "-",
@@ -224,18 +246,22 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=LOAD_CONDITION_OPTIONS,
                 default="固定连接，静载，调质钢",
+                help_ref="terms/spline_load_condition",
             ),
             FieldSpec(
                 "spline.p_allowable_mpa", "许用齿面压力 p_zul", "MPa",
                 "取决于材料状态和载荷类型。",
                 mapping=("spline", "p_allowable_mpa"),
                 default="100.0", placeholder="例如 60~200",
+                help_ref="terms/spline_allowable_flank_pressure",
             ),
         ],
     },
     {
+        "id": "smooth",
         "title": "光滑段过盈",
-        "subtitle": "花键轴光滑段压入圆柱孔的 DIN 7190 圆柱过盈参数。仅花键模式下跳过此步。",
+        "subtitle": "录入 DIN 7190 圆柱过盈参数：d/d_i/D、配合长度、退刀槽、δ、材料、摩擦；仅联合模式启用。",
+        "help_ref": "modules/spline/_section_smooth",
         "fields": [
             FieldSpec(
                 "smooth_fit.shaft_d_mm", "配合直径 d", "mm",
@@ -266,16 +292,19 @@ CHAPTERS: list[dict[str, Any]] = [
                 "花键齿根与光滑段之间的让刀凹槽宽度，用于加工退刀。计算时自动从配合长度中扣除。",
                 mapping=("smooth_fit", "relief_groove_width_mm"),
                 default="3.0", placeholder="例如 2~5",
+                help_ref="terms/spline_relief_groove",
             ),
             FieldSpec(
                 "smooth_fit.delta_min_um", "最小过盈量 delta_min", "um",
                 "直径值。", mapping=("smooth_fit", "delta_min_um"),
                 default="20.0", placeholder="例如 20",
+                help_ref="terms/spline_smooth_interference",
             ),
             FieldSpec(
                 "smooth_fit.delta_max_um", "最大过盈量 delta_max", "um",
                 "直径值。", mapping=("smooth_fit", "delta_max_um"),
                 default="45.0", placeholder="例如 45",
+                help_ref="terms/spline_smooth_interference",
             ),
             FieldSpec(
                 "smooth_materials.shaft_material", "轴材料", "-",
@@ -288,16 +317,19 @@ CHAPTERS: list[dict[str, Any]] = [
                 "smooth_materials.shaft_e_mpa", "轴弹性模量 E_s", "MPa",
                 "", mapping=("smooth_materials", "shaft_e_mpa"),
                 default="210000", placeholder="例如 210000",
+                help_ref="terms/elastic_modulus",
             ),
             FieldSpec(
                 "smooth_materials.shaft_nu", "轴泊松比 nu_s", "-",
                 "", mapping=("smooth_materials", "shaft_nu"),
                 default="0.30",
+                help_ref="terms/poisson_ratio",
             ),
             FieldSpec(
                 "smooth_materials.shaft_yield_mpa", "轴屈服强度 Re_s", "MPa",
                 "", mapping=("smooth_materials", "shaft_yield_mpa"),
                 default="600",
+                help_ref="terms/spline_smooth_yield_strength",
             ),
             FieldSpec(
                 "smooth_materials.hub_material", "轮毂材料", "-",
@@ -310,31 +342,37 @@ CHAPTERS: list[dict[str, Any]] = [
                 "smooth_materials.hub_e_mpa", "轮毂弹性模量 E_h", "MPa",
                 "", mapping=("smooth_materials", "hub_e_mpa"),
                 default="210000",
+                help_ref="terms/elastic_modulus",
             ),
             FieldSpec(
                 "smooth_materials.hub_nu", "轮毂泊松比 nu_h", "-",
                 "", mapping=("smooth_materials", "hub_nu"),
                 default="0.30",
+                help_ref="terms/poisson_ratio",
             ),
             FieldSpec(
                 "smooth_materials.hub_yield_mpa", "轮毂屈服强度 Re_h", "MPa",
                 "", mapping=("smooth_materials", "hub_yield_mpa"),
                 default="320",
+                help_ref="terms/spline_smooth_yield_strength",
             ),
             FieldSpec(
                 "smooth_friction.mu_torque", "摩擦系数 mu_T（扭矩）", "-",
                 "", mapping=("smooth_friction", "mu_torque"),
                 default="0.14",
+                help_ref="terms/spline_smooth_friction",
             ),
             FieldSpec(
                 "smooth_friction.mu_axial", "摩擦系数 mu_ax（轴向）", "-",
                 "", mapping=("smooth_friction", "mu_axial"),
                 default="0.14",
+                help_ref="terms/spline_smooth_friction",
             ),
             FieldSpec(
                 "smooth_friction.mu_assembly", "装配摩擦系数 mu_M", "-",
                 "", mapping=("smooth_friction", "mu_assembly"),
                 default="0.12",
+                help_ref="terms/spline_smooth_friction",
             ),
             FieldSpec(
                 "smooth_roughness.shaft_rz_um", "轴 Rz", "um",
@@ -349,8 +387,10 @@ CHAPTERS: list[dict[str, Any]] = [
         ],
     },
     {
+        "id": "loads",
         "title": "载荷工况",
-        "subtitle": "输入设计扭矩和轴向力（两场景共用）。",
+        "subtitle": "录入两场景共用的名义扭矩 T 与轴向力 F_ax：T 经 K_A 预乘得到设计扭矩送入场景 A/B。",
+        "help_ref": "modules/spline/_section_loads",
         "fields": [
             FieldSpec(
                 "loads.torque_required_nm", "名义扭矩 T", "N*m",
@@ -367,6 +407,7 @@ CHAPTERS: list[dict[str, Any]] = [
         ],
     },
     {
+        "id": "results",
         "title": "计算结果",
         "subtitle": "场景 A（简化预校核）+ 场景 B（光滑段过盈）独立校核结果。",
         "fields": [],
@@ -408,7 +449,10 @@ class SplineFitPage(BaseChapterPage):
 
         for chapter in CHAPTERS:
             page = self._build_chapter_page(chapter)
-            self._chapter_indices[chapter["title"]] = self.add_chapter(chapter["title"], page)
+            self._chapter_indices[chapter["title"]] = self.add_chapter(
+                chapter["title"], page,
+                help_ref=chapter.get("help_ref") or None,
+            )
 
         self.set_current_chapter(0)
 
@@ -478,8 +522,24 @@ class SplineFitPage(BaseChapterPage):
         grid = QGridLayout(card)
         grid.setContentsMargins(8, 6, 8, 6)
         label_text = f"{spec.label} [{spec.unit}]" if spec.unit != "-" else spec.label
-        label = QLabel(label_text)
-        grid.addWidget(label, 0, 0)
+        if spec.help_ref:
+            # 字段级 help_ref：label + HelpButton 水平布局放在 col 0
+            label_wrap = QWidget()
+            label_layout = QHBoxLayout(label_wrap)
+            label_layout.setContentsMargins(0, 0, 0, 0)
+            label_layout.setSpacing(4)
+            label_text_widget = QLabel(label_text)
+            label_layout.addWidget(label_text_widget)
+            label_layout.addWidget(
+                HelpButton(spec.help_ref, parent=label_wrap),
+                0,
+                Qt.AlignmentFlag.AlignVCenter,
+            )
+            label_layout.addStretch(1)
+            grid.addWidget(label_wrap, 0, 0)
+        else:
+            label = QLabel(label_text)
+            grid.addWidget(label, 0, 0)
 
         if spec.widget_type == "choice":
             w = QComboBox()
