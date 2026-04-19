@@ -96,22 +96,23 @@ BASIC_SETTINGS_FIELDS = [
         widget_type="choice",
         options=LOAD_CAPACITY_OPTIONS,
         default="DIN 3996 Method B -- 标准解析计算（推荐）",
+        help_ref="modules/worm/din3996_method_b",
     ),
 ]
 
 WORM_GEOMETRY_FIELDS = [
     FieldSpec("geometry.z1", "蜗杆头数 z1", "-", "蜗杆起始头数。", default="2"),
-    FieldSpec("geometry.module_mm", "模数 m", "mm", "几何主输入。", default="4.0"),
-    FieldSpec("geometry.diameter_factor_q", "直径系数 q", "-", "蜗杆直径系数。", default="10.0"),
-    FieldSpec("geometry.lead_angle_deg", "导程角 gamma", "deg", "蜗杆导程角。默认值与 z1/q 保持自洽。", default="11.31"),
+    FieldSpec("geometry.module_mm", "模数 m", "mm", "几何主输入。", default="4.0", help_ref="terms/module"),
+    FieldSpec("geometry.diameter_factor_q", "直径系数 q", "-", "蜗杆直径系数。", default="10.0", help_ref="terms/diameter_factor_q"),
+    FieldSpec("geometry.lead_angle_deg", "导程角 gamma", "deg", "蜗杆导程角。默认值与 z1/q 保持自洽。", default="11.31", help_ref="terms/lead_angle"),
     FieldSpec("geometry.worm_face_width_mm", "蜗杆齿宽 b1", "mm", "蜗杆工作齿宽。", default="32.0"),
-    FieldSpec("geometry.x1", "蜗杆变位系数 x1", "-", "蜗杆齿形变位系数。", default="0.0"),
+    FieldSpec("geometry.x1", "蜗杆变位系数 x1", "-", "蜗杆齿形变位系数。", default="0.0", help_ref="terms/profile_shift"),
 ]
 
 WHEEL_GEOMETRY_FIELDS = [
     FieldSpec("geometry.z2", "蜗轮齿数 z2", "-", "蜗轮总齿数。", default="40"),
     FieldSpec("geometry.wheel_face_width_mm", "蜗轮齿宽 b2", "mm", "蜗轮工作齿宽。", default="28.0"),
-    FieldSpec("geometry.x2", "蜗轮变位系数 x2", "-", "蜗轮齿形变位系数。塑料蜗轮常用大正变位。", default="0.0"),
+    FieldSpec("geometry.x2", "蜗轮变位系数 x2", "-", "蜗轮齿形变位系数。塑料蜗轮常用大正变位。", default="0.0", help_ref="terms/profile_shift"),
 ]
 
 MESH_GEOMETRY_FIELDS = [
@@ -154,17 +155,18 @@ MATERIAL_FIELDS = [
         widget_type="choice",
         options=("oil_bath", "grease", "dry"),
         default="grease",
+        help_ref="terms/lubrication",
     ),
-    FieldSpec("materials.worm_e_mpa", "蜗杆弹性模量 E1", "MPa", "Method B 最小子集使用的材料弹性参数。", default="210000"),
-    FieldSpec("materials.worm_nu", "蜗杆泊松比 nu1", "-", "Method B 最小子集使用的材料弹性参数。", default="0.30"),
-    FieldSpec("materials.wheel_e_mpa", "蜗轮弹性模量 E2", "MPa", "Method B 最小子集使用的材料弹性参数。", default="3000"),
-    FieldSpec("materials.wheel_nu", "蜗轮泊松比 nu2", "-", "Method B 最小子集使用的材料弹性参数。", default="0.38"),
+    FieldSpec("materials.worm_e_mpa", "蜗杆弹性模量 E1", "MPa", "Method B 最小子集使用的材料弹性参数。", default="210000", help_ref="terms/elastic_modulus"),
+    FieldSpec("materials.worm_nu", "蜗杆泊松比 nu1", "-", "Method B 最小子集使用的材料弹性参数。", default="0.30", help_ref="terms/poisson_ratio"),
+    FieldSpec("materials.wheel_e_mpa", "蜗轮弹性模量 E2", "MPa", "Method B 最小子集使用的材料弹性参数。", default="3000", help_ref="terms/elastic_modulus"),
+    FieldSpec("materials.wheel_nu", "蜗轮泊松比 nu2", "-", "Method B 最小子集使用的材料弹性参数。", default="0.38", help_ref="terms/poisson_ratio"),
 ]
 
 OPERATING_FIELDS = [
     FieldSpec("operating.input_torque_nm", "输入扭矩 T1", "Nm", "蜗杆轴输入扭矩。", default="19.76"),
     FieldSpec("operating.speed_rpm", "输入转速 n", "rpm", "蜗杆轴转速。", default="1450"),
-    FieldSpec("operating.application_factor", "使用系数 KA", "-", "工况冲击影响的简化系数。", default="1.25"),
+    FieldSpec("operating.application_factor", "使用系数 KA", "-", "工况冲击影响的简化系数。", default="1.25", help_ref="terms/application_factor_ka"),
     FieldSpec("operating.torque_ripple_percent", "扭矩波动", "%", "围绕名义扭矩的峰值波动幅值。", default="0.0"),
 ]
 
@@ -177,7 +179,7 @@ ADVANCED_FIELDS = [
         default="",
         placeholder="留空则自动",
     ),
-    FieldSpec("advanced.normal_pressure_angle_deg", "法向压力角 alpha_n", "deg", "力分解与最小齿面/齿根模型的几何参数。", default="20.0"),
+    FieldSpec("advanced.normal_pressure_angle_deg", "法向压力角 alpha_n", "deg", "力分解与最小齿面/齿根模型的几何参数。", default="20.0", help_ref="terms/pressure_angle"),
     FieldSpec(
         "advanced.operating_temp_c",
         "工作温度",
@@ -195,11 +197,11 @@ ADVANCED_FIELDS = [
 ]
 
 LOAD_CAPACITY_PARAMETER_FIELDS = [
-    FieldSpec("load_capacity.allowable_contact_stress_mpa", "许用齿面应力", "MPa", "用于最小齿面安全系数计算。", default="42.0"),
-    FieldSpec("load_capacity.allowable_root_stress_mpa", "许用齿根应力", "MPa", "用于最小齿根安全系数计算。", default="55.0"),
-    FieldSpec("load_capacity.dynamic_factor_kv", "动载系数 Kv", "-", "最小子集中的动载放大系数。", default="1.05"),
-    FieldSpec("load_capacity.transverse_load_factor_kha", "横向载荷系数 KHalpha", "-", "横向载荷分配系数。", default="1.00"),
-    FieldSpec("load_capacity.face_load_factor_khb", "齿宽载荷系数 KHbeta", "-", "齿宽方向载荷分配系数。", default="1.10"),
+    FieldSpec("load_capacity.allowable_contact_stress_mpa", "许用齿面应力", "MPa", "用于最小齿面安全系数计算。", default="42.0", help_ref="terms/allowable_contact_stress"),
+    FieldSpec("load_capacity.allowable_root_stress_mpa", "许用齿根应力", "MPa", "用于最小齿根安全系数计算。", default="55.0", help_ref="terms/allowable_root_stress"),
+    FieldSpec("load_capacity.dynamic_factor_kv", "动载系数 Kv", "-", "最小子集中的动载放大系数。", default="1.05", help_ref="terms/kv_factor"),
+    FieldSpec("load_capacity.transverse_load_factor_kha", "横向载荷系数 KHalpha", "-", "横向载荷分配系数。", default="1.00", help_ref="terms/kh_alpha"),
+    FieldSpec("load_capacity.face_load_factor_khb", "齿宽载荷系数 KHbeta", "-", "齿宽方向载荷分配系数。", default="1.10", help_ref="terms/kh_beta"),
     FieldSpec("load_capacity.required_contact_safety", "目标齿面安全系数", "-", "用于通过/不通过判定。", default="1.00"),
     FieldSpec("load_capacity.required_root_safety", "目标齿根安全系数", "-", "用于通过/不通过判定。", default="1.00"),
 ]
@@ -295,16 +297,35 @@ class WormGearPage(BaseChapterPage):
     def _build_input_steps(self) -> None:
         self.add_chapter(
             "基本设置",
-            self._create_form_page("基本设置", "定义本版标准边界和 Load Capacity 骨架状态。", BASIC_SETTINGS_FIELDS),
+            self._create_form_page(
+                "基本设置",
+                "设置校核的范围和算法：是否启用齿面/齿根负载能力校核、选用 DIN 3996 的哪一种方法。",
+                BASIC_SETTINGS_FIELDS,
+            ),
+            help_ref="modules/worm/_section_basic",
         )
-        self.add_chapter("几何参数", self._create_geometry_page())
+        self.add_chapter(
+            "几何参数",
+            self._create_geometry_page(),
+            help_ref="modules/worm/_section_geometry",
+        )
         self.add_chapter(
             "材料与配对",
-            self._create_form_page("材料与配对", "保留材料牌号，同时显式暴露 Method B 最小子集所需的弹性参数。", MATERIAL_FIELDS),
+            self._create_form_page(
+                "材料与配对",
+                "选择蜗杆/蜗轮材料；选中塑料蜗轮后会自动带入弹性模量和许用应力，也可手动覆盖。旋向与润滑方式会影响摩擦力与安全系数。",
+                MATERIAL_FIELDS,
+            ),
+            help_ref="modules/worm/_section_material",
         )
         self.add_chapter(
             "工况与润滑",
-            self._create_form_page("工况与润滑", "基础效率、损失功率、使用系数和扭矩波动输入。", OPERATING_FIELDS),
+            self._create_form_page(
+                "工况与润滑",
+                "输入运行工况：输入扭矩 T1、转速 n、反映冲击的使用系数 KA、扭矩波动百分比。这些值直接影响齿面应力与动载系数 Kv 的计算。",
+                OPERATING_FIELDS,
+            ),
+            help_ref="modules/worm/_section_operating",
         )
 
     def _create_form_page(self, title: str, subtitle: str, fields: list[FieldSpec]) -> QWidget:
@@ -348,7 +369,7 @@ class WormGearPage(BaseChapterPage):
         title_label = QLabel("几何参数", page)
         title_label.setObjectName("SectionTitle")
         subtitle_label = QLabel(
-            "按蜗杆、蜗轮、啮合装配分组输入。可推导尺寸放到只读区，避免与必要输入混淆。",
+            "分组输入几何参数：蜗杆（z1/m/q/导程角）、蜗轮（z2/变位）、啮合中心距。下方只读区会实时给出派生尺寸（分度圆、齿顶/齿根圆）。",
             page,
         )
         subtitle_label.setObjectName("SectionHint")
@@ -547,7 +568,7 @@ class WormGearPage(BaseChapterPage):
 
         title = QLabel("Load Capacity", page)
         title.setObjectName("SectionTitle")
-        hint = QLabel("执行 DIN 3996 / ISO 14521 Method B 风格的最小工程子集，输出齿面应力、齿根应力和扭矩波动。", page)
+        hint = QLabel("齿面/齿根负载能力校核的参数：许用应力、动载系数 Kv、载荷分配系数 KHα/KHβ 以及目标安全系数。对齿面和齿根分别算出 SH/SF 后与目标值对比判断通过/不通过。", page)
         hint.setObjectName("SectionHint")
         hint.setWordWrap(True)
         self.load_capacity_status = QLabel("DIN 3996 校核尚未开始", page)
@@ -637,7 +658,7 @@ class WormGearPage(BaseChapterPage):
         layout.addWidget(formulas_card)
         layout.addWidget(self.load_capacity_metrics)
         layout.addStretch(1)
-        self.add_chapter("Load Capacity", page)
+        self.add_chapter("Load Capacity", page, help_ref="modules/worm/_section_load_capacity")
 
     def _build_results_step(self) -> None:
         page = QFrame(self)
