@@ -16,11 +16,15 @@
 - 齿宽载荷分布系数 KHβ（反映沿齿宽方向的载荷集中程度，与装配误差、轴刚度相关）
 - 目标安全系数 SH_min、SF_min（常规工业传动齿面取 1.0~1.3，齿根取 1.4~1.6）
 
-**产出**：
-- 实际齿面应力 σH = ZE·ZH·√(Ft·KA·Kv·KHα·KHβ / (d1·b·…))
-- 实际齿根应力 σF
+**产出**（本模块实际实现，非完整 DIN 3996 Method B 公式链）：
+- 实际齿面应力 σH —— **线接触 Hertz 近似**（而非 ZE/ZH/Zβ 系数链）：
+  `σH = q' / (2·b_H)`，其中 `q' = F_n·K_total / L_contact`、`b_H = √(4·q'·ρ / (π·E*))`
+- 实际齿根应力 σF —— **等效悬臂梁近似**（而非 YF/YS/Yβ 系数链）：
+  `σF = M_bending·6 / (b·s_Ft²)`
 - 齿面安全系数 SH = σHP / σH，齿根安全系数 SF = σFP / σF
 - 与目标安全系数比较的 PASS / FAIL 判定
+
+> 本模块的 σH、σF 算式是"Method B 风格"的工程估算，用 Hertz 线接触 + 悬臂梁两套粗近似代替了完整 Method B 的 ZH/ZE/Zβ/YF/YS 系数链。Cannot verify against original DIN standard —— 原始 DIN 3996:2019 条款尚未逐项比对，结果仅供方案估算与初筛，不作最终强度合规依据。
 
 ## 方法差异
 
