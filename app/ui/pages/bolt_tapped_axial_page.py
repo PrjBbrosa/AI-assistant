@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
     QGridLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -31,6 +32,7 @@ from app.ui.input_condition_store import (
     write_input_conditions,
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
+from app.ui.widgets.help_button import HelpButton
 from core.bolt.tapped_axial_joint import (
     _derive_thread_section,
     calculate_tapped_axial_joint,
@@ -73,25 +75,29 @@ CHECK_LABELS: dict[str, str] = {
 
 CHAPTERS: list[dict[str, Any]] = [
     {
+        "id": "scope",
         "title": "适用范围与建模假设",
-        "subtitle": "该页仅面向螺栓拧入螺纹对手件、无被夹件、纯轴向拉载荷的场景。",
+        "subtitle": "确认你的连接适合这个模块：螺栓直接拧入螺纹孔、无被夹件、纯轴向拉载荷。带法兰/垫片的夹紧连接请用 VDI 2230 螺栓页。",
+        "help_ref": "modules/bolt_tapped_axial/_section_scope",
         "fields": [],
         "notes": [
-            "请避免在该模块中输入 clamped、stiffness、残余夹紧力等夹紧连接语义。",
-            "本页面只负责输入侧骨架和输入条件保存/恢复，计算与结果渲染等待 core lane。",
+            "带被夹件的夹紧连接（法兰+垫片+法兰）请使用「螺栓连接」模块，本页结果不适用。",
+            "本模块不支持横向力、弯矩、多螺栓并联、压向载荷；这些工况需另做专项分析。",
         ],
     },
     {
+        "id": "fastener_material",
         "title": "螺纹与材料参数",
-        "subtitle": "螺纹几何与螺栓材料输入。",
+        "subtitle": "填螺栓规格与材料强度：公称直径 d 和螺距 p 填好后，中径 d2、小径 d3、应力截面积 As 会按 ISO 公式自动派生并锁为只读。",
+        "help_ref": "modules/bolt_tapped_axial/_section_fastener_material",
         "fields": [
-            FieldSpec("fastener.d", "公称直径 d", "mm", "螺栓公称直径，按实际螺纹规格填写。", default="10.0"),
-            FieldSpec("fastener.p", "螺距 p", "mm", "螺纹螺距。", default="1.5"),
-            FieldSpec("fastener.d2", "中径 d2", "mm", "可选输入；也可等待 core 侧自动导出。", default=""),
-            FieldSpec("fastener.d3", "小径 d3", "mm", "可选输入；也可等待 core 侧自动导出。", default=""),
-            FieldSpec("fastener.As", "应力截面积 As", "mm²", "可选输入；也可等待 core 侧自动导出。", default=""),
-            FieldSpec("fastener.Rp02", "屈服强度 Rp0.2", "MPa", "螺栓材料屈服强度。", default="640.0"),
-            FieldSpec("fastener.E_bolt", "螺栓弹性模量 E_bolt", "MPa", "螺栓弹性模量。", default="210000.0"),
+            FieldSpec("fastener.d", "公称直径 d", "mm", "螺栓公称直径，按实际螺纹规格填写。", default="10.0", help_ref="terms/bolt_thread_nominal"),
+            FieldSpec("fastener.p", "螺距 p", "mm", "螺纹螺距。", default="1.5", help_ref="terms/bolt_thread_pitch"),
+            FieldSpec("fastener.d2", "中径 d2", "mm", "由 d/p 自动派生。", default="", help_ref="terms/bolt_stress_area"),
+            FieldSpec("fastener.d3", "小径 d3", "mm", "由 d/p 自动派生。", default="", help_ref="terms/bolt_stress_area"),
+            FieldSpec("fastener.As", "应力截面积 As", "mm²", "由 d/p 自动派生。", default="", help_ref="terms/bolt_stress_area"),
+            FieldSpec("fastener.Rp02", "屈服强度 Rp0.2", "MPa", "螺栓材料屈服强度。", default="640.0", help_ref="terms/bolt_yield_strength"),
+            FieldSpec("fastener.E_bolt", "螺栓弹性模量 E_bolt", "MPa", "螺栓弹性模量。", default="210000.0", help_ref="terms/elastic_modulus"),
             FieldSpec(
                 "fastener.grade",
                 "强度等级 grade",
@@ -100,71 +106,82 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("8.8", "10.9", "12.9"),
                 default="8.8",
+                help_ref="terms/bolt_grade",
             ),
         ],
     },
     {
+        "id": "assembly_preload",
         "title": "预紧与装配参数",
-        "subtitle": "预紧力、摩擦、支承面与拧紧方式。",
+        "subtitle": "设置装配过程：最小预紧力、装配散差 α_A、摩擦系数、支承几何、拧紧工艺。这些决定装配扭矩 MA 与装配 von Mises 校核。",
+        "help_ref": "modules/bolt_tapped_axial/_section_assembly_preload",
         "fields": [
-            FieldSpec("assembly.F_preload_min", "最小预紧力 F_preload_min", "N", "装配后可保证达到的最小预紧力。", default="12000.0"),
-            FieldSpec("assembly.alpha_A", "装配散差系数 alpha_A", "-", "预紧力上限与下限的比值。", default="1.6"),
-            FieldSpec("assembly.mu_thread", "螺纹摩擦系数 mu_thread", "-", "螺纹副摩擦系数。", default="0.12"),
-            FieldSpec("assembly.mu_bearing", "支承面摩擦系数 mu_bearing", "-", "支承面摩擦系数。", default="0.14"),
+            FieldSpec("assembly.F_preload_min", "最小预紧力 F_preload_min", "N", "装配后可保证达到的最小预紧力。", default="12000.0", help_ref="terms/bolt_preload_fm"),
+            FieldSpec("assembly.alpha_A", "装配散差系数 alpha_A", "-", "预紧力上限与下限的比值。", default="1.6", help_ref="terms/bolt_tightening_factor_alpha_a"),
+            FieldSpec("assembly.mu_thread", "螺纹摩擦系数 mu_thread", "-", "螺纹副摩擦系数。", default="0.12", help_ref="terms/bolt_friction_thread"),
+            FieldSpec("assembly.mu_bearing", "支承面摩擦系数 mu_bearing", "-", "支承面摩擦系数。", default="0.14", help_ref="terms/bolt_friction_bearing"),
             FieldSpec("assembly.bearing_d_inner", "支承内径 bearing_d_inner", "mm", "支承面内径。", default="11.0"),
             FieldSpec("assembly.bearing_d_outer", "支承外径 bearing_d_outer", "mm", "支承面外径。", default="18.0"),
-            FieldSpec("assembly.prevailing_torque", "附加防松扭矩 prevailing_torque", "N·m", "锁紧件引入的附加扭矩。", default="0.0"),
+            FieldSpec("assembly.prevailing_torque", "附加防松扭矩 prevailing_torque", "N·m", "锁紧件（尼龙圈螺母、螺纹胶等）产生的附加扭矩。", default="0.0", help_ref="terms/bolt_tapped_axial_prevailing_torque"),
             FieldSpec("assembly.thread_flank_angle_deg", "牙型角 thread_flank_angle_deg", "deg", "公制螺纹常用 60°。", default="60.0"),
             FieldSpec(
                 "assembly.tightening_method",
                 "拧紧方式 tightening_method",
                 "-",
-                "仅使用 spec 中定义的枚举值。",
+                "拧紧工艺；决定 α_A 建议区间与服役残余扭转系数 k_τ。",
                 widget_type="choice",
                 options=("torque", "angle", "hydraulic", "thermal"),
                 default="torque",
+                help_ref="terms/bolt_tightening_method",
             ),
-            FieldSpec("assembly.utilization", "装配利用系数 utilization", "-", "预紧力利用比例。", default="0.9"),
+            FieldSpec("assembly.utilization", "装配利用系数 utilization", "-", "预紧力利用比例 ν；装配许用应力 = ν·Rp0.2。", default="0.9", help_ref="terms/bolt_utilization_nu"),
         ],
     },
     {
+        "id": "axial_load",
         "title": "轴向工作载荷",
-        "subtitle": "一个循环中的最小/最大轴向拉载荷。",
+        "subtitle": "填一个循环中外部轴向拉力的最小值 FA_min 和最大值 FA_max。两者共同决定服役应力、疲劳平均应力与应力幅。",
+        "help_ref": "modules/bolt_tapped_axial/_section_axial_load",
         "fields": [
-            FieldSpec("service.FA_min", "最小轴向载荷 FA_min", "N", "一个循环中的最小轴向拉载荷。", default="0.0"),
-            FieldSpec("service.FA_max", "最大轴向载荷 FA_max", "N", "一个循环中的最大轴向拉载荷。", default="6000.0"),
+            FieldSpec("service.FA_min", "最小轴向载荷 FA_min", "N", "一个循环中的最小轴向拉载荷。静载时 = FA_max。", default="0.0", help_ref="terms/bolt_tapped_axial_axial_load_range"),
+            FieldSpec("service.FA_max", "最大轴向载荷 FA_max", "N", "一个循环中的最大轴向拉载荷（含动载放大系数）。", default="6000.0", help_ref="terms/bolt_tapped_axial_axial_load_range"),
         ],
     },
     {
+        "id": "thread_strip",
         "title": "螺纹脱扣",
-        "subtitle": "螺纹副抗脱扣校核所需输入。",
+        "subtitle": "校核螺纹是否会被剪断（尤其重要：螺栓旋入铝/铸铁壳体）。留空 m_eff 会让整体结论判为「校核不完整」，不会给绿灯。",
+        "help_ref": "modules/bolt_tapped_axial/_section_thread_strip",
         "fields": [
-            FieldSpec("thread_strip.m_eff", "有效啮合长度 m_eff", "mm", "有效螺纹啮合长度。", default=""),
-            FieldSpec("thread_strip.tau_BM", "母材许用剪应力 tau_BM", "MPa", "内螺纹对手件的许用剪应力。", default=""),
-            FieldSpec("thread_strip.tau_BS", "螺栓许用剪应力 tau_BS", "MPa", "外螺纹侧许用剪应力。", default=""),
-            FieldSpec("thread_strip.safety_required", "脱扣目标安全系数", "-", "若已知设计目标，可在此输入。", default="1.5"),
+            FieldSpec("thread_strip.m_eff", "有效啮合长度 m_eff", "mm", "螺栓实际旋入内螺纹的承载长度。留空跳过 R8 并判 incomplete。", default="", help_ref="terms/bolt_thread_engagement"),
+            FieldSpec("thread_strip.tau_BM", "母材许用剪应力 tau_BM", "MPa", "内螺纹对手件的剪切强度；典型 0.6·Rp0.2。启用 R8 时必填。", default="", help_ref="terms/bolt_thread_strip_tau"),
+            FieldSpec("thread_strip.tau_BS", "螺栓许用剪应力 tau_BS", "MPa", "外螺纹剪切强度；留空默认 0.6·Rp0.2。", default="", help_ref="terms/bolt_thread_strip_tau"),
+            FieldSpec("thread_strip.safety_required", "脱扣目标安全系数", "-", "设计要求的最小 S_strip。典型 1.25–1.5。", default="1.5", help_ref="terms/bolt_tapped_axial_strip_safety_required"),
         ],
     },
     {
+        "id": "fatigue_output",
         "title": "交变轴向疲劳与输出选项",
-        "subtitle": "载荷循环、表面处理与报告输出模式。",
+        "subtitle": "设置疲劳参数（循环次数、螺纹成形工艺）与服役屈服安全系数；选择报告详细程度。",
+        "help_ref": "modules/bolt_tapped_axial/_section_fatigue_output",
         "fields": [
-            FieldSpec("fatigue.load_cycles", "载荷循环次数 load_cycles", "次", "疲劳校核循环次数。", default="1000000.0"),
+            FieldSpec("fatigue.load_cycles", "载荷循环次数 load_cycles", "次", "服役寿命内的疲劳循环次数。高周默认 2×10⁶ 保守。", default="1000000.0", help_ref="terms/bolt_tapped_axial_load_cycles"),
             FieldSpec(
                 "fatigue.surface_treatment",
                 "螺纹表面处理 surface_treatment",
                 "-",
-                "沿用 spec 中定义的表面处理枚举。",
+                "螺纹成形方式：rolled（标准螺栓滚轧）/ cut（后加工切削）。cut 会让 σ_ASV 折减至 65%。",
                 widget_type="choice",
                 options=("rolled", "cut"),
                 default="rolled",
+                help_ref="terms/bolt_tapped_axial_surface_treatment",
             ),
-            FieldSpec("checks.yield_safety_operating", "服役屈服安全系数 yield_safety_operating", "-", "服务工况屈服校核目标。", default="1.15"),
+            FieldSpec("checks.yield_safety_operating", "服役屈服安全系数 yield_safety_operating", "-", "服役 von Mises 许用 = Rp0.2 / S_yield。", default="1.15", help_ref="terms/bolt_yield_safety"),
             FieldSpec(
                 "options.report_mode",
                 "报告模式 report_mode",
                 "-",
-                "输出报告的详细程度。",
+                "报告详细程度；不影响计算。",
                 widget_type="choice",
                 options=("full", "compact"),
                 default="full",
@@ -223,7 +240,13 @@ class BoltTappedAxialPage(BaseChapterPage):
 
     def _build_input_chapters(self) -> None:
         for chapter in CHAPTERS:
-            page = self._create_chapter_page(chapter["title"], chapter["subtitle"], chapter["fields"], chapter.get("notes", []))
+            page = self._create_chapter_page(
+                chapter["title"],
+                chapter["subtitle"],
+                chapter["fields"],
+                chapter.get("notes", []),
+                help_ref=chapter.get("help_ref", ""),
+            )
             self.add_chapter(chapter["title"], page)
 
     def _create_chapter_page(
@@ -232,6 +255,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         subtitle: str,
         fields: list[FieldSpec],
         notes: list[str],
+        help_ref: str = "",
     ) -> QWidget:
         page = QFrame(self)
         page.setObjectName("Card")
@@ -241,10 +265,24 @@ class BoltTappedAxialPage(BaseChapterPage):
 
         title_label = QLabel(title, page)
         title_label.setObjectName("SectionTitle")
+        if help_ref:
+            header_row = QWidget(page)
+            header_layout = QHBoxLayout(header_row)
+            header_layout.setContentsMargins(0, 0, 0, 0)
+            header_layout.setSpacing(6)
+            header_layout.addWidget(title_label)
+            header_layout.addWidget(
+                HelpButton(help_ref, parent=header_row),
+                0,
+                Qt.AlignmentFlag.AlignVCenter,
+            )
+            header_layout.addStretch(1)
+            layout.addWidget(header_row)
+        else:
+            layout.addWidget(title_label)
         subtitle_label = QLabel(subtitle, page)
         subtitle_label.setObjectName("SectionHint")
         subtitle_label.setWordWrap(True)
-        layout.addWidget(title_label)
         layout.addWidget(subtitle_label)
 
         if notes:
@@ -278,8 +316,24 @@ class BoltTappedAxialPage(BaseChapterPage):
                 row.setHorizontalSpacing(10)
                 row.setVerticalSpacing(4)
 
-                label = QLabel(spec.label, field_card)
-                label.setObjectName("SubSectionTitle")
+                if spec.help_ref:
+                    label_widget = QWidget(field_card)
+                    label_layout = QHBoxLayout(label_widget)
+                    label_layout.setContentsMargins(0, 0, 0, 0)
+                    label_layout.setSpacing(4)
+                    label_text = QLabel(spec.label, label_widget)
+                    label_text.setObjectName("SubSectionTitle")
+                    label_layout.addWidget(label_text)
+                    label_layout.addWidget(
+                        HelpButton(spec.help_ref, parent=label_widget),
+                        0,
+                        Qt.AlignmentFlag.AlignVCenter,
+                    )
+                    label_layout.addStretch(1)
+                    label: QWidget = label_widget
+                else:
+                    label = QLabel(spec.label, field_card)
+                    label.setObjectName("SubSectionTitle")
                 editor = self._create_editor(spec, field_card)
                 unit = QLabel(spec.unit, field_card)
                 unit.setObjectName("UnitLabel")
