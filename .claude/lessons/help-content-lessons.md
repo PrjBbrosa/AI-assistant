@@ -99,3 +99,47 @@ Stage 2 adversarial review Round 1 挖出 5 条 P0，其中 2 条（L1 doc-vs-ca
 - **错误**：Stage 2 写了 `terms/bolt_seal_clamp_force.md`，但 `loads.seal_force_required` 字段忘了加 `help_ref` → 用户点不到文章。正向测试（"help_ref 指向的 md 存在"）无法捕捉这种反向失效。
 - **正确做法**：在 `test_<module>_help_wiring.py` 加反向守卫：遍历 `docs/help/terms/<module>_*.md`，每篇必须至少被一个 FieldSpec 或 CHAPTER 引用，否则算孤岛→失败。Stage 2 已加 `test_no_orphan_bolt_term_files`。后续模块照抄此模式。
 - **原因**：双向守卫测试把"术语 ↔ 字段"当成外键约束处理。任何一端改动都会暴露不一致，避免"写了但没人用" 或 "指了但没写"两种对偶失效。
+
+## 2026-04-19 Stages 3/4/5/6 批量 review — 14 P0 的共性教训
+
+4 个模块的 Stage N.5 adversarial review 合计挖出 **14 P0**，其中 12 条属于 L1 (doc-vs-calc 漂移) 或 L6 (公式单位缺失)。这两条 lesson 已经写过 3 遍了，agents 仍然违反。**必须把 lesson 转成写作流程里的强制步骤，而不是写完再 review 捡漏**。
+
+### 错误：数值示例直接抄教科书，没用 calculator 回算
+
+- **错误**：Stage 5 `hertz_contact_length.md` / `hertz_equivalent_modulus.md` 各写一张 "敏感度 / 典型值" 表，数值与 `core/hertz/calculator.py` 实际算出的差 5~10 倍。Stage 6 `spline_tip_root_diameter.md` 把 `W 20×2×8` 的 h_w 写成 0.5m，实际 catalog 是 1.05m（0.525m/m）。用户照抄这些数字会得到严重错误的设计值。
+- **正确做法**：**任何数值示例表写出来前，必须**用 `python3 -c "..."` 或类似临时脚本跑一遍 calculator 实现，把计算结果原样抄进表。不能靠心算、不能靠教科书推导——calculator 本身就是权威。若 calculator 和教科书不一致，**以 calculator 为准并在旁注 "本工具实现与标准教科书差异"**。
+- **原因**：文档的职责是"告诉用户工具在做什么"。数值示例是最容易被用户原封照抄的内容。一个数字错了，整张表作废、整篇术语的可信度崩塌。写前跑 calculator 的成本是 30 秒，写完被 review 挖出来返工成本是 30 分钟。
+
+### 错误：简化实现被描述成完整标准
+
+- **错误**：Stage 4 fretting 评分规则在文档里写成"单个 slip_reserve_bonus 0..3"，实际 calculator 有 torque_reserve + combined_reserve 两个独立加分项，max_score = 14 而非 11。Stage 6 DIN 5480 的 5% warning 被写成"通常代表填错"，但内置 catalog 标准条目（如 `W 15×1.25×10`）本身就会触发这个 warning（m·z=12.5 vs d_B=15 偏差 20%）。Stage 3 overview 把 "允许用户覆盖 As/d2/d3" 写成描述，实际 calculator 始终用 d/p 派生值做计算，只做一致性校验。
+- **正确做法**：涉及 "scoring rule / threshold / override" 这类"你以为你懂、但实现可能不一样"的场景，**必须**把对应的 calculator 源码贴到 diff 对照窗口，逐行对照确认。尤其是 scoring / warning 判据，工程师脑子里容易自动脑补 "这应该是 max 还是 sum"、"这个 threshold 触发是错误还是正常"——不能凭感觉，要看源码。
+- **原因**：工具的简化 / 近似行为是用户最想知道的（这决定什么时候能信工具）。**文档比实现"更精致"或"更简单"都是误导**。
+
+### 错误：物理方向 / 保守性判断写反
+
+- **错误**：Stage 5 `hertz_contact_length.md:62` 写 "工程取齿宽作 L 是偏保守估计（L 偏大 → p0 偏低 → 安全裕度偏乐观）"——括号里明明已经说"安全裕度偏乐观"（即不保守），外面却说"偏保守"。Stage 3 `_section_fatigue_output.md` 说 "σ_a_allow=0 除非 σ_a 也恰为 0 才通过"，实际 calculator 逻辑 `fatigue_ok = (goodman > 0) AND (σ_a ≤ σ_a_allow)`，goodman=0 时无论 σ_a 多少都 FAIL。
+- **正确做法**：涉及"保守 / 乐观"、"增大 / 减小"、"必然通过 / 必然失败"这类带物理方向的判断，**必须**写前做"极端值思维实验"：把参数推到极大 / 极小分别看代码输出，对照文档结论。Stage 1 P0-F 已经挖过类似问题（Method A/C），仍然复发。
+- **原因**：方向错误比数值错误更危险——数值错误至少还是错在一个数量级内，方向错误会让用户的"直觉校核"完全失效（以为偏保守其实偏乐观 = 设计裕度虚高）。
+
+### 错误：守卫测试只断言"至少 1 个"，抓不到字段级按钮丢失
+
+- **错误**：Stages 3/4/5/6 的 `test_*_help_wiring.py` 都 copy 了 Stage 2 的 `len(help_buttons) >= 1` 断言。章节级按钮存在 + 字段级按钮全丢的回归场景，测试仍 pass。
+- **正确做法**：断言改为**精确数**：按章节期望 "1 (章节级) + N (该章节带 help_ref 的 FieldSpec 数)" 个按钮。Stage 2 的教训本来已经标了"test 过宽"，但后续 Stages 没吸收。**后续模块新加 help_wiring 测试前，必须先读 Stage 2 review 里的 P1-3 条目**。
+- **原因**：守卫测试的价值是"发现真实的回归"，"至少 1 个"等价于 "几乎不会失败的 smoke"。用精确数做断言几乎没有额外成本（已经从 CHAPTERS / FieldSpec 里数得出来），但覆盖能力指数级提升。
+
+### 错误：lessons 文件被当成 "背景阅读" 而非 "写作检查清单"
+
+- **错误**：Stage 2.5 已经把"必须把 lessons 转成写完强制跑的 linter"这条写进了 lessons。Stage 3/4/5/6 agents 读了 lessons 但仍然没做最基本的 grep 检查（`§[0-9]` / `表 [A-Z]\.[0-9]`）和 calculator 对照。结果 14 条 P0 里 12 条是这两类。
+- **正确做法**：**Stage N 启动时的"必读"步骤必须扩展成"必跑"步骤**。每个 section 或 term 写完后，立即运行 3 条检查：
+  1. `grep '§[0-9]\|表 [A-Z]\.[0-9]\|附录 [A-Z]' <新文件>` 应 0 命中
+  2. 每个公式逐条检查 `[x: unit → y: unit]` 标注
+  3. 每个 "本工具实现" / 数值示例要在 calculator 源码里找到对应行，逐字抄（而非凭记忆写）
+  然后才进入下一个术语。
+- **原因**：人类和 LLM 对"读过的规则"都有强烈的"自以为已吸收"偏差。强制可执行检查才能真正把规则变成行为。这是**本轮最大的流程教训**——应该升级为 CI pre-commit hook 或至少写入 plan 模板 Step B-D 的硬性前置。
+
+### 错误：大型模块（Stage 4 interference 24 术语）被当作"标准模块"处理，一次 review 挖不干净
+
+- **错误**：Stage 4 interference 是所有 stage 里最大的（24 术语，3432 行 diff）。Round 1 review 挖出 4 P0 + 4 P1 + 2 P2。但 review agent 自己也提到"仍有可能漏挖"；修完 Round 1 后我们还没跑 Round 2 就直接合并（context 预算紧张）。如果真要合规，应该触发 Round 2（P0 > 3）。
+- **正确做法**：对**规模显著大于基线（bolt Stage 2）** 的模块，Stage N.5 Round 1 一律视为"挖一半"，默认必须 Round 2。或者在写作阶段就拆批（比如 Stage 4 应该在 Step D 分 3 批、每批 8 术语分别 review）。
+- **原因**：单轮 review 的认知带宽有限，挖出 4 P0 意味着还没触达问题底。Stage 1.5 Round 2 也曾再挖出 P0-D 残留和 P0-E 新 lesson。大型模块不做 Round 2 就是赌运气。

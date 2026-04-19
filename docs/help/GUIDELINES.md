@@ -138,17 +138,38 @@
 - `terms/gear_profile_shift` —— 变位系数在蜗杆 / 外齿轮 / 内齿轮含义不同
 - `terms/worm_lubrication_mode` —— 蜗杆以滑动速度为主导的润滑判据，与螺纹 / 过盈的干 / 油润滑不是同一套分类
 
-### 8.2 待新写 90 篇（按写作批次优先级）
+### 8.2 Stage 2 bolt VDI 2230 已完工（21 篇）
 
-**Batch 1（P0，bolt 核心族 14 篇）**：覆盖 bolt + bolt_tapped_axial 两个模块 —— `nominal_diameter_d` / `thread_pitch_p` / `pitch_diameter_d2` / `minor_diameter_d3` / `stress_area_as` / `yield_strength_rp02` / `bolt_grade` / `preload_min_fm` / `tightening_factor_alpha_a` / `utilization_nu` / `friction_thread_mu_g` / `friction_bearing_mu_k` / `tightening_method` / `load_intro_factor_n`
+`bolt_thread_nominal` / `bolt_thread_pitch` / `bolt_stress_area` / `bolt_grade` / `bolt_yield_strength` / `bolt_friction_thread` / `bolt_friction_bearing` / `bolt_bearing_pressure_allowable` / `bolt_clamped_solid_model` / `bolt_compliance` / `bolt_tightening_method` / `bolt_tightening_factor_alpha_a` / `bolt_utilization_nu` / `bolt_preload_fm` / `bolt_embed_loss` / `bolt_thermal_loss` / `bolt_axial_load_fa` / `bolt_seal_clamp_force` / `bolt_load_intro_factor` / `bolt_yield_safety` / `bolt_thread_engagement` / `bolt_thread_strip_tau`
 
-**Batch 2（P0，interference + spline 共用 10 篇）**：覆盖 interference_fit + spline smooth 段 —— `interference_delta_min` / `interference_delta_max` / `yield_strength_re` / `stress_safety_ssigma` / `slip_safety_sslip` / `torque_required_treq` / `axial_force_required` / `fit_diameter_d` / `fit_length_l` / `hub_outer_diameter`
+### 8.3 Stage 3 bolt_tapped_axial 已完工（5 篇专属 + 复用 14 篇 Stage 2）
 
-**Batch 3（P1，bolt 长尾 + hertz + spline 齿面 18 篇）**：柔度/刚度族（4）、脱扣族（4）、hertz（5）、spline 齿面（5）
+`bolt_tapped_axial_axial_load_range` / `bolt_tapped_axial_load_cycles` / `bolt_tapped_axial_prevailing_torque` / `bolt_tapped_axial_strip_safety_required` / `bolt_tapped_axial_surface_treatment`
 
-**Batch 4（P2 长尾，共 ~48 篇）**：fretting / 表面状态 / 装配模式 / DIN5480 规格 / P2 优选配合等
+复用自 Stage 2：bolt_thread_nominal / bolt_thread_pitch / bolt_stress_area / bolt_grade / bolt_yield_strength / bolt_friction_thread / bolt_friction_bearing / bolt_preload_fm / bolt_tightening_factor_alpha_a / bolt_tightening_method / bolt_axial_load_fa / bolt_seal_clamp_force / bolt_thread_engagement / bolt_thread_strip_tau
 
-完整字段 → ref 映射表见 `docs/superpowers/reports/2026-04-19-stage1-term-scan.md` §"新写术语主清单"。
+### 8.4 Stage 4 interference DIN 7190 已完工（24 篇）
+
+`interference_application_factor_ka` / `interference_assembly_method` / `interference_contact_pressure` / `interference_delta_max` / `interference_delta_min` / `interference_effective_delta` / `interference_fit_diameter` / `interference_fit_length` / `interference_fretting_risk` / `interference_friction_coefficient` / `interference_hollow_shaft_bore` / `interference_hub_outer_diameter` / `interference_load_condition` / `interference_material_limits` / `interference_roughness` / `interference_slip_safety` / `interference_solid_shaft` / `interference_stress_safety` / `interference_subsidence` / `interference_temperature_assembly` / `interference_torque_required` / `interference_yield_strength` / `interference_axial_force_required` / `interference_radial_force_required` / `interference_bending_moment`（部分可能 ≤24，具体看 terms/ 目录）
+
+### 8.5 Stage 5 hertz 已完工（9 篇 + 复用 2）
+
+`hertz_allowable_pressure` / `hertz_contact_length` / `hertz_contact_mode` / `hertz_contact_width` / `hertz_curvature_radius` / `hertz_equivalent_modulus` / `hertz_normal_force` / `hertz_safety_factor` / `hertz_surface_roughness`
+
+复用：`elastic_modulus` / `poisson_ratio`
+
+### 8.6 Stage 6 spline DIN 5480 已完工（18 篇 + 复用 3）
+
+`spline_allowable_flank_pressure` / `spline_application_factor_ka` / `spline_din5480_spec` / `spline_engagement_length` / `spline_flank_safety` / `spline_geometry_mode` / `spline_k_alpha` / `spline_load_condition` / `spline_mode` / `spline_reference_diameter` / `spline_relief_groove` / `spline_slip_safety` / `spline_smooth_friction` / `spline_smooth_interference` / `spline_smooth_yield_strength` / `spline_stress_safety` / `spline_tip_root_diameter` / `spline_tooth_count`
+
+复用：`module` / `elastic_modulus` / `poisson_ratio`
+
+### 8.7 累计统计
+
+- 术语文件总数：**91 篇**（Stage 1: 14 + Stage 2: 21 + Stage 3: 5 + Stage 4: 24 + Stage 5: 9 + Stage 6: 18）
+- 跨模块共享：3 篇（`module` / `elastic_modulus` / `poisson_ratio`）
+- 模块族前缀锁住：`gear_*` / `worm_*` / `bolt_*` / `bolt_tapped_axial_*` / `interference_*` / `hertz_*` / `spline_*`
+- 完整字段 → ref 映射表见 `docs/superpowers/reports/2026-04-19-stage1-term-scan.md`
 
 ## 9. 内容分级决策树（P0/P1/P2）
 
