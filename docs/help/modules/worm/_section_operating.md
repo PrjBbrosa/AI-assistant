@@ -24,7 +24,7 @@
 - 使用系数 KA（DIN 3990 / 6336 中载荷特性分类表查取）
 - 扭矩波动百分比（峰值相对名义值的浮动范围）
 
-**产出给下一步**（力系分解遵循 Niemann §24 / DIN 3975，坐标约定：蜗杆切向 = 蜗轮轴向）：
+**产出给下一步**（力系分解遵循 Niemann《Maschinenelemente》蜗杆章 / DIN 3975，坐标约定：蜗杆切向 = 蜗轮轴向）：
 - 蜗轮切向力 `Ft2 = 2000·T2 / d2`（N）
 - 蜗杆切向力 / 蜗轮轴向力 `Ft1 = Fa2 = Ft2·tan(γ + φ')`（N；φ' 为当量摩擦角，φ' = atan(μ / cos αn)）
 - 径向力 `Fr = Ft2·tan(αn) / cos γ`（N）
@@ -36,7 +36,7 @@
 ## 参考标准
 
 - DIN 3990-1 / ISO 6336-1 使用系数 KA 载荷特性分类
-- DIN 3975 蜗杆力系几何关系；Niemann "Maschinenelemente" Bd. III §24 力系分解示意
+- DIN 3975 蜗杆力系几何关系；Niemann《Maschinenelemente》Bd. III 蜗杆力系分解示意章节
 - 扭矩波动无专门标准，按现场实测或电机特性曲线估计
 
 > 注：以上公式形式已与本模块 `core/worm/calculator.py` 实现逐行对齐。Cannot verify against original DIN standard —— 原始 DIN 3975/3990 条款尚未逐项比对。

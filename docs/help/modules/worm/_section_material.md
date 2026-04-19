@@ -26,5 +26,5 @@
 
 ## 参考标准
 
-- DIN 3996:2019 附录 A 材料许用应力表
+- DIN 3996:2019（蜗轮材料许用应力参考表相关附录；Cannot verify against original DIN standard）
 - 润滑方式无专门标准，经验做法见模块 README

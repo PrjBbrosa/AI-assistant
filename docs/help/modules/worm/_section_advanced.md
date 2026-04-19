@@ -22,5 +22,5 @@
 
 ## 参考标准
 
-- DIN 3996:2019 附录 B 摩擦系数查表
+- DIN 3996:2019（蜗轮摩擦系数参考表相关附录；Cannot verify against original DIN standard）
 - 法向压力角由齿轮刀具标准规定，一般 ISO 53 / GB 1356

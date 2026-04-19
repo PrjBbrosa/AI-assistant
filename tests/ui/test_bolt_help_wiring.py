@@ -118,10 +118,16 @@ def test_all_chapter_help_refs_point_to_existing_markdown():
         )
 
 
-def test_no_orphan_bolt_term_files():
-    """每个 terms/bolt_*.md 至少要被一个 FieldSpec / CHAPTER 引用；孤岛术语一律视为失败。"""
-    bolt_term_files = sorted(HELP_ROOT.glob("terms/bolt_*.md"))
-    assert bolt_term_files, "期望至少一篇 terms/bolt_*.md 存在"
+def test_no_orphan_bolt_vdi_term_files():
+    """每个 bolt VDI 2230 术语至少要被 bolt_page.py 的 FieldSpec / CHAPTER 引用。
+    注意：`bolt_tapped_axial_*.md` 不在本测试范围内 —— 它们归 bolt_tapped_axial
+    模块管，由 test_bolt_tapped_axial_help_wiring 的孤岛测试保护。"""
+    # 只检查真正属于 VDI 2230 模块的 bolt_* 术语（前缀是 bolt_ 但不是 bolt_tapped_axial_）
+    bolt_vdi_term_files = [
+        p for p in sorted(HELP_ROOT.glob("terms/bolt_*.md"))
+        if not p.name.startswith("bolt_tapped_axial_")
+    ]
+    assert bolt_vdi_term_files, "期望至少一篇 terms/bolt_*.md 存在（非 tapped_axial）"
 
     all_refs: set[str] = set()
     for spec in _all_field_specs():
@@ -132,13 +138,13 @@ def test_no_orphan_bolt_term_files():
             all_refs.add(chapter["help_ref"])
 
     orphans: list[str] = []
-    for md in bolt_term_files:
+    for md in bolt_vdi_term_files:
         ref = f"terms/{md.stem}"
         if ref not in all_refs:
             orphans.append(ref)
 
     assert not orphans, (
-        f"发现孤岛 bolt 术语（写了文章但没有字段指向）：{orphans}\n"
+        f"发现孤岛 bolt VDI 2230 术语（写了文章但没有 bolt_page FieldSpec 指向）：{orphans}\n"
         "请在 bolt_page.py 的对应 FieldSpec 加 help_ref，或删除未用术语。"
     )
 
