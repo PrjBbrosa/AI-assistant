@@ -7,16 +7,16 @@
 由于本模块**无被夹件**，外部轴向力**直接全部进入螺栓**（没有 Φ_N 分流）：
 
 ```
-F_bolt,min = F_preload_max + FA_min       [N]
-F_bolt,max = F_preload_max + FA_max       [N]
+F_bolt,min = F_preload_max + FA_min    [F_preload_max: N, FA_min: N → F_bolt,min: N]
+F_bolt,max = F_preload_max + FA_max    [F_preload_max: N, FA_max: N → F_bolt,max: N]
 ```
 
 从 F_bolt_min/max 进一步推出：
 
 ```
-σ_ax,service_max = F_bolt_max / As                               [F: N, As: mm² → σ: MPa]
-σ_m  = (F_preload_max + 0.5·(FA_min + FA_max)) / As               [MPa]   # 疲劳平均
-σ_a  = (FA_max − FA_min) / (2·As)                                 [MPa]   # 疲劳幅
+σ_ax,service_max = F_bolt_max / As                   [F: N, As: mm² → σ: MPa]
+σ_m  = (F_preload_max + 0.5·(FA_min + FA_max)) / As  [F: N, As: mm² → σ_m: MPa]   # 疲劳平均
+σ_a  = (FA_max − FA_min) / (2·As)                    [F: N, As: mm² → σ_a: MPa]   # 疲劳幅
 ```
 
 （`core/bolt/tapped_axial_joint.py:264-278`）

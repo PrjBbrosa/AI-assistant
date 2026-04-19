@@ -7,7 +7,8 @@
 装配过程的核心不等式：
 
 ```
-F_preload_min  ≤  实际装配预紧力  ≤  F_preload_max = α_A · F_preload_min    [N]
+F_preload_min  ≤  实际装配预紧力  ≤  F_preload_max = α_A · F_preload_min
+                                [F_preload_min: N, α_A: 无量纲 → F_preload_max: N]
 ```
 
 **F_preload_min** 是设计承诺的下限（工艺质保能达到）。**α_A** 是散差系数——反映"同一扭矩目标下，实际预紧力的最大/最小比值"。**F_preload_max** 是装配 von Mises 校核使用的上限值（最坏装配应力在这里）。
@@ -15,9 +16,10 @@ F_preload_min  ≤  实际装配预紧力  ≤  F_preload_max = α_A · F_preloa
 装配扭矩 MA（给扭矩扳手的目标值）由预紧力 + 摩擦系数 + 支承几何推导：
 
 ```
-k_thread  = (d2/2) · tan(lead_angle + friction_angle)             [mm]
-k_bearing = μ_bearing · (d_inner + d_outer) / 4                   [mm]
-MA = F_preload · (k_thread + k_bearing) / 1000 + prevailing_torque    [F: N, k: mm → MA: N·m]
+k_thread  = (d2/2) · tan(lead_angle + friction_angle)   [d2: mm, 角度: rad → k_thread: mm]
+k_bearing = μ_bearing · (d_inner + d_outer) / 4          [μ: 无量纲, d: mm → k_bearing: mm]
+MA = F_preload · (k_thread + k_bearing) / 1000 + prevailing_torque
+                                [F_preload: N, k: mm, prevailing_torque: N·m → MA: N·m]
 ```
 
 其中：
@@ -74,8 +76,8 @@ MA = F_preload · (k_thread + k_bearing) / 1000 + prevailing_torque    [F: N, k:
 利用系数 ν（`assembly.utilization`）决定装配许用应力：
 
 ```
-σ_allow_assembly = ν · Rp0.2     [MPa]
-装配通过条件: σ_vm_assembly ≤ σ_allow_assembly
+σ_allow_assembly = ν · Rp0.2               [ν: 无量纲, Rp0.2: MPa → σ_allow_assembly: MPa]
+装配通过条件: σ_vm_assembly ≤ σ_allow_assembly                         [两侧均 MPa]
 ```
 
 典型值：

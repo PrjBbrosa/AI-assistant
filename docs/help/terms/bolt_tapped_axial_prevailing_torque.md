@@ -63,7 +63,12 @@ MA = F_preload · (k_thread + k_bearing) / 1000 + prevailing_torque    [N·m]
 
 ## 边界检查
 
-`core/bolt/tapped_axial_joint.py:204-205` 用 `_float_or_none` 允许空值和 0；不允许负值（_positive 系统强制），但**也不限制上限**。填了过大值（例如写错单位，把 N·cm 当 N·m）时工具不会报错，但输出的 MA 会显著偏高，应自查。
+`core/bolt/tapped_axial_joint.py:204-205` 用 `_float_or_none` 把空值按 0 处理；**当前实现不做任何符号或上限校验**（没有 `_positive`），负值会被默默接受并**减小** `MA`（与物理意义相反），过大正值也不会报错。
+
+**使用建议**：
+- 正常场景只填 0 或正值（产品手册里防松件的最大松脱扭矩）
+- 如果必须填负值表达特殊工艺意图（比如辅助装配卸扭矩），自己记录下来；工具不会帮你把关
+- 填错单位（N·cm 当 N·m）时 MA 会显著偏高，务必自查
 
 ## 常见误用
 

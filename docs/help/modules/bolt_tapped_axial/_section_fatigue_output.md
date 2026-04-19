@@ -9,19 +9,19 @@
 本工具用 σ_ASV 疲劳极限表 + 寿命修正 + Goodman 折减：
 
 ```
-σ_ASV_base    = interpolate(d, ASV_table)                [MPa]   # 按公称直径查表
-cycle_factor  = (2×10⁶ / N_L) ** 0.08  if N_L < 2×10⁶    # 寿命修正
-              = 1.0                  if N_L ≥ 2×10⁶
-surface_fac   = 0.65 if cut else 1.0                      # 螺纹成形修正
-σ_ASV_eff     = σ_ASV_base · cycle_factor · surface_fac   [MPa]
+σ_ASV_base    = interpolate(d, ASV_table)       [d: mm → σ_ASV_base: MPa]
+cycle_factor  = (2×10⁶ / N_L) ** 0.08  if N_L < 2×10⁶  [N_L: 无量纲 → cycle_factor: 无量纲]
+              = 1.0                    if N_L ≥ 2×10⁶
+surface_fac   = 0.65 if cut else 1.0             [无量纲]
+σ_ASV_eff     = σ_ASV_base · cycle_factor · surface_fac   [MPa · 无量纲 · 无量纲 → MPa]
 
-σ_m           = (F_preload_max + 0.5·(FA_min + FA_max)) / As    [MPa]
-goodman_raw   = 1 − σ_m / (0.9 · Rp0.2)                         [-]
-goodman       = goodman_raw if goodman_raw > 0 else 0           [-]
-σ_a_allow     = σ_ASV_eff · goodman                              [MPa]
+σ_m           = (F_preload_max + 0.5·(FA_min + FA_max)) / As    [F: N, As: mm² → σ_m: MPa]
+goodman_raw   = 1 − σ_m / (0.9 · Rp0.2)                    [σ_m: MPa, Rp0.2: MPa → 无量纲]
+goodman       = goodman_raw if goodman_raw > 0 else 0      [无量纲]
+σ_a_allow     = σ_ASV_eff · goodman                        [MPa · 无量纲 → MPa]
 
-σ_a           = (FA_max − FA_min) / (2 · As)                    [MPa]
-通过条件      = goodman > 0  AND  σ_a ≤ σ_a_allow
+σ_a           = (FA_max − FA_min) / (2 · As)              [F: N, As: mm² → σ_a: MPa]
+通过条件      = goodman > 0  AND  σ_a ≤ σ_a_allow        [两侧均 MPa]
 ```
 
 实现见 `core/bolt/tapped_axial_joint.py:275-286`。
@@ -34,8 +34,8 @@ goodman       = goodman_raw if goodman_raw > 0 else 0           [-]
 ### 服役屈服安全系数
 
 ```
-σ_allow_service = Rp0.2 / yield_safety_operating        [MPa]
-σ_vm_service_max ≤ σ_allow_service                      # 通过条件
+σ_allow_service = Rp0.2 / yield_safety_operating     [Rp0.2: MPa, S: 无量纲 → σ_allow: MPa]
+σ_vm_service_max ≤ σ_allow_service                   [两侧均 MPa]
 ```
 
 - **默认 1.1**：满足 VDI 风格"屈服前保留 10% 余量"
@@ -56,7 +56,7 @@ goodman       = goodman_raw if goodman_raw > 0 else 0           [-]
 如果平均应力 σ_m ≥ 0.9·Rp0.2，Goodman 原始因子 `goodman_raw ≤ 0`：
 
 - 工具取 `goodman_factor = 0`（不设人为下限，`core/bolt/tapped_axial_joint.py:283-284`）
-- σ_a_allow = 0 → **疲劳必 FAIL**（除非 σ_a 也恰为 0）
+- σ_a_allow = 0 → **疲劳一律 FAIL**；代码 `fatigue_ok = (goodman_factor > 0) and (σ_a ≤ σ_a_allow)`，即便 σ_a = 0 也按失败处理
 - 追加 warning：「平均应力已超出 Goodman 折减范围（σ_m >= 0.9·Rp0.2），疲劳许用幅为 0，疲劳不通过。」
 
 **这是主动的工程提醒**：σ_m 接近屈服时，疲劳折减几乎无剩余，应**降低 F_preload、降低 FA 或加大规格**。本工具**不给虚假通过**——即使 goodman_raw 为负也不会钳到小正值。
