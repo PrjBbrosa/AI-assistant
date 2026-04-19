@@ -39,7 +39,60 @@ def _radius_inverse(radius_mm: float, name: str) -> float:
 
 
 def calculate_hertz_contact(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Calculate Hertzian maximum contact pressure and contact patch size."""
+    """Calculate Hertzian maximum contact pressure and contact patch size.
+
+    Parameters
+    ----------
+    data : dict
+        Must contain sub-dicts: ``geometry``, ``materials``, ``loads``, and
+        optionally ``checks`` and ``options``.
+
+    Returns
+    -------
+    dict
+        Top-level keys and their key sub-keys:
+
+        ``mode``
+            ``"line"`` or ``"point"`` (string).
+
+        ``derived``
+            ``e_eq_mpa``, ``r_eq_mm``, ``inv_r1_per_mm``, ``inv_r2_per_mm``.
+
+        ``contact``
+            ``p0_mpa``, ``p_mean_mpa``, ``normal_force_n``,
+            ``contact_area_mm2`` (always present),
+            ``semi_width_mm`` (line contact only; 0.0 for point),
+            ``contact_radius_mm`` (point contact only; 0.0 for line),
+            ``length_mm`` (**line contact only** — key absent for point contact).
+
+        ``check``
+            ``allowable_p0_mpa``, ``safety_factor``.
+
+        ``checks``
+            ``contact_stress_ok`` (bool).
+
+        ``curve``
+            ``force_n``, ``p0_mpa``, ``force_design_n``, ``p0_design_mpa``.
+
+        ``overall_pass``
+            bool — True when ``p0_mpa <= allowable_p0_mpa``.
+
+        ``warnings``
+            list of Chinese warning strings (edge effect, low SF, clamped
+            options).
+
+        ``options``
+            ``curve_points`` and ``curve_force_scale`` **effective** values
+            after clamping (always present regardless of clamping).
+
+        ``inputs_echo``
+            The original ``data`` dict passed in.
+
+    Notes
+    -----
+    ``contact_area_mm2`` lives at ``result["contact"]["contact_area_mm2"]``,
+    **not** at the top level.  UI and report code must use the two-level path.
+    """
     geometry = data.get("geometry", {})
     materials = data.get("materials", {})
     loads = data.get("loads", {})
@@ -69,10 +122,15 @@ def calculate_hertz_contact(data: Dict[str, Any]) -> Dict[str, Any]:
         "checks.allowable_p0_mpa",
     )
 
-    length_mm = _positive(
-        float(geometry.get("length_mm", 10.0)),
-        "geometry.length_mm",
-    )
+    # length_mm 仅线接触需要且必须 >0；点接触时该参数无物理意义，不校验
+    if mode == "line":
+        length_mm: float = _positive(
+            float(geometry.get("length_mm", 10.0)),
+            "geometry.length_mm",
+        )
+    else:
+        # 点接触：忽略 length_mm，不做正值校验，不回填默认值
+        length_mm = 0.0  # 仅用于内部分支占位，不写入结果
 
     semi_width = 0.0
     contact_radius = 0.0
@@ -92,10 +150,10 @@ def calculate_hertz_contact(data: Dict[str, Any]) -> Dict[str, Any]:
     safety_factor = allowable_p0 / p0 if p0 > 0 else math.inf
     pass_contact = p0 <= allowable_p0
 
-    curve_points = int(float(options.get("curve_points", 41)))
-    curve_points = max(11, min(201, curve_points))
-    force_scale = float(options.get("curve_force_scale", 1.30))
-    force_scale = max(1.05, min(2.0, force_scale))
+    _curve_points_raw = int(float(options.get("curve_points", 41)))
+    curve_points = max(11, min(201, _curve_points_raw))
+    _force_scale_raw = float(options.get("curve_force_scale", 1.30))
+    force_scale = max(1.05, min(2.0, _force_scale_raw))
     force_curve: list[float] = []
     pressure_curve: list[float] = []
     for i in range(curve_points):
@@ -116,6 +174,27 @@ def calculate_hertz_contact(data: Dict[str, Any]) -> Dict[str, Any]:
         warnings.append("接触长度较短，建议核查边缘效应和三维修正。")
     if safety_factor < 1.2:
         warnings.append("接触应力安全系数偏低，建议提高材料或优化接触半径/载荷。")
+    # HR-04：钳位后追加 warning，告知实际生效值
+    if curve_points != _curve_points_raw:
+        warnings.append(
+            f"curve_points 已钳位至 {curve_points}（原输入 {_curve_points_raw}）"
+        )
+    if force_scale != _force_scale_raw:
+        warnings.append(
+            f"curve_force_scale 已钳位至 {force_scale:.4g}（原输入 {_force_scale_raw:.4g}）"
+        )
+
+    # HR-03：contact 字典中 length_mm 仅线接触写入
+    contact_dict: Dict[str, Any] = {
+        "semi_width_mm": semi_width,
+        "contact_radius_mm": contact_radius,
+        "p0_mpa": p0,
+        "p_mean_mpa": mean_pressure,
+        "normal_force_n": normal_force,
+        "contact_area_mm2": contact_area_mm2,
+    }
+    if mode == "line":
+        contact_dict["length_mm"] = length_mm
 
     return {
         "inputs_echo": data,
@@ -126,15 +205,7 @@ def calculate_hertz_contact(data: Dict[str, Any]) -> Dict[str, Any]:
             "inv_r1_per_mm": _radius_inverse(r1, "geometry.r1_mm"),
             "inv_r2_per_mm": _radius_inverse(r2, "geometry.r2_mm"),
         },
-        "contact": {
-            "semi_width_mm": semi_width,
-            "contact_radius_mm": contact_radius,
-            "p0_mpa": p0,
-            "p_mean_mpa": mean_pressure,
-            "length_mm": length_mm,
-            "normal_force_n": normal_force,
-            "contact_area_mm2": contact_area_mm2,
-        },
+        "contact": contact_dict,
         "check": {
             "allowable_p0_mpa": allowable_p0,
             "safety_factor": safety_factor,
@@ -150,4 +221,9 @@ def calculate_hertz_contact(data: Dict[str, Any]) -> Dict[str, Any]:
         },
         "overall_pass": pass_contact,
         "warnings": warnings,
+        # HR-04：回显实际生效的 options 值，方便下游追溯
+        "options": {
+            "curve_points": curve_points,
+            "curve_force_scale": force_scale,
+        },
     }

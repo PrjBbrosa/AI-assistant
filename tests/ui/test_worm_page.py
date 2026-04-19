@@ -847,3 +847,101 @@ class WormGearPageWave2ThrottleTests(unittest.TestCase):
             export_btn.isEnabled(),
             "输入变化后导出按钮应失效（disabled）",
         )
+
+
+# ============================================================
+# Load Capacity 章节布局测试（sizePolicy 修复验证）
+# ============================================================
+
+
+class WormLoadCapacityLayoutTests(unittest.TestCase):
+    """验证 Load Capacity 章节中 _lc_params_card 和 badges_card 不被压扁。
+
+    修复方式：用 QScrollArea 包裹 Load Capacity 内容，内容 widget 的高度由其
+    自身 sizeHint 决定，不受外部 viewport 尺寸限制。这样即使窗口只有 600px 高，
+    内容也能完整展示（通过滚动访问）。
+
+    关键验证原则：
+      - ScrollArea 内的 content widget（page）的 sizeHint().height() 必须 > 150px，
+        反映参数卡 + 徽章卡 + 文本框的完整高度。
+      - 在 800x600 的小 viewport 下，参数卡和徽章卡的 sizeHint 各自 > 0。
+      - 四个徽章的 y 坐标在 scroll content 内部应互不相同（按行排列）。
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def _make_page_small_viewport(self) -> "WormGearPage":
+        """用小 viewport (800x600) 创建页面，刻意触发"内容超出 viewport"场景。
+
+        修复前：QVBoxLayout 在小窗口下会压缩子控件以适应高度。
+        修复后：ScrollArea 内的内容不受 viewport 约束，卡片保持完整 sizeHint。
+        """
+        page = WormGearPage()
+        # 刻意用小 viewport，这是修复前会压扁卡片的复现条件
+        page.resize(800, 600)
+        page.show()
+        # 切到 Load Capacity 章节（步骤 6，index 5）
+        page.set_current_chapter(5)
+        self.__class__.app.processEvents()
+        return page
+
+    def test_load_capacity_step_wrapped_in_scroll_area(self) -> None:
+        """Load Capacity 章节应用 QScrollArea 包裹，确保内容超出 viewport 时可滚动。
+
+        在 chapter_stack 的第 5 个 widget 应是 QScrollArea，而不是 QFrame。
+        这是结构性验证，确认 add_chapter() 传入的是 scroll area 而非裸 content widget。
+        """
+        from PySide6.QtWidgets import QScrollArea as _QScrollArea
+
+        page = WormGearPage()
+        # Load Capacity 是第 6 个章节，index=5
+        # 用 chapter_page_at(5) 而非 chapter_stack.widget(5)，避免 Stage 1 起
+        # help_ref 包装后 widget(5) 返回 wrapper 而非原 page。
+        lc_widget = page.chapter_page_at(5)
+        self.assertIsInstance(
+            lc_widget,
+            _QScrollArea,
+            f"Load Capacity 章节（index=5）应为 QScrollArea，实际类型：{type(lc_widget).__name__}。"
+            "若仍为 QFrame，说明 ScrollArea 包裹修复未生效。"
+        )
+
+    def test_lc_params_card_sizehint_is_nonzero_in_small_viewport(self) -> None:
+        """在 800x600 小 viewport 下，_lc_params_card 的 sizeHint 应大于 0。
+
+        修复前：QVBoxLayout 压缩模式下，sizeHint 可能为 0（布局分配 0 高度）。
+        修复后：ScrollArea 不压缩内容，sizeHint 由卡片内容决定（应 > 100px）。
+        """
+        page = self._make_page_small_viewport()
+        card = page._lc_params_card
+        hint_h = card.sizeHint().height()
+        self.assertGreater(
+            hint_h, 100,
+            f"_lc_params_card.sizeHint().height() = {hint_h}，在 800x600 视口下应 > 100px。"
+            "若 ≤ 0，说明 ScrollArea 包裹未生效，卡片仍被压扁。"
+        )
+
+    def test_badges_y_coordinates_are_distinct_in_small_viewport(self) -> None:
+        """在 800x600 小 viewport 下，四个徽章的 y 坐标应互不相同（竖排）。
+
+        修复前：badges_card 被压缩到 0 高度，所有 badge 叠在 y=0 处。
+        修复后：ScrollArea 内不压缩，badge 按正常行间距排列，y 坐标各不同。
+        """
+        page = self._make_page_small_viewport()
+
+        badge_widgets = []
+        for key in ("contact_ok", "root_ok", "geometry_consistent"):
+            _name_label, badge = page._check_badges[key]
+            badge_widgets.append(badge)
+        badge_widgets.append(page._overall_lc_badge)
+
+        # 每个 badge 的 fixedHeight=28，在正常布局下行间距应 >= 28px
+        ys = [w.mapToParent(w.rect().topLeft()).y() for w in badge_widgets]
+        unique_ys = set(ys)
+        self.assertEqual(
+            len(unique_ys),
+            len(badge_widgets),
+            f"四个 badge 的 y 坐标应互不相同（各占一行），实际 y 值：{ys}。"
+            "若全部相同（均为 0），说明 badges_card 仍被纵向压缩。"
+        )

@@ -196,3 +196,104 @@ def test_contact_area_point():
     a = result["contact"]["contact_radius_mm"]
     area = result["contact"]["contact_area_mm2"]
     assert area == pytest.approx(_math.pi * a * a, rel=1e-3)
+
+
+# ---------------------------------------------------------------------------
+# HR-03: point-contact length_mm contract
+# ---------------------------------------------------------------------------
+
+def test_point_mode_length_not_required():
+    """点接触 length_mm 键缺失时不抛 InputError。"""
+    data = _base_point_input()
+    # _base_point_input already omits length_mm — confirm explicitly.
+    data["geometry"].pop("length_mm", None)
+    result = calculate_hertz_contact(data)
+    assert result["contact"]["p0_mpa"] > 0.0
+
+
+def test_point_mode_length_zero_accepted():
+    """点接触 length_mm=0 不抛 InputError（0 在点接触模式下无物理意义，不校验）。"""
+    data = _base_point_input()
+    data["geometry"]["length_mm"] = 0.0
+    result = calculate_hertz_contact(data)
+    assert result["contact"]["p0_mpa"] > 0.0
+
+
+def test_point_mode_result_without_length():
+    """点接触结果中 result['contact'] 不含 length_mm 键。"""
+    data = _base_point_input()
+    result = calculate_hertz_contact(data)
+    assert "length_mm" not in result["contact"]
+
+
+def test_line_mode_length_zero_raises():
+    """线接触 length_mm=0 仍应抛 InputError（HR-03 回归，确保线接触校验未破坏）。"""
+    data = _base_line_input()
+    data["geometry"]["length_mm"] = 0.0
+    with pytest.raises(InputError):
+        calculate_hertz_contact(data)
+
+
+def test_line_mode_length_missing_uses_default_and_passes():
+    """线接触缺省 length_mm 时回填 10.0（默认值），正常计算不抛错。"""
+    data = _base_line_input()
+    data["geometry"].pop("length_mm", None)
+    result = calculate_hertz_contact(data)
+    assert result["contact"]["p0_mpa"] > 0.0
+
+
+def test_line_mode_result_contains_length():
+    """线接触结果 result['contact'] 必须包含 length_mm 键。"""
+    data = _base_line_input()
+    result = calculate_hertz_contact(data)
+    assert "length_mm" in result["contact"]
+    assert result["contact"]["length_mm"] == pytest.approx(data["geometry"]["length_mm"], rel=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# HR-04: options clamping — warning + effective value echo
+# ---------------------------------------------------------------------------
+
+def test_curve_points_clamped_emits_warning():
+    """curve_points=5 (below min 11) => warning containing '钳位', effective value == 11."""
+    data = _base_line_input()
+    data["options"] = {"curve_points": 5}
+    result = calculate_hertz_contact(data)
+    assert result["options"]["curve_points"] == 11
+    assert any("钳位" in w and "curve_points" in w for w in result["warnings"])
+
+
+def test_curve_force_scale_clamped_emits_warning():
+    """curve_force_scale=9.0 (above max 2.0) => warning containing '钳位', effective value == 2.0."""
+    data = _base_line_input()
+    data["options"] = {"curve_force_scale": 9.0}
+    result = calculate_hertz_contact(data)
+    assert result["options"]["curve_force_scale"] == pytest.approx(2.0, rel=1e-9)
+    assert any("钳位" in w and "curve_force_scale" in w for w in result["warnings"])
+
+
+def test_options_in_valid_range_no_clamp_warning():
+    """合法 options 不追加钳位 warning，但 result['options'] 仍回显生效值。"""
+    data = _base_line_input()
+    data["options"] = {"curve_points": 41, "curve_force_scale": 1.3}
+    result = calculate_hertz_contact(data)
+    # No clamping warning.
+    assert not any("钳位" in w for w in result["warnings"])
+    # Effective values echoed back.
+    assert result["options"]["curve_points"] == 41
+    assert result["options"]["curve_force_scale"] == pytest.approx(1.3, rel=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# result structure docstring contract
+# ---------------------------------------------------------------------------
+
+def test_result_structure_top_level_keys():
+    """顶层键集合必须与 docstring 声明的契约一致。"""
+    expected_keys = {
+        "inputs_echo", "mode", "derived", "contact", "check",
+        "checks", "curve", "overall_pass", "warnings", "options",
+    }
+    data = _base_line_input()
+    result = calculate_hertz_contact(data)
+    assert set(result.keys()) == expected_keys
