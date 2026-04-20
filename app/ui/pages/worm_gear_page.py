@@ -731,7 +731,7 @@ class WormGearPage(BaseChapterPage):
             row_val = QLabel("—", row_frame)
             row_val.setObjectName("SectionHint")
             row_val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            row_val.setStyleSheet("color: #3A4F63; font-weight: 600;")
+            row_val.setStyleSheet("color: #4A4135; font-weight: 600;")
             row_h.addWidget(row_name)
             row_h.addStretch(1)
             row_h.addWidget(row_val)
@@ -746,7 +746,15 @@ class WormGearPage(BaseChapterPage):
         layout.addWidget(self.result_metrics)
         layout.addWidget(self._efficiency_subtitle_card)
         layout.addWidget(self._life_card)
-        self.add_chapter("结果与报告", page)
+
+        # 用 QScrollArea 包裹内容，窗口缩小时内容可滚动而非截断
+        scroll = QScrollArea(self)
+        scroll.setWidget(page)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.add_chapter("结果与报告", scroll)
 
     def _read_widget_value(self, spec: FieldSpec) -> str:
         widget = self._field_widgets[spec.field_id]

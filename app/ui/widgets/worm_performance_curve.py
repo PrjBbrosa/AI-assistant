@@ -53,7 +53,7 @@ class WormPerformanceCurveWidget(QWidget):
             painter.drawRoundedRect(panel, 10, 10)
 
             title_rect = QRectF(panel.left() + 18, panel.top() + 12, panel.width() - 36, 22)
-            painter.setPen(QPen(QColor("#2E2A26"), 1.0))
+            painter.setPen(QPen(QColor("#2E2A25"), 1.0))
             painter.setFont(make_ui_font(12, 600))
             painter.drawText(title_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "性能曲线")
 
@@ -66,9 +66,9 @@ class WormPerformanceCurveWidget(QWidget):
             chart_top = panel.top() + 48
             chart_height = (panel.height() - 72) / 3.0
             charts = [
-                (QRectF(panel.left() + 18, chart_top + chart_height * 0, panel.width() - 36, chart_height - 10), self._efficiency, QColor("#C55A11"), "效率 eta"),
-                (QRectF(panel.left() + 18, chart_top + chart_height * 1, panel.width() - 36, chart_height - 10), self._power_loss_kw, QColor("#2563EB"), "损失功率 P_loss"),
-                (QRectF(panel.left() + 18, chart_top + chart_height * 2, panel.width() - 36, chart_height - 10), self._temperature_rise_k, QColor("#2F855A"), "温升 delta_T (K)"),
+                (QRectF(panel.left() + 18, chart_top + chart_height * 0, panel.width() - 36, chart_height - 10), self._efficiency, QColor("#D97757"), "效率 eta"),
+                (QRectF(panel.left() + 18, chart_top + chart_height * 1, panel.width() - 36, chart_height - 10), self._power_loss_kw, QColor("#5A7D9E"), "损失功率 P_loss"),
+                (QRectF(panel.left() + 18, chart_top + chart_height * 2, panel.width() - 36, chart_height - 10), self._temperature_rise_k, QColor("#8A7740"), "温升 delta_T (K)"),
             ]
             for rect, values, color, label in charts:
                 self._draw_chart(painter, rect, values, color, label)
@@ -76,7 +76,7 @@ class WormPerformanceCurveWidget(QWidget):
             painter.end()
 
     def _draw_chart(self, painter: QPainter, rect: QRectF, values: list[float], color: QColor, label: str) -> None:
-        painter.setPen(QPen(QColor("#E7E1D8"), 1.0))
+        painter.setPen(QPen(QColor("#D9D3CA"), 1.0))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(rect, 8, 8)
 
@@ -85,7 +85,7 @@ class WormPerformanceCurveWidget(QWidget):
         painter.drawText(QRectF(rect.left() + 10, rect.top() + 8, 180, 14), Qt.AlignmentFlag.AlignLeft, label)
 
         plot = QRectF(rect.left() + 54, rect.top() + 12, rect.width() - 72, rect.height() - 28)
-        painter.setPen(QPen(QColor("#EFE8DE"), 1.0))
+        painter.setPen(QPen(QColor("#D9D3CA"), 1.0))
         for idx in range(1, 4):
             y = plot.top() + plot.height() * idx / 4.0
             painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y))

@@ -69,7 +69,7 @@ class WormStressCurveWidget(QWidget):
 
         ax1 = self._figure.add_subplot(111)
         ax1.set_facecolor("#FBF8F3")
-        ax1.set_xlabel(r"蜗杆转角 $\theta$ (deg)", fontsize=10)
+        ax1.set_xlabel(r"蜗杆转角 $\theta$ (deg)", fontsize=10, color="#2E2A25")
         ax1.set_ylabel(r"齿面接触应力 $\sigma_H$ (MPa)", color="#D97757", fontsize=10)
         ax1.plot(self._theta_deg, self._sigma_h_mpa, color="#D97757", linewidth=1.8,
                  label=r"$\sigma_H$")
@@ -77,22 +77,30 @@ class WormStressCurveWidget(QWidget):
             ax1.axhline(self._sigma_h_nominal, color="#D97757", linestyle="--",
                         linewidth=0.8, alpha=0.6)
         ax1.tick_params(axis="y", labelcolor="#D97757")
+        ax1.tick_params(axis="x", colors="#2E2A25")
+        for spine in ax1.spines.values():
+            spine.set_edgecolor("#D9D3CA")
+        ax1.grid(color="#D9D3CA", linewidth=0.5, alpha=0.4)
 
         ax2 = ax1.twinx()
-        ax2.set_ylabel(r"齿根弯曲应力 $\sigma_F$ (MPa)", color="#2563EB", fontsize=10)
-        ax2.plot(self._theta_deg, self._sigma_f_mpa, color="#2563EB", linewidth=1.8,
+        ax2.set_facecolor("#FBF8F3")
+        ax2.set_ylabel(r"齿根弯曲应力 $\sigma_F$ (MPa)", color="#5A7D9E", fontsize=10)
+        ax2.plot(self._theta_deg, self._sigma_f_mpa, color="#5A7D9E", linewidth=1.8,
                  label=r"$\sigma_F$")
         if self._sigma_f_nominal > 0:
-            ax2.axhline(self._sigma_f_nominal, color="#2563EB", linestyle="--",
+            ax2.axhline(self._sigma_f_nominal, color="#5A7D9E", linestyle="--",
                         linewidth=0.8, alpha=0.6)
-        ax2.tick_params(axis="y", labelcolor="#2563EB")
+        ax2.tick_params(axis="y", labelcolor="#5A7D9E")
+        for spine in ax2.spines.values():
+            spine.set_edgecolor("#D9D3CA")
 
         lines1, labels1 = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
-        ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper right", fontsize=9)
+        ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper right", fontsize=9,
+                   facecolor="#FBF8F3", edgecolor="#D9D3CA", labelcolor="#2E2A25")
 
         ax1.set_xlim(0, 360)
         ax1.set_title("一个蜗杆旋转周期内啮合应力变化", fontsize=12, fontweight="bold",
-                       color="#2E2A26")
+                       color="#2E2A25")
         self._figure.tight_layout()
         self._canvas.draw()
