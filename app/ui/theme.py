@@ -34,6 +34,10 @@ def apply_theme(app: QApplication) -> None:
             font-size: 12px;
             background: transparent;
         }
+        QLabel#SidebarBrandMark {
+            background: transparent;
+            padding: 6px 0 4px 0;
+        }
         QListWidget#ModuleList {
             border: none;
             background: transparent;
