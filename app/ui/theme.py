@@ -2,13 +2,87 @@
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFontMetrics
+from PySide6.QtWidgets import QApplication, QComboBox
 
 from app.ui.fonts import UI_FONT_FAMILY_CSS
 
 
+_COMBOBOX_POLISH_INSTALLED = False
+
+
+def _install_combobox_popup_polish() -> None:
+    """Make every QComboBox popup a rounded, frameless, content-sized panel.
+
+    macOS (and Windows to a lesser degree) wraps the combo popup in a
+    top-level window (``QComboBoxPrivateContainer``) whose native chrome
+    ignores the Qt stylesheet ``border-radius``. The popup therefore
+    renders as a sharp rectangle even though the styled QFrame inside has
+    rounded corners. We fix this globally by flipping that container into
+    frameless + translucent mode on first show — the QSS-painted frame
+    inside becomes the only visible surface, with rounded corners.
+
+    We also sidestep Qt's habit of clipping the combobox's own text area
+    instead of widening the popup: on each show, set the view's minimum
+    width to fit the longest item plus padding.
+    """
+    global _COMBOBOX_POLISH_INSTALLED
+    if _COMBOBOX_POLISH_INSTALLED:
+        return
+
+    # Size the combobox body to its contents so long options like "圆柱体"
+    # don't get clipped to "圆柱" inside a narrow grid column.
+    original_init = QComboBox.__init__
+
+    def patched_init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        original_init(self, *args, **kwargs)
+        self.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+
+    QComboBox.__init__ = patched_init
+
+    original_show = QComboBox.showPopup
+
+    def _polish_container(combo: QComboBox) -> None:
+        view = combo.view()
+        if view is None:
+            return
+        container = view.window()
+        if container is None or container is combo.window():
+            return
+        if container.property("themePolishApplied"):
+            return
+        container.setWindowFlag(Qt.FramelessWindowHint, True)
+        container.setWindowFlag(Qt.NoDropShadowWindowHint, True)
+        container.setAttribute(Qt.WA_TranslucentBackground, True)
+        container.setProperty("themePolishApplied", True)
+
+    def _widen_view(combo: QComboBox) -> None:
+        view = combo.view()
+        if view is None or combo.count() == 0:
+            return
+        metrics: QFontMetrics = view.fontMetrics()
+        longest = max(
+            metrics.horizontalAdvance(combo.itemText(i)) for i in range(combo.count())
+        )
+        # padding (item 10px each side) + checkmark column + margin
+        view.setMinimumWidth(max(combo.width(), longest + 56))
+
+    def showPopup(self: QComboBox) -> None:  # noqa: N802 - matches Qt API
+        # Apply window flags BEFORE the container becomes visible so the
+        # first show already paints with a frameless + translucent chrome
+        # (otherwise Qt has to hide/re-show on flag change → visible flash).
+        _polish_container(self)
+        original_show(self)
+        _widen_view(self)
+
+    QComboBox.showPopup = showPopup
+    _COMBOBOX_POLISH_INSTALLED = True
+
+
 def apply_theme(app: QApplication) -> None:
     """Apply app-wide style sheet."""
+    _install_combobox_popup_polish()
     style_sheet = """
         QWidget {
             background-color: #F7F5F2;
