@@ -51,7 +51,7 @@ tests/                 # pytest 测试
 2. **每模块一个 calculator**: `core/<module>/calculator.py` 包含 `InputError` 异常类、`_require`/`_positive` 验证辅助函数、主计算函数。
 3. **UI 页面模式**: 每个模块页面在 `app/ui/pages/` 下，使用 `FieldSpec` 数据类描述字段元信息（id、label、unit、hint、mapping、widget_type、default）。`mapping` 为 `(section, key)` 元组时，该字段参与计算 payload 构建；为 `None` 时仅用于 UI 记录或占位。
 4. **暖色调主题**: 全局 QSS 在 `theme.py`，使用 `#F7F5F2` 背景 / `#D97757` 主色 / `#EED9CF` 选中色。ObjectName 驱动样式（Card、SubCard、PassBadge、FailBadge 等）。
-5. **自动填充字段蓝色标识**: 凡由下拉联动、查表、材料选择等逻辑自动填充的输入字段，必须使用 `AutoCalcCard` 样式（蓝灰色背景 `#EDF1F5`，蓝灰文字 `#3A4F63`），与手动输入的 `SubCard` 区分。所有模块（螺栓、过盈、花键等）保持一致。通过 `card.setObjectName("AutoCalcCard")` + `style().unpolish/polish` 切换样式，`QLineEdit` 设为 `setReadOnly(True)`，`QComboBox` 设为 `setEnabled(False)`。
+5. **自动填充字段暖灰标识**: 凡由下拉联动、查表、材料选择等逻辑自动填充的输入字段，必须使用 `AutoCalcCard` 样式（暖灰背景 `#ECE8DF`，warm ink `#4A4135`，辅助 `#6B5D4A`，边框 `#C9BFB0`），与手动输入的 `SubCard` 区分。所有模块（螺栓、过盈、花键等）保持一致。通过 `card.setObjectName("AutoCalcCard")` + `style().unpolish/polish` 切换样式，`QLineEdit` 设为 `setReadOnly(True)`，`QComboBox` 设为 `setEnabled(False)`。
 6. **输入条件持久化**: 通过 `input_condition_store.py` 统一保存/加载 JSON 文件到 `saved_inputs/` 目录。
 
 ## Claude 工作流程
@@ -119,3 +119,11 @@ python3 src/vdi2230_tool.py --input examples/input_case_01.json
 - **测试目录需 `__init__.py`**: `tests/` 下每个子目录必须有 `__init__.py`，否则 pytest 会因同名模块冲突报 import 错误。
 - **并行 Agent 避免编辑同一文件**: 多 Agent 并行时，分配不同文件范围，避免同时写入同一文件导致冲突。
 - **清除 pycache**: 测试 import 异常时先 `find . -name __pycache__ -exec rm -rf {} +`。
+
+## 跨平台 UI 约定
+- **OS 级对话框保留原生**：`QFileDialog`、`QFontDialog`、`QColorDialog` 不强制 Qt 自绘。
+  理由：原生对话框的 Finder / Explorer 侧栏、最近访问、iCloud / OneDrive、系统快捷键
+  （Mac `Cmd+Shift+G`、Win `Ctrl+L`）等集成，主题一致性收益远小于用户体验损失。
+  因此 `QFileDialog(...).exec()` 调用**不要**加 `DontUseNativeDialog`，且不必对 QFileDialog/子控件写 QSS。
+  该取舍经 2026-04-21 Codex review 讨论后正式记录。
+- **应用内对话框（如设置、导出选项）** 走 Qt 自绘并继承 `theme.py`，保持暖中性风格。

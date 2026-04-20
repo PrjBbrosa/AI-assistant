@@ -196,39 +196,39 @@ def apply_theme(app: QApplication) -> None:
             background-color: #FBF3EE;
         }
         QFrame#AutoCalcCard {
-            background-color: #EDF1F5;
-            border: 1px solid #C4CDD6;
+            background-color: #ECE8DF;
+            border: 1px solid #C9BFB0;
             border-radius: 10px;
         }
         QFrame#AutoCalcCard QLabel#SubSectionTitle {
-            color: #5A6E82;
+            color: #4A4135;
         }
         QFrame#AutoCalcCard QLineEdit#InputField {
-            background-color: #E5EBF2;
-            color: #3A4F63;
-            border: 1px solid #C4CDD6;
+            background-color: #E4DFD5;
+            color: #4A4135;
+            border: 1px solid #C9BFB0;
         }
         QFrame#AutoCalcCard QLabel#UnitLabel {
-            color: #6B7D8E;
+            color: #6B5D4A;
         }
         QFrame#AutoCalcCard QLabel#SectionHint {
-            color: #6B7D8E;
+            color: #6B5D4A;
         }
         QFrame#AutoCalcCard QComboBox {
-            background-color: #E5EBF2;
-            color: #3A4F63;
-            border: 1px solid #C4CDD6;
+            background-color: #E4DFD5;
+            color: #4A4135;
+            border: 1px solid #C9BFB0;
         }
         QFrame#ProcessNode {
-            background-color: #EDF1F5;
-            border: 1px solid #C4CDD6;
-            border-left: 3px solid #7E9AB8;
+            background-color: #F1EAE0;
+            border: 1px solid #D9D3CA;
+            border-left: 3px solid #8A7740;
             border-radius: 8px;
         }
         QFrame#ProcessNode[selected="true"] {
-            border: 2px solid #7E9AB8;
-            border-left: 3px solid #5A7D9E;
-            background-color: #E5EBF2;
+            border: 2px solid #8A7740;
+            border-left: 3px solid #6E5F33;
+            background-color: #EBE3D6;
         }
         QFrame#CheckNode {
             background-color: #FBF7F2;
@@ -382,6 +382,14 @@ def apply_theme(app: QApplication) -> None:
             padding: 8px;
             selection-background-color: #EED9CF;
             selection-color: #1F1D1A;
+        }
+        QPlainTextEdit:focus, QTextEdit:focus {
+            border: 1px solid #D97757;
+        }
+        QPlainTextEdit:disabled, QTextEdit:disabled {
+            background-color: #F0EDE8;
+            color: #9B9590;
+            border-color: #E3D8C8;
         }
         QPushButton {
             background-color: #EADFD1;
@@ -731,6 +739,17 @@ def apply_theme(app: QApplication) -> None:
             background: #EED9CF;
             color: #D97757;
         }
+        QToolButton#HelpButton:pressed {
+            background: #D97757;
+            color: #FFF9F5;
+        }
+        QToolButton#HelpButton:focus {
+            border: 1px solid #D97757;
+        }
+        QToolButton#HelpButton:disabled {
+            background: #F0EDE8;
+            color: #C5BFB5;
+        }
         /* ===== HelpPopover ===== */
         QFrame#HelpPopoverRoot {
             background: #FFFFFF;
@@ -779,6 +798,12 @@ def apply_theme(app: QApplication) -> None:
         QToolButton#HelpPopoverIconBtn:hover {
             background: #F0ECE4;
             color: #2F2E2C;
+        }
+        QToolButton#HelpPopoverIconBtn:pressed {
+            background: #EED9CF;
+        }
+        QToolButton#HelpPopoverIconBtn:focus {
+            background: #F0ECE4;
         }
         QToolButton#HelpPopoverIconBtn[pinned="true"] {
             background: #FAF1EC;

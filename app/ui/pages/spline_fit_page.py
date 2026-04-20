@@ -529,6 +529,7 @@ class SplineFitPage(BaseChapterPage):
             label_layout.setContentsMargins(0, 0, 0, 0)
             label_layout.setSpacing(4)
             label_text_widget = QLabel(label_text)
+            label_text_widget.setObjectName("SubSectionTitle")
             label_layout.addWidget(label_text_widget)
             label_layout.addWidget(
                 HelpButton(spec.help_ref, parent=label_wrap),
@@ -539,6 +540,7 @@ class SplineFitPage(BaseChapterPage):
             grid.addWidget(label_wrap, 0, 0)
         else:
             label = QLabel(label_text)
+            label.setObjectName("SubSectionTitle")
             grid.addWidget(label, 0, 0)
 
         if spec.widget_type == "choice":
@@ -589,6 +591,7 @@ class SplineFitPage(BaseChapterPage):
             badge.setObjectName("WaitBadge")
             card_layout.addWidget(badge)
             detail = QLabel("")
+            detail.setObjectName("SectionHint")
             detail.setWordWrap(True)
             card_layout.addWidget(detail)
             self._result_labels[f"{scenario}_badge"] = badge
