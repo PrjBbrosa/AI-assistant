@@ -422,8 +422,8 @@ class SplineFitPage(BaseChapterPage):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(
-            "花键连接校核",
-            "花键齿面承压（简化预校核）+ 可选光滑段圆柱过盈复核 (DIN 7190)",
+            "花键连接 · DIN 5480",
+            "花键齿面承压预校核 + 可选光滑段圆柱过盈复核。",
             parent,
         )
 

@@ -196,8 +196,8 @@ class BoltTappedAxialPage(BaseChapterPage):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(
-            title="轴向受力螺纹连接",
-            subtitle="用于螺栓拧入螺纹对手件、无被夹件、纯轴向拉载荷场景的输入骨架。",
+            title="轴向受力螺纹连接 · ISO 898 / VDI",
+            subtitle="螺栓拧入螺纹对手件、无被夹件、纯轴向拉载荷场景。",
             parent=parent,
         )
         self._field_widgets: dict[str, QWidget] = {}

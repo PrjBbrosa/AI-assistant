@@ -230,8 +230,8 @@ class WormGearPage(BaseChapterPage):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(
-            title="蜗轮和蜗杆 · DIN 3975",
-            subtitle="实现 DIN 3975 几何、基础性能和 Method B 风格最小负载能力子集。",
+            title="蜗轮蜗杆 · DIN 3975",
+            subtitle="几何、基础性能和 Method B 最小负载能力子集。",
             parent=parent,
         )
         self._field_widgets: dict[str, QWidget] = {}

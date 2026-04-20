@@ -953,7 +953,7 @@ class BoltPage(QWidget):
         header_layout.setSpacing(2)
         title = QLabel("螺栓连接 · VDI 2230", header)
         title.setObjectName("SectionTitle")
-        hint = QLabel("输入参数后执行校核。", header)
+        hint = QLabel("预紧螺栓连接的预紧力、工作载荷、疲劳与滑移校核。", header)
         hint.setObjectName("SectionHint")
         hint.setWordWrap(True)
         header_layout.addWidget(title)

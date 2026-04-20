@@ -63,7 +63,7 @@ class BaseChapterPage(QWidget):
 
         nav_card = QFrame(self)
         nav_card.setObjectName("Card")
-        nav_card.setMinimumWidth(140)
+        nav_card.setMinimumWidth(220)
         nav_layout = QVBoxLayout(nav_card)
         nav_layout.setContentsMargins(12, 12, 12, 12)
         nav_layout.setSpacing(8)
@@ -79,7 +79,7 @@ class BaseChapterPage(QWidget):
 
         self.chapter_stack = QStackedWidget(self)
         content_splitter.addWidget(self.chapter_stack)
-        content_splitter.setSizes([198, 1000])
+        content_splitter.setSizes([240, 960])
         content_splitter.setStretchFactor(0, 0)
         content_splitter.setStretchFactor(1, 1)
 

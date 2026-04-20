@@ -102,13 +102,7 @@ class MainWindow(QMainWindow):
         self.module_list.setObjectName("ModuleList")
         self.module_list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-        helper = QLabel("左侧保留模块入口，当前已实现”螺栓连接””过盈配合””赫兹应力””蜗轮蜗杆设计”。", sidebar)
-        helper.setObjectName("BrandSubtitle")
-        helper.setWordWrap(True)
-        helper.setAlignment(Qt.AlignmentFlag.AlignTop)
-
         layout.addWidget(brand)
         layout.addWidget(subtitle)
         layout.addWidget(self.module_list, 1)
-        layout.addWidget(helper)
         return sidebar

@@ -255,7 +255,7 @@ class HertzContactPage(BaseChapterPage):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(
             title="赫兹应力 · 接触校核",
-            subtitle="替代轴承占位模块，支持线接触/点接触的赫兹最大接触应力计算。",
+            subtitle="线接触/点接触的赫兹最大接触应力计算。",
             parent=parent,
         )
         self._last_payload: dict[str, Any] | None = None
