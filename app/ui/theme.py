@@ -27,10 +27,16 @@ def apply_theme(app: QApplication) -> None:
             font-size: 18px;
             font-weight: 700;
             color: #1F1D1A;
+            background: transparent;
         }
         QLabel#BrandSubtitle {
             color: #6B665E;
             font-size: 12px;
+            background: transparent;
+        }
+        QLabel#SidebarBrandMark {
+            background: transparent;
+            padding: 6px 0 4px 0;
         }
         QListWidget#ModuleList {
             border: none;
@@ -190,15 +196,18 @@ def apply_theme(app: QApplication) -> None:
             font-size: 16px;
             font-weight: 700;
             color: #1F1D1A;
+            background: transparent;
         }
         QLabel#SubSectionTitle {
             font-size: 13px;
             font-weight: 700;
             color: #2E2A25;
+            background: transparent;
         }
         QLabel#SectionHint {
             color: #6B665E;
             font-size: 12px;
+            background: transparent;
         }
         QLabel#WarningTitle {
             color: #7F2D1A;

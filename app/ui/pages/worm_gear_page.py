@@ -230,8 +230,8 @@ class WormGearPage(BaseChapterPage):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(
-            title="蜗轮和蜗杆 · DIN 3975",
-            subtitle="实现 DIN 3975 几何、基础性能和 Method B 风格最小负载能力子集。",
+            title="蜗轮蜗杆 · DIN 3975",
+            subtitle="几何、基础性能和 Method B 最小负载能力子集。",
             parent=parent,
         )
         self._field_widgets: dict[str, QWidget] = {}
@@ -256,7 +256,7 @@ class WormGearPage(BaseChapterPage):
 
         self.btn_save_inputs = self.add_action_button("保存输入条件")
         self.btn_load_inputs = self.add_action_button("加载输入条件")
-        self.btn_calculate = self.add_action_button("执行计算", primary=True)
+        self.btn_calculate = self.add_action_button("执行校核", primary=True)
         self.btn_clear = self.add_action_button("清空参数")
         self.btn_save = self.add_action_button("导出结果说明")
         self.btn_load_1 = self.add_action_button("测试案例 1", side="right")

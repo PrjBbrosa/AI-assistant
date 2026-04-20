@@ -422,8 +422,8 @@ class SplineFitPage(BaseChapterPage):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(
-            "花键连接校核",
-            "花键齿面承压（简化预校核）+ 可选光滑段圆柱过盈复核 (DIN 7190)",
+            "花键连接 · DIN 5480",
+            "花键齿面承压预校核 + 可选光滑段圆柱过盈复核。",
             parent,
         )
 
@@ -441,9 +441,9 @@ class SplineFitPage(BaseChapterPage):
 
         self.btn_save_inputs = self.add_action_button("保存输入条件")
         self.btn_load_inputs = self.add_action_button("加载输入条件")
-        self.btn_calculate = self.add_action_button("计算", primary=True)
+        self.btn_calculate = self.add_action_button("执行校核", primary=True)
         self.btn_clear = self.add_action_button("清空参数")
-        self.btn_save = self.add_action_button("导出报告")
+        self.btn_save = self.add_action_button("导出结果说明")
         self.btn_load_1 = self.add_action_button("测试案例 1", side="right")
         self.btn_load_2 = self.add_action_button("测试案例 2", side="right")
 

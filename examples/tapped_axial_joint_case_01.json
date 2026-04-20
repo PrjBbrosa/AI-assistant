@@ -1,38 +1,39 @@
 {
+  "_comment": "M8 x 1.25, grade 8.8 — light-duty tapped steel-to-steel joint. Values from ISO 898-1 (Rp0.2 min 640 MPa for 8.8, d<=16), ISO 724 (thread geometry), VDI 2230-1:2015 Table A4 (sigma_ASV=47 MPa at d=8, rolled) and VDI 2230-1 recommended mu_G=mu_K=0.12, alpha_A=1.6 for torque wrench.",
   "fastener": {
     "d": 8.0,
     "p": 1.25,
+    "As": 36.6,
     "d2": 7.188,
     "d3": 6.466,
-    "As": 36.6,
     "Rp02": 640.0,
     "E_bolt": 210000.0,
     "grade": "8.8"
   },
   "assembly": {
-    "F_preload_min": 7000.0,
-    "alpha_A": 1.4,
+    "F_preload_min": 8000.0,
+    "alpha_A": 1.6,
     "mu_thread": 0.12,
     "mu_bearing": 0.14,
     "bearing_d_inner": 9.0,
-    "bearing_d_outer": 16.0,
+    "bearing_d_outer": 13.0,
     "prevailing_torque": 0.0,
     "thread_flank_angle_deg": 60.0,
     "tightening_method": "torque",
     "utilization": 0.9
   },
   "service": {
-    "FA_min": 1000.0,
-    "FA_max": 4500.0
+    "FA_min": 200.0,
+    "FA_max": 1200.0
   },
   "fatigue": {
     "load_cycles": 2000000.0,
     "surface_treatment": "rolled"
   },
   "thread_strip": {
-    "m_eff": 8.0,
-    "tau_BM": 350.0,
-    "tau_BS": 400.0,
+    "m_eff": 10.0,
+    "tau_BM": 400.0,
+    "tau_BS": 480.0,
     "safety_required": 1.5
   },
   "checks": {

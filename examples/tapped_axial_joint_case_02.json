@@ -1,44 +1,45 @@
 {
+  "_comment": "M16 x 2.0, grade 10.9 — heavy-duty tapped steel joint. Values per ISO 898-1 (Rp0.2 min 940 MPa for 10.9), ISO 724 (thread), VDI 2230-1:2015 Table A4 (sigma_ASV=38 MPa at d=16, rolled) and recommended mu_G=mu_K=0.12, alpha_A=1.6. Housing taken as quenched-tempered steel (e.g. C45), tau_BM ~ 0.6*Rm_housing.",
   "fastener": {
-    "d": 10.0,
-    "p": 1.5,
-    "d2": 9.026,
-    "d3": 8.160,
-    "As": 58.0,
-    "Rp02": 640.0,
+    "d": 16.0,
+    "p": 2.0,
+    "As": 156.67,
+    "d2": 14.701,
+    "d3": 13.546,
+    "Rp02": 940.0,
     "E_bolt": 210000.0,
-    "grade": "8.8"
+    "grade": "10.9"
   },
   "assembly": {
-    "F_preload_min": 12000.0,
+    "F_preload_min": 50000.0,
     "alpha_A": 1.6,
-    "mu_thread": 0.11,
-    "mu_bearing": 0.13,
-    "bearing_d_inner": 11.0,
-    "bearing_d_outer": 18.0,
+    "mu_thread": 0.12,
+    "mu_bearing": 0.14,
+    "bearing_d_inner": 17.0,
+    "bearing_d_outer": 24.0,
     "prevailing_torque": 0.0,
     "thread_flank_angle_deg": 60.0,
     "tightening_method": "torque",
-    "utilization": 0.95
+    "utilization": 0.9
   },
   "service": {
-    "FA_min": 2000.0,
-    "FA_max": 20000.0
+    "FA_min": 5000.0,
+    "FA_max": 9000.0
   },
   "fatigue": {
-    "load_cycles": 5000000.0,
-    "surface_treatment": "cut"
+    "load_cycles": 2000000.0,
+    "surface_treatment": "rolled"
   },
   "thread_strip": {
-    "m_eff": 1.5,
-    "tau_BM": 220.0,
-    "tau_BS": 240.0,
-    "safety_required": 2.0
+    "m_eff": 16.0,
+    "tau_BM": 420.0,
+    "tau_BS": 624.0,
+    "safety_required": 1.5
   },
   "checks": {
-    "yield_safety_operating": 1.2
+    "yield_safety_operating": 1.1
   },
   "options": {
-    "report_mode": "compact"
+    "report_mode": "full"
   }
 }

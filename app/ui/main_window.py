@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.icons import brand_mark_pixmap
 from app.ui.pages.bolt_page import BoltPage
 from app.ui.pages.bolt_tapped_axial_page import BoltTappedAxialPage
 from app.ui.pages.hertz_contact_page import HertzContactPage
@@ -102,13 +103,15 @@ class MainWindow(QMainWindow):
         self.module_list.setObjectName("ModuleList")
         self.module_list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-        helper = QLabel("左侧保留模块入口，当前已实现”螺栓连接””过盈配合””赫兹应力””蜗轮蜗杆设计”。", sidebar)
-        helper.setObjectName("BrandSubtitle")
-        helper.setWordWrap(True)
-        helper.setAlignment(Qt.AlignmentFlag.AlignTop)
+        brand_mark = QLabel(sidebar)
+        brand_mark.setObjectName("SidebarBrandMark")
+        pixmap = brand_mark_pixmap(180)
+        if not pixmap.isNull():
+            brand_mark.setPixmap(pixmap)
+        brand_mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         layout.addWidget(brand)
         layout.addWidget(subtitle)
         layout.addWidget(self.module_list, 1)
-        layout.addWidget(helper)
+        layout.addWidget(brand_mark)
         return sidebar

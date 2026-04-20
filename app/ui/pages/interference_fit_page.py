@@ -753,8 +753,8 @@ class InterferenceFitPage(BaseChapterPage):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(
-            title="过盈配合 · 圆柱面校核",
-            subtitle="DIN 7190 核心增强版：实心轴/空心轴 + 厚壁轮毂，覆盖防滑、张口缝与应力校核。",
+            title="过盈配合 · DIN 7190",
+            subtitle="实心/空心轴 + 厚壁轮毂的防滑、张口缝与应力校核。",
             parent=parent,
         )
         self._last_payload: dict[str, Any] | None = None
