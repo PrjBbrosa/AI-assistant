@@ -51,6 +51,41 @@ EXPECTED_FIELD_HELP_REFS = {
     "thread_strip.m_eff": "terms/bolt_thread_engagement",
     "thread_strip.tau_BM": "terms/bolt_thread_strip_tau",
     "thread_strip.tau_BS": "terms/bolt_thread_strip_tau",
+    # A-class: reuse existing md (2026-04-19)
+    "fastener.d2": "terms/bolt_stress_area",
+    "fastener.d3": "terms/bolt_stress_area",
+    "bearing.bearing_d_inner": "terms/bolt_bearing_pressure_allowable",
+    "bearing.bearing_d_outer": "terms/bolt_bearing_pressure_allowable",
+    "clamped.surface_class": "terms/bolt_embed_loss",
+    "loads.FQ_max": "terms/bolt_axial_load_fa",
+    "operating.alpha_bolt": "terms/bolt_thermal_loss",
+    "operating.alpha_parts": "terms/bolt_thermal_loss",
+    "operating.temp_bolt": "terms/bolt_thermal_loss",
+    "operating.temp_parts": "terms/bolt_thermal_loss",
+    "introduction.position": "terms/bolt_load_intro_factor",
+    # B-class batch 1: connection geometry (2026-04-19)
+    "elements.joint_type": "terms/bolt_joint_type",
+    "clamped.basic_solid": "terms/bolt_clamped_solid_type",
+    "clamped.part_count": "terms/bolt_clamped_part_count",
+    "clamped.custom_count": "terms/bolt_custom_part_count",
+    "clamped.total_thickness": "terms/bolt_clamp_length_lk",
+    "clamped.D_A": "terms/bolt_equivalent_outer_da",
+    # B-class batch 3: materials (2026-04-19)
+    "bearing.bearing_material": "terms/bolt_bearing_material",
+    "options.surface_treatment": "terms/bolt_surface_treatment",
+    "operating.bolt_material": "terms/bolt_bolt_material",
+    "operating.clamped_material": "terms/bolt_clamped_material",
+    # B-class batch 4: transverse & eccentric (2026-04-19)
+    "loads.friction_interfaces": "terms/bolt_friction_interfaces",
+    "loads.slip_friction_coefficient": "terms/bolt_slip_friction_coefficient",
+    "introduction.eccentric_clamp": "terms/bolt_eccentric_clamp",
+    "introduction.eccentric_load": "terms/bolt_eccentric_load",
+    # B-class batch 5: tightening & operating (2026-04-19)
+    "tightening.thread_flank_angle_deg": "terms/bolt_thread_flank_angle",
+    "tightening.prevailing_torque": "terms/bolt_prevailing_torque",
+    "operating.setup_case": "terms/bolt_setup_case",
+    "operating.load_cycles": "terms/bolt_load_cycles",
+    "thread_strip.safety_required": "terms/bolt_strip_safety_required",
 }
 
 EXPECTED_CHAPTER_HELP_REFS = {

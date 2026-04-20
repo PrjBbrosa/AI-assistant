@@ -142,6 +142,7 @@ def _make_layer_fields(n: int) -> list[FieldSpec]:
             f"第{n}层被夹件厚度。",
             mapping=None,
             default="15",
+            help_ref="terms/bolt_layer_thickness",
         ),
         FieldSpec(
             f"clamped.layer_{n}.D_A",
@@ -150,6 +151,7 @@ def _make_layer_fields(n: int) -> list[FieldSpec]:
             f"第{n}层被夹件外径。",
             mapping=None,
             default="24",
+            help_ref="terms/bolt_layer_outer_da",
         ),
         FieldSpec(
             f"clamped.layer_{n}.E",
@@ -158,6 +160,7 @@ def _make_layer_fields(n: int) -> list[FieldSpec]:
             f"第{n}层被夹件弹性模量。钢 210000 / 铝 70000。",
             mapping=None,
             default="210000",
+            help_ref="terms/elastic_modulus",
         ),
         FieldSpec(
             f"clamped.layer_{n}.material",
@@ -168,6 +171,7 @@ def _make_layer_fields(n: int) -> list[FieldSpec]:
             widget_type="choice",
             options=("钢", "铝合金", "铸铁", "不锈钢", "自定义"),
             default="钢",
+            help_ref="terms/bolt_layer_material",
         ),
         FieldSpec(
             f"clamped.layer_{n}.alpha",
@@ -176,6 +180,7 @@ def _make_layer_fields(n: int) -> list[FieldSpec]:
             f"第{n}层热膨胀系数。由材料选择自动填入。",
             mapping=None,
             default="11.5e-6",
+            help_ref="terms/bolt_thermal_loss",
         ),
     ]
 
@@ -202,6 +207,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("螺纹孔连接", "通孔螺栓连接"),
                 default="螺纹孔连接",
+                help_ref="terms/bolt_joint_type",
             ),
             FieldSpec(
                 "fastener.d",
@@ -247,6 +253,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "mm",
                 "由所选规格自动填入。自定义模式可手动输入。",
                 mapping=("fastener", "d2"),
+                help_ref="terms/bolt_stress_area",
             ),
             FieldSpec(
                 "fastener.d3",
@@ -254,6 +261,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "mm",
                 "由所选规格自动填入。自定义模式可手动输入。",
                 mapping=("fastener", "d3"),
+                help_ref="terms/bolt_stress_area",
             ),
             FieldSpec(
                 "fastener.As",
@@ -308,6 +316,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "公制螺纹常用 60°。",
                 mapping=("tightening", "thread_flank_angle_deg"),
                 default="60",
+                help_ref="terms/bolt_thread_flank_angle",
             ),
             FieldSpec(
                 "bearing.bearing_d_inner",
@@ -316,6 +325,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "螺栓头/螺母下支承面的内径，通常等于通孔直径。",
                 mapping=("bearing", "bearing_d_inner"),
                 default="11",
+                help_ref="terms/bolt_bearing_pressure_allowable",
             ),
             FieldSpec(
                 "bearing.bearing_d_outer",
@@ -324,12 +334,14 @@ CHAPTERS: list[dict[str, Any]] = [
                 "螺栓头/螺母下支承面的外径，通常等于螺栓头对边宽度。",
                 mapping=("bearing", "bearing_d_outer"),
                 default="18",
+                help_ref="terms/bolt_bearing_pressure_allowable",
             ),
             FieldSpec(
                 "bearing.bearing_material", "支承面材料", "-",
                 "选择支承面材料以自动填入许用压强。",
                 mapping=None, widget_type="choice",
                 options=("钢", "铝合金", "自定义"), default="钢",
+                help_ref="terms/bolt_bearing_material",
             ),
             FieldSpec(
                 "bearing.p_G_allow", "许用支承面压强 p_G", "MPa",
@@ -354,6 +366,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("圆柱体", "锥体", "套筒"),
                 default="圆柱体",
+                help_ref="terms/bolt_clamped_solid_type",
             ),
             FieldSpec(
                 "clamped.part_count",
@@ -364,6 +377,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("1", "2", "自定义"),
                 default="1",
+                help_ref="terms/bolt_clamped_part_count",
             ),
             FieldSpec(
                 "clamped.custom_count",
@@ -372,6 +386,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "输入被夹件层数（3~5）。",
                 mapping=None,
                 default="3",
+                help_ref="terms/bolt_custom_part_count",
             ),
             *_make_layer_fields(1),
             *_make_layer_fields(2),
@@ -387,6 +402,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("粗糙 (Ra≈6.3μm)", "中等 (Ra≈3.2μm)", "精细 (Ra≈1.6μm)"),
                 default="中等 (Ra≈3.2μm)",
+                help_ref="terms/bolt_embed_loss",
             ),
             FieldSpec(
                 "clamped.total_thickness",
@@ -395,6 +411,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "被夹件厚度总和。用于热损失自动估算和将来的自动刚度建模。",
                 mapping=("clamped", "total_thickness"),
                 default="20",
+                help_ref="terms/bolt_clamp_length_lk",
             ),
             FieldSpec(
                 "clamped.D_A",
@@ -403,6 +420,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "圆柱/锥体模型表示等效外径；套筒模型下等同于套筒外径。自动柔度计算需要。",
                 mapping=("clamped", "D_A"),
                 default="24",
+                help_ref="terms/bolt_equivalent_outer_da",
             ),
             FieldSpec(
                 "stiffness.E_bolt",
@@ -514,6 +532,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "锁紧螺母等引入的附加扭矩。无则填 0。",
                 mapping=("tightening", "prevailing_torque"),
                 default="0",
+                help_ref="terms/bolt_prevailing_torque",
             ),
             FieldSpec(
                 "loads.embed_loss",
@@ -558,6 +577,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("轴向载荷", "横向载荷", "轴向+横向", "自由输入"),
                 default="轴向+横向",
+                help_ref="terms/bolt_setup_case",
             ),
             FieldSpec(
                 "loads.FA_max",
@@ -574,6 +594,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "横向剪切载荷，用于防滑夹紧力校核。",
                 mapping=("loads", "FQ_max"),
                 default="0",
+                help_ref="terms/bolt_axial_load_fa",
             ),
             FieldSpec(
                 "loads.seal_force_required",
@@ -591,6 +612,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "防滑校核中参与传力的摩擦界面数量。",
                 mapping=("loads", "friction_interfaces"),
                 default="1",
+                help_ref="terms/bolt_friction_interfaces",
             ),
             FieldSpec(
                 "loads.slip_friction_coefficient",
@@ -599,6 +621,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "防滑工况使用的摩擦系数，常与支承面摩擦不同。",
                 mapping=("loads", "slip_friction_coefficient"),
                 default="0.18",
+                help_ref="terms/bolt_slip_friction_coefficient",
             ),
             FieldSpec(
                 "operating.load_cycles",
@@ -607,6 +630,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "用于疲劳校核的循环次数输入。",
                 mapping=("operating", "load_cycles"),
                 default="100000",
+                help_ref="terms/bolt_load_cycles",
             ),
             FieldSpec(
                 "options.surface_treatment",
@@ -617,6 +641,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("轧制", "切削"),
                 default="轧制",
+                help_ref="terms/bolt_surface_treatment",
             ),
             FieldSpec(
                 "operating.bolt_material",
@@ -627,6 +652,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("钢", "不锈钢", "自定义"),
                 default="钢",
+                help_ref="terms/bolt_bolt_material",
             ),
             FieldSpec(
                 "operating.alpha_bolt",
@@ -635,6 +661,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "由材料选择自动填入。自定义模式可手动输入。",
                 mapping=("operating", "alpha_bolt"),
                 default="11.5e-6",
+                help_ref="terms/bolt_thermal_loss",
             ),
             FieldSpec(
                 "operating.clamped_material",
@@ -645,6 +672,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("钢", "铝合金", "铸铁", "不锈钢", "自定义"),
                 default="钢",
+                help_ref="terms/bolt_clamped_material",
             ),
             FieldSpec(
                 "operating.alpha_parts",
@@ -653,6 +681,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "由材料选择自动填入。自定义模式可手动输入。",
                 mapping=("operating", "alpha_parts"),
                 default="11.5e-6",
+                help_ref="terms/bolt_thermal_loss",
             ),
             FieldSpec(
                 "operating.temp_bolt",
@@ -661,6 +690,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "用于热损失估算。若已知等效热损失可直接在下方输入。",
                 mapping=("operating", "temp_bolt"),
                 default="20",
+                help_ref="terms/bolt_thermal_loss",
             ),
             FieldSpec(
                 "operating.temp_parts",
@@ -669,6 +699,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "与螺栓温度共同影响热预紧力损失。",
                 mapping=("operating", "temp_parts"),
                 default="20",
+                help_ref="terms/bolt_thermal_loss",
             ),
         ],
     },
@@ -695,6 +726,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("螺栓头端", "螺母端", "中间", "分布式"),
                 default="螺栓头端",
+                help_ref="terms/bolt_load_intro_factor",
             ),
             FieldSpec(
                 "checks.yield_safety_operating",
@@ -712,6 +744,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "偏心弯矩校核尚未启用，仅记录。",
                 default="0",
                 disabled=True,
+                help_ref="terms/bolt_eccentric_clamp",
             ),
             FieldSpec(
                 "introduction.eccentric_load",
@@ -720,6 +753,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "偏心弯矩校核尚未启用，仅记录。",
                 default="0",
                 disabled=True,
+                help_ref="terms/bolt_eccentric_load",
             ),
         ],
     },
@@ -764,6 +798,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "最小脱扣安全系数，通常取 1.25。",
                 mapping=("thread_strip", "safety_required"),
                 default="1.25",
+                help_ref="terms/bolt_strip_safety_required",
             ),
         ],
     },

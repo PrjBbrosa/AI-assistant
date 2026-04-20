@@ -103,3 +103,17 @@
 - **错误**：frameless 弹窗用 `QSizeGrip` 做缩放把手，功能上能拖，但 macOS 下没有任何视觉指示。用户看不见 grip 在哪，以为不能缩放。
 - **正确做法**：subclass `QSizeGrip` 覆盖 `paintEvent`，在右下角自绘 3 个对角排布的小灰点（或别的可辨识图案），并 `setFixedSize(16,16)` 保证 hit 区稳定。同时在 HBoxLayout 里 grip 前加 `addStretch(1)`，确保 source label 隐藏时 grip 仍 flush-right。
 - **原因**：QSizeGrip 默认依赖原生 window decoration 样式；frameless + translucent 没有 decoration，Qt 不画任何视觉。必须自绘。
+
+## 2026-04-19 帮助文档必须对齐实际代码，不是对齐计划或标准
+
+- **错误**：写 22 个新的 bolt help md 时，按 VDI 2230 "标准该怎样工作"去描述字段联动、自动校验、校核路径。Codex 对抗审查抓出 17+ 处事实错误，主要是 md 声称了 UI/calculator 并未实现的行为：
+  - 声称 bolt_material 下拉有 铝合金/钛合金，实际只有 钢/不锈钢/自定义
+  - 声称某些字段自动填充 E，实际只填 α
+  - 声称 DA > DKm+lK 会触发自动警告，实际没有该校验
+  - 声称 S_T ≥ 1.25 安全系数，实际 calculator 只算 F_slip_required 不做乘子
+  - 声称 setup_case 改变 S_F/S_A 默认值，实际字段 UI-record-only
+  - 公式方向写反（误选圆柱模型导致 FM_min 偏低而非偏保守）
+  - R10 vs R7 标号错
+- **正确做法**：**写帮助 md 之前必须先 grep 实际 consumer 代码**。每个字段的描述必须围绕三个问题：(1) UI 实际提供了哪些选项？(2) 哪个 handler / calculator 函数真的读这个字段？(3) 它实际改变什么输出？超过这三个问题的"理想化描述"都是风险。
+- **原因**：帮助文档是用户信任的直接接口，写错会误导工程判断。计划里猜测的"该有的联动"若不落实到代码，md 里就不能说。如果非要写"理想行为"，必须明确标注"本工具当前版本未实现"。
+- **流程教训**：对抗审查（Codex 或独立 reviewer）对这类"content alignment"类错误是**必要的**，不是可选的。单元测试只能验证 help_ref 指向 md 存在，不会发现 md 内容撒谎。
