@@ -441,9 +441,9 @@ class SplineFitPage(BaseChapterPage):
 
         self.btn_save_inputs = self.add_action_button("保存输入条件")
         self.btn_load_inputs = self.add_action_button("加载输入条件")
-        self.btn_calculate = self.add_action_button("计算", primary=True)
+        self.btn_calculate = self.add_action_button("执行校核", primary=True)
         self.btn_clear = self.add_action_button("清空参数")
-        self.btn_save = self.add_action_button("导出报告")
+        self.btn_save = self.add_action_button("导出结果说明")
         self.btn_load_1 = self.add_action_button("测试案例 1", side="right")
         self.btn_load_2 = self.add_action_button("测试案例 2", side="right")
 

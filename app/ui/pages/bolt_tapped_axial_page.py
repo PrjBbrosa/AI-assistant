@@ -46,6 +46,7 @@ _AUTO_DERIVED_FIELDS: tuple[str, ...] = ("fastener.As", "fastener.d2", "fastener
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SAVED_INPUTS_DIR = build_saved_inputs_dir(PROJECT_ROOT)
+EXAMPLES_DIR = PROJECT_ROOT / "examples"
 
 
 @dataclass(frozen=True)
@@ -209,10 +210,11 @@ class BoltTappedAxialPage(BaseChapterPage):
 
         self.btn_save_inputs = self.add_action_button("保存输入条件")
         self.btn_load_inputs = self.add_action_button("加载输入条件")
+        self.btn_calculate = self.add_action_button("执行校核", primary=True)
         self.btn_clear = self.add_action_button("清空参数")
-        self.btn_calculate = self.add_action_button("开始计算")
-        self.btn_export_text = self.add_action_button("导出文本报告")
         self.btn_export_pdf = self.add_action_button("导出 PDF 报告")
+        self.btn_load_1 = self.add_action_button("测试案例 1", side="right")
+        self.btn_load_2 = self.add_action_button("测试案例 2", side="right")
 
         self._build_input_chapters()
         self._build_result_chapter()
@@ -222,8 +224,9 @@ class BoltTappedAxialPage(BaseChapterPage):
         self.btn_load_inputs.clicked.connect(self._load_input_conditions)
         self.btn_clear.clicked.connect(self._clear)
         self.btn_calculate.clicked.connect(self._run_calculation)
-        self.btn_export_text.clicked.connect(self._export_text_report)
         self.btn_export_pdf.clicked.connect(self._export_pdf_report)
+        self.btn_load_1.clicked.connect(lambda: self._load_sample("tapped_axial_joint_case_01.json"))
+        self.btn_load_2.clicked.connect(lambda: self._load_sample("tapped_axial_joint_case_02.json"))
 
         # Codex §3.2：把 As/d2/d3 改为只读 AutoCalcCard
         for fid in _AUTO_DERIVED_FIELDS:
@@ -634,7 +637,6 @@ class BoltTappedAxialPage(BaseChapterPage):
         """Clear cached calculation result and disable export buttons."""
         self._last_payload = None
         self._last_result = None
-        self.btn_export_text.setEnabled(False)
         self.btn_export_pdf.setEnabled(False)
 
     def _on_input_changed(self, field_id: str) -> None:
@@ -674,7 +676,6 @@ class BoltTappedAxialPage(BaseChapterPage):
 
         self._last_payload = payload
         self._last_result = result
-        self.btn_export_text.setEnabled(True)
         self.btn_export_pdf.setEnabled(True)
         self._render_result(result)
         self.set_current_chapter(self.chapter_list.count() - 1)
@@ -858,21 +859,19 @@ class BoltTappedAxialPage(BaseChapterPage):
             return False
         return True
 
-    def _export_text_report(self) -> None:
-        if not self._ensure_export_payload_matches_current_inputs():
-            return
-        lines = self._build_report_lines()
-        path, _ = QFileDialog.getSaveFileName(
-            self, "导出文本报告", "tapped_axial_report.txt",
-            "Text Files (*.txt)"
-        )
-        if not path:
+    def _load_sample(self, filename: str) -> None:
+        sample_path = EXAMPLES_DIR / filename
+        if not sample_path.exists():
+            QMessageBox.warning(self, "测试案例不存在", f"未找到测试案例文件：{sample_path}")
             return
         try:
-            Path(path).write_text("\n".join(lines), encoding="utf-8")
-            self.set_info(f"文本报告已导出: {path}")
-        except OSError as exc:
-            QMessageBox.critical(self, "导出失败", f"文件写入失败: {exc}")
+            data = read_input_conditions(sample_path)
+        except json.JSONDecodeError as exc:
+            QMessageBox.critical(self, "测试案例损坏", f"测试案例文件不是有效 JSON：{exc}")
+            return
+
+        self._apply_input_data(data)
+        self.set_info(f"已加载测试案例：{filename}。可直接执行校核查看结果。")
 
     def _export_pdf_report(self) -> None:
         if not self._ensure_export_payload_matches_current_inputs():

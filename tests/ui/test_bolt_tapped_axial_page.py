@@ -171,11 +171,9 @@ class BoltTappedAxialPageTests(unittest.TestCase):
 
     def test_export_buttons_disabled_until_calculate(self) -> None:
         page = BoltTappedAxialPage()
-        self.assertFalse(page.btn_export_text.isEnabled())
         self.assertFalse(page.btn_export_pdf.isEnabled())
         page._field_widgets["service.FA_max"].setText("2000")  # type: ignore[attr-defined]
         page._run_calculation()
-        self.assertTrue(page.btn_export_text.isEnabled())
         self.assertTrue(page.btn_export_pdf.isEnabled())
 
     def test_input_change_invalidates_cache_and_exports(self) -> None:
@@ -187,7 +185,6 @@ class BoltTappedAxialPageTests(unittest.TestCase):
         page._field_widgets["service.FA_max"].setText("3000")  # type: ignore[attr-defined]
         self.assertIsNone(page._last_result)
         self.assertIsNone(page._last_payload)
-        self.assertFalse(page.btn_export_text.isEnabled())
         self.assertFalse(page.btn_export_pdf.isEnabled())
 
     def test_clear_invalidates_cache_and_exports(self) -> None:
@@ -198,7 +195,7 @@ class BoltTappedAxialPageTests(unittest.TestCase):
         page._clear()
         self.assertIsNone(page._last_result)
         self.assertIsNone(page._last_payload)
-        self.assertFalse(page.btn_export_text.isEnabled())
+        self.assertFalse(page.btn_export_pdf.isEnabled())
 
     def test_apply_input_data_invalidates_cache(self) -> None:
         page = BoltTappedAxialPage()
@@ -208,7 +205,7 @@ class BoltTappedAxialPageTests(unittest.TestCase):
         # apply 后缓存必须失效
         page._apply_input_data(snapshot)
         self.assertIsNone(page._last_result)
-        self.assertFalse(page.btn_export_text.isEnabled())
+        self.assertFalse(page.btn_export_pdf.isEnabled())
 
 
 if __name__ == "__main__":
