@@ -212,7 +212,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         self.btn_load_inputs = self.add_action_button("加载输入条件")
         self.btn_calculate = self.add_action_button("执行校核", primary=True)
         self.btn_clear = self.add_action_button("清空参数")
-        self.btn_export_pdf = self.add_action_button("导出 PDF 报告")
+        self.btn_export_pdf = self.add_action_button("导出结果说明")
         self.btn_load_1 = self.add_action_button("测试案例 1", side="right")
         self.btn_load_2 = self.add_action_button("测试案例 2", side="right")
 
@@ -264,23 +264,24 @@ class BoltTappedAxialPage(BaseChapterPage):
         page.setObjectName("Card")
         layout = QVBoxLayout(page)
         layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(10)
+        layout.setSpacing(8)
 
         title_label = QLabel(title, page)
         title_label.setObjectName("SectionTitle")
         if help_ref:
-            header_row = QWidget(page)
-            header_layout = QHBoxLayout(header_row)
+            # addLayout (not a QWidget wrapper) avoids painting the default
+            # QWidget backdrop as a gray band behind the title.
+            header_layout = QHBoxLayout()
             header_layout.setContentsMargins(0, 0, 0, 0)
             header_layout.setSpacing(6)
             header_layout.addWidget(title_label)
             header_layout.addWidget(
-                HelpButton(help_ref, parent=header_row),
+                HelpButton(help_ref, parent=page),
                 0,
                 Qt.AlignmentFlag.AlignVCenter,
             )
             header_layout.addStretch(1)
-            layout.addWidget(header_row)
+            layout.addLayout(header_layout)
         else:
             layout.addWidget(title_label)
         subtitle_label = QLabel(subtitle, page)
@@ -355,10 +356,8 @@ class BoltTappedAxialPage(BaseChapterPage):
             scroll.setWidget(container)
             layout.addWidget(scroll, 1)
         else:
-            spacer = QLabel("该章节仅提供范围说明，不包含输入项。", page)
-            spacer.setObjectName("SectionHint")
-            spacer.setWordWrap(True)
-            layout.addWidget(spacer)
+            # No input fields: push the notes up, leave breathing room below.
+            layout.addStretch(1)
 
         return page
 

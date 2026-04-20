@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import List, Tuple
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -20,7 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.ui.icons import app_icon_path
+from app.ui.icons import brand_mark_pixmap
 from app.ui.pages.bolt_page import BoltPage
 from app.ui.pages.bolt_tapped_axial_page import BoltTappedAxialPage
 from app.ui.pages.hertz_contact_page import HertzContactPage
@@ -106,16 +105,10 @@ class MainWindow(QMainWindow):
 
         brand_mark = QLabel(sidebar)
         brand_mark.setObjectName("SidebarBrandMark")
-        pixmap = QPixmap(str(app_icon_path()))
+        pixmap = brand_mark_pixmap(180)
         if not pixmap.isNull():
-            scaled = pixmap.scaled(
-                96, 96,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            brand_mark.setPixmap(scaled)
+            brand_mark.setPixmap(pixmap)
         brand_mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        brand_mark.setFixedHeight(96)
 
         layout.addWidget(brand)
         layout.addWidget(subtitle)

@@ -12,13 +12,14 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from PySide6.QtWidgets import QApplication
 
-from app.ui.fonts import make_ui_font
+from app.ui.fonts import configure_matplotlib_fonts, make_ui_font
 from app.ui.icons import load_app_icon
 from app.ui.main_window import MainWindow
 from app.ui.theme import apply_theme
 
 
 def main() -> int:
+    configure_matplotlib_fonts()
     app = QApplication(sys.argv)
     app.setApplicationName("Local Engineering Assistant")
     app.setOrganizationName("Personal")
