@@ -9,11 +9,6 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import QLabel, QWidget
 
-import matplotlib
-matplotlib.use("Agg")
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_agg import FigureCanvasAgg
-
 
 class LatexLabel(QLabel):
     """QLabel that renders LaTeX formulas via matplotlib."""
@@ -46,6 +41,14 @@ class LatexLabel(QLabel):
             self.setPixmap(self._cache[key])
             self._current_key = key
             return
+
+        # Deferred matplotlib import: only loaded when a formula is first rendered.
+        # matplotlib.use("Agg") must be called immediately after import and before
+        # any other matplotlib backend is initialized.
+        import matplotlib
+        matplotlib.use("Agg")
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
 
         fig = Figure()
         fig.patch.set_alpha(0.0)
