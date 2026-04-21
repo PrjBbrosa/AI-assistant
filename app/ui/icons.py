@@ -30,32 +30,56 @@ def load_app_icon() -> QIcon:
     return QIcon(str(app_icon_path()))
 
 
-# Cache for the processed brand-mark pixmap keyed by (size, bg).
+# Cache for the processed brand-mark pixmap keyed by size.
 _BRAND_MARK_CACHE: dict[tuple[int, str], QPixmap] = {}
 
 
 def brand_mark_pixmap(size: int) -> QPixmap:
     """Return the app icon softened for the warm-neutral sidebar.
 
-    The source PNG has a stark black rounded-rectangle backdrop that looks
-    too aggressive against the warm sidebar. We flip the tonal range so the
-    icon fully blends into the sidebar background, leaving only the gears
-    and orange accents visible — no competing card outline.
+    Loads the pre-baked ``assistant_icon_sidebar.png`` (generated once by
+    ``tools/bake_brand_mark.py``) and scales it to *size* x *size* pixels.
+    No pixel loop at runtime — < 10 ms vs the former 150-400 ms.
 
-    Grayscale pixels are remapped linearly from ``SIDEBAR → INK_DARK``
-    instead of the original ``BLACK → WHITE``:
+    The pre-baked PNG has the original black backdrop remapped to
+    ``#EEE7DE`` (sidebar panel color) and original white gears remapped to
+    warm dark ``#2E2820``.  Colored orange ``#D97757`` accents are unchanged.
 
-    * Original black backdrop → ``#EEE7DE`` (sidebar color), so the rounded
-      rectangle disappears.
-    * Original white gears/rings → warm dark ``#2E2820``.
-    * Anti-aliased edges blend proportionally.
-    * Colored pixels (orange ``#D97757`` accents) are kept unchanged.
+    Falls back to the legacy pixel-loop implementation if the pre-baked PNG
+    is not found (e.g., a fresh clone that has not run the bake script yet).
     """
     cache_key = (size, "sidebar-blend")
     cached = _BRAND_MARK_CACHE.get(cache_key)
     if cached is not None:
         return cached
 
+    sidebar_png = _resource_root() / "assets" / "assistant_icon_sidebar.png"
+    if sidebar_png.exists():
+        image = QImage(str(sidebar_png))
+        if not image.isNull():
+            pixmap = QPixmap.fromImage(image).scaled(
+                size, size,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            _BRAND_MARK_CACHE[cache_key] = pixmap
+            return pixmap
+
+    # Fallback: legacy pixel-loop remap (slow path, only if PNG missing).
+    pixmap = _brand_mark_pixmap_legacy(size)
+    _BRAND_MARK_CACHE[cache_key] = pixmap
+    return pixmap
+
+
+def _brand_mark_pixmap_legacy(size: int) -> QPixmap:
+    """Legacy pixel-loop implementation — kept for rollback / re-baking.
+
+    This is the original ``brand_mark_pixmap`` body.  It is no longer called
+    at startup; ``brand_mark_pixmap`` loads the pre-baked PNG instead.
+    To re-generate the pre-baked asset after updating the source icon, run::
+
+        python3 tools/bake_brand_mark.py
+    """
     image = QImage(str(app_icon_path()))
     if image.isNull():
         return QPixmap()
@@ -80,10 +104,8 @@ def brand_mark_pixmap(size: int) -> QPixmap:
                 image.setPixelColor(x, y, QColor(new_r, new_g, new_b, a))
             # else: colored pixel (orange accent) — keep as-is.
 
-    pixmap = QPixmap.fromImage(image).scaled(
+    return QPixmap.fromImage(image).scaled(
         size, size,
         Qt.AspectRatioMode.KeepAspectRatio,
         Qt.TransformationMode.SmoothTransformation,
     )
-    _BRAND_MARK_CACHE[cache_key] = pixmap
-    return pixmap

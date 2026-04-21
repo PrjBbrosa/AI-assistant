@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -296,10 +296,13 @@ class HertzContactPage(BaseChapterPage):
 
         self._register_material_bindings()
         self._apply_defaults()
-        self._load_sample("hertz_case_01.json")
-        self._sync_material_inputs()
-        self._apply_mode_visibility()
-        self._refresh_diagram_from_inputs()
+        def _deferred_sample_init():
+            self._load_sample("hertz_case_01.json")
+            self._sync_material_inputs()
+            self._apply_mode_visibility()
+            self._refresh_diagram_from_inputs()
+
+        QTimer.singleShot(0, _deferred_sample_init)
 
     def eventFilter(self, watched, event):  # noqa: N802
         if watched in self._widget_hints and event.type() in (QEvent.Type.FocusIn, QEvent.Type.Enter):
