@@ -98,6 +98,7 @@ class MainWindow(QMainWindow):
             ("花键连接校核", self._make_spline_fit_page),
             ("蜗轮蜗杆设计", self._make_worm_gear_page),
             ("赫兹应力", self._make_hertz_contact_page),
+            ("缓冲块吸能仿真", self._make_buffer_energy_page),
             ("材料与标准库", self._make_placeholder_page),
         ]
 
@@ -201,6 +202,10 @@ class MainWindow(QMainWindow):
     def _make_hertz_contact_page(self) -> QWidget:
         from app.ui.pages.hertz_contact_page import HertzContactPage
         return HertzContactPage(self)
+
+    def _make_buffer_energy_page(self) -> QWidget:
+        from app.ui.pages.buffer_energy_page import BufferEnergyPage
+        return BufferEnergyPage(self)
 
     def _make_placeholder_page(self) -> QWidget:
         from app.ui.pages.placeholder_page import PlaceholderPage
