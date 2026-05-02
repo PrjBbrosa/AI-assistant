@@ -6,11 +6,6 @@ from collections.abc import Iterable
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
-import matplotlib
-matplotlib.use("Agg")
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
-from matplotlib.figure import Figure
-
 
 class WormStressCurveWidget(QWidget):
     """Dual-axis plot of contact and root stress over one worm revolution."""
@@ -22,6 +17,15 @@ class WormStressCurveWidget(QWidget):
         self._sigma_f_mpa: list[float] = []
         self._sigma_h_nominal: float = 0.0
         self._sigma_f_nominal: float = 0.0
+
+        # Deferred matplotlib import: only loaded when the worm stress widget is
+        # first constructed (i.e., when the user navigates to the worm page).
+        # FigureCanvasQTAgg must be created on the GUI main thread — this __init__
+        # is always called from the main thread, so the constraint is satisfied.
+        import matplotlib
+        matplotlib.use("Agg")
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+        from matplotlib.figure import Figure
 
         self._figure = Figure(figsize=(8, 3.5), dpi=100)
         self._figure.patch.set_facecolor("#FBF8F3")

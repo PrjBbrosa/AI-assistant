@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QEvent, Qt
+from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -836,12 +836,15 @@ class InterferenceFitPage(BaseChapterPage):
         self._register_fretting_bindings()
         self._apply_defaults()
         self._sync_friction_from_material()
-        self._load_sample("interference_case_01.json")
-        self._sync_material_inputs()
-        self._sync_roughness_factor()
-        self._sync_fit_mode_fields()
-        self._sync_assembly_fields()
-        self._sync_fretting_fields()
+        def _deferred_sample_init():
+            self._load_sample("interference_case_01.json")
+            self._sync_material_inputs()
+            self._sync_roughness_factor()
+            self._sync_fit_mode_fields()
+            self._sync_assembly_fields()
+            self._sync_fretting_fields()
+
+        QTimer.singleShot(0, _deferred_sample_init)
 
     def eventFilter(self, watched, event):  # noqa: N802
         if watched in self._widget_hints and event.type() in (QEvent.Type.FocusIn, QEvent.Type.Enter):
