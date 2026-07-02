@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -443,6 +443,10 @@ class SplineFitPage(BaseChapterPage):
         self._last_payload: dict | None = None
         self.curve_widget: PressForceCurveWidget | None = None
         self.message_box: QPlainTextEdit | None = None
+        self._recalc_timer = QTimer(self)
+        self._recalc_timer.setSingleShot(True)
+        self._recalc_timer.setInterval(300)
+        self._recalc_timer.timeout.connect(lambda: self._run_calculation(strict=False))
 
         self.btn_save_inputs = self.add_action_button("保存输入条件")
         self.btn_load_inputs = self.add_action_button("加载输入条件")
@@ -658,7 +662,7 @@ class SplineFitPage(BaseChapterPage):
         self._update_mode_chapter_title(text)
         self._suspend_live_feedback = was_suspended
         if not self._suspend_live_feedback:
-            self._run_calculation(strict=False)
+            self._recalc_timer.start()
 
     def _on_standard_designation_changed(self, text: str) -> None:
         was_suspended = self._suspend_live_feedback
@@ -692,7 +696,7 @@ class SplineFitPage(BaseChapterPage):
         self._set_card_disabled("spline.geometry_mode", is_standard)
         self._suspend_live_feedback = was_suspended
         if not self._suspend_live_feedback:
-            self._run_calculation(strict=False)
+            self._recalc_timer.start()
 
     def _on_load_condition_changed(self, text: str) -> None:
         was_suspended = self._suspend_live_feedback
@@ -707,7 +711,7 @@ class SplineFitPage(BaseChapterPage):
             self._set_card_disabled("spline.p_allowable_mpa", False)
         self._suspend_live_feedback = was_suspended
         if not self._suspend_live_feedback:
-            self._run_calculation(strict=False)
+            self._recalc_timer.start()
 
     def _on_material_changed(self, field_prefix: str, material_name: str) -> None:
         was_suspended = self._suspend_live_feedback
@@ -726,7 +730,7 @@ class SplineFitPage(BaseChapterPage):
                 self._set_card_disabled(fid, not is_combined)
             self._suspend_live_feedback = was_suspended
             if not self._suspend_live_feedback:
-                self._run_calculation(strict=False)
+                self._recalc_timer.start()
             return
         for fid, key in ((e_fid, "e_mpa"), (nu_fid, "nu"), (yield_fid, "yield_mpa")):
             widget = self._widgets.get(fid)
@@ -735,12 +739,12 @@ class SplineFitPage(BaseChapterPage):
             self._set_card_disabled(fid, True)
         self._suspend_live_feedback = was_suspended
         if not self._suspend_live_feedback:
-            self._run_calculation(strict=False)
+            self._recalc_timer.start()
 
     def _on_inputs_changed(self) -> None:
         if self._suspend_live_feedback:
             return
-        self._run_calculation(strict=False)
+        self._recalc_timer.start()
 
     def _set_chapter_title(self, chapter_key: str, title: str) -> None:
         index = self._chapter_indices.get(chapter_key)
@@ -946,6 +950,7 @@ class SplineFitPage(BaseChapterPage):
         return payload
 
     def _on_calculate(self) -> None:
+        self._recalc_timer.stop()
         self._run_calculation(strict=True)
 
     def _display_result(self, result: dict) -> None:

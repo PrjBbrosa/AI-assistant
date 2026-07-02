@@ -142,7 +142,7 @@ _ALPHA_A_RANGES: dict[str, tuple[float, float]] = {
     "thermal": (1.05, 1.15),
 }
 
-# VDI 2230 表 A1：轧制螺纹疲劳极限 σ_ASV (MPa)
+# VDI 2230 Table A4：轧制螺纹疲劳极限 σ_ASV (MPa)，与 tapped 模块一致；纸质标准复核为准。
 _ASV_TABLE_ROLLED: list[tuple[float, float]] = [
     (6, 50), (8, 47), (10, 44), (12, 41), (14, 39),
     (16, 38), (20, 36), (24, 34), (30, 32), (36, 30),

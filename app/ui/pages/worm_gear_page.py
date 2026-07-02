@@ -1011,11 +1011,15 @@ class WormGearPage(BaseChapterPage):
         try:
             payload = self._build_payload()
             geometry = calculate_worm_geometry(payload)["geometry"]
-        except (InputError, ValueError):
+        except Exception:
             self._reset_dimension_preview_labels()
             self.set_info("输入不完整或无效，预览已重置")
             return
 
+        self._apply_geometry_preview(geometry)
+
+    def _apply_geometry_preview(self, geometry: dict[str, Any]) -> None:
+        """Update derived geometry labels from an already calculated geometry block."""
         self._set_dimension_group_values(self.worm_dimension_labels, geometry.get("worm_dimensions", {}), WORM_DIMENSION_FIELDS)
         self._set_dimension_group_values(self.wheel_dimension_labels, geometry.get("wheel_dimensions", {}), WHEEL_DIMENSION_FIELDS)
 
@@ -1150,19 +1154,7 @@ class WormGearPage(BaseChapterPage):
                 ]
             )
         )
-        # 温升曲线：优先用 core 提供的 temperature_rise_k，否则从热容量派生
-        thermal_cap_kw_curve = curve.get("thermal_capacity_kw", [])
-        power_loss_curve = curve.get("power_loss_kw", [])
-        if curve.get("temperature_rise_k"):
-            temp_rise_curve = curve["temperature_rise_k"]
-        elif thermal_cap_kw_curve and power_loss_curve:
-            # 简化派生：ΔT ≈ P_loss / Q_th * 50 K（50 K 为参考允许温升）
-            temp_rise_curve = [
-                p / max(q, 1e-6) * 50.0
-                for p, q in zip(power_loss_curve, thermal_cap_kw_curve)
-            ]
-        else:
-            temp_rise_curve = []
+        temp_rise_curve = curve.get("temperature_rise_k", [])
         self.performance_curve.set_curves(
             load_factor=curve["load_factor"],
             efficiency=curve["efficiency"],
@@ -1221,7 +1213,7 @@ class WormGearPage(BaseChapterPage):
             ]
 
         self.load_capacity_metrics.setPlainText("\n".join(lc_metrics_lines))
-        self._refresh_derived_geometry_preview()
+        self._apply_geometry_preview(geometry)
 
         # W-03 + W-02: LC 未启用时不显示通过/不通过徽章；几何不一致时总体为不通过
         if lc_enabled:

@@ -392,8 +392,8 @@ class RStepDetailPage(QFrame):
                 label_text, unit = _INTERMEDIATE_LABELS.get(fid, (fid, ""))
                 name_label = QLabel(label_text, self._input_card)
                 name_label.setObjectName("SubSectionTitle")
-                val = inter.get(_INTER_KEY_MAP.get(fid, ""), 0)
-                value_text = f"{val:,.2f}" if val else "—"
+                val = inter.get(_INTER_KEY_MAP.get(fid, ""))
+                value_text = f"{val:,.2f}" if val is not None else "—"
                 val_label = QLabel(value_text, self._input_card)
                 val_label.setObjectName("SectionHint")
                 unit_label = QLabel(unit, self._input_card)
@@ -432,8 +432,8 @@ class RStepDetailPage(QFrame):
         for fid, label in self._input_labels.items():
             if fid.startswith("intermediate."):
                 inter = result.get("intermediate", {})
-                val = inter.get(_INTER_KEY_MAP.get(fid, ""), 0)
-                label.setText(f"{val:,.2f}" if val else "—")
+                val = inter.get(_INTER_KEY_MAP.get(fid, ""))
+                label.setText(f"{val:,.2f}" if val is not None else "—")
                 continue
             widget = field_widgets.get(fid)
             if widget:

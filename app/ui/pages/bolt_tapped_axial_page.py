@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -35,7 +36,7 @@ from app.ui.input_condition_store import (
     write_input_conditions,
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
-from app.ui.report_export import ReportExportError
+from app.ui.report_export import ReportExportError, export_report_lines
 from app.ui.widgets.help_button import HelpButton
 from core.bolt.tapped_axial_joint import (
     _derive_thread_section,
@@ -52,6 +53,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SAVED_INPUTS_DIR = build_saved_inputs_dir(PROJECT_ROOT)
 EXAMPLES_DIR = PROJECT_ROOT / "examples"
 MODULE_ID = "bolt_tapped_axial"
+_NUMBER_RE = re.compile(r"^-?\d+(\.\d+)?([eE][+-]?\d+)?$", flags=re.ASCII)
 
 
 @dataclass(frozen=True)
@@ -217,6 +219,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         self.btn_load_inputs = self.add_action_button("加载输入条件")
         self.btn_calculate = self.add_action_button("执行校核", primary=True)
         self.btn_clear = self.add_action_button("清空参数")
+        self.btn_export_text = self.add_action_button("导出文本报告")
         self.btn_export_pdf = self.add_action_button("导出结果说明")
         self.btn_load_1 = self.add_action_button("测试案例 1", side="right")
         self.btn_load_2 = self.add_action_button("测试案例 2", side="right")
@@ -229,6 +232,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         self.btn_load_inputs.clicked.connect(self._load_input_conditions)
         self.btn_clear.clicked.connect(self._clear)
         self.btn_calculate.clicked.connect(self._run_calculation)
+        self.btn_export_text.clicked.connect(self._export_text_report)
         self.btn_export_pdf.clicked.connect(self._export_pdf_report)
         self.btn_load_1.clicked.connect(lambda: self._load_sample("tapped_axial_joint_case_01.json"))
         self.btn_load_2.clicked.connect(lambda: self._load_sample("tapped_axial_joint_case_02.json"))
@@ -493,7 +497,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         if raw == "":
             return None
         try:
-            if raw.lower() in {"nan", "inf", "-inf"}:
+            if not _NUMBER_RE.fullmatch(raw):
                 raise ValueError(raw)
             return float(raw)
         except ValueError as exc:
@@ -651,6 +655,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         """Clear cached calculation result and disable export buttons."""
         self._last_payload = None
         self._last_result = None
+        self.btn_export_text.setEnabled(False)
         self.btn_export_pdf.setEnabled(False)
 
     def _reset_result_panels(self) -> None:
@@ -700,6 +705,7 @@ class BoltTappedAxialPage(BaseChapterPage):
 
         self._last_payload = payload
         self._last_result = result
+        self.btn_export_text.setEnabled(True)
         self.btn_export_pdf.setEnabled(True)
         self._render_result(result)
         self.set_current_chapter(self.chapter_list.count() - 1)
@@ -882,6 +888,22 @@ class BoltTappedAxialPage(BaseChapterPage):
             )
             return False
         return True
+
+    def _export_text_report(self) -> None:
+        if not self._ensure_export_payload_matches_current_inputs():
+            return
+        try:
+            path = export_report_lines(
+                self,
+                "导出文本报告",
+                EXAMPLES_DIR / "tapped_axial_report.txt",
+                self._build_report_lines(),
+            )
+        except (ReportExportError, OSError) as exc:
+            QMessageBox.critical(self, "导出失败", f"导出失败：{exc}")
+            return
+        if path is not None:
+            self.set_info(f"文本报告已导出: {path}")
 
     def _load_sample(self, filename: str) -> None:
         sample_path = EXAMPLES_DIR / filename

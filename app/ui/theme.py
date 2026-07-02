@@ -411,6 +411,17 @@ def apply_theme(app: QApplication) -> None:
             color: #9B9590;
             border-color: #E3D8C8;
         }
+        QPushButton#LinkButton {
+            background: transparent;
+            border: none;
+            color: #D97757;
+        }
+        QPushButton#LinkButton:hover {
+            background: transparent;
+            border: none;
+            color: #C05F3D;
+            text-decoration: underline;
+        }
         QPushButton#PrimaryButton {
             background-color: #D97757;
             color: #FFF9F5;

@@ -6,11 +6,14 @@ from collections.abc import Iterable
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
+from app.ui.fonts import configure_matplotlib_fonts
+
 
 class WormStressCurveWidget(QWidget):
     """Dual-axis plot of contact and root stress over one worm revolution."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
+        configure_matplotlib_fonts()
         super().__init__(parent)
         self._theta_deg: list[float] = []
         self._sigma_h_mpa: list[float] = []

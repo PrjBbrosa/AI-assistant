@@ -1,14 +1,21 @@
 {
+  "inputs": {
+    "impact": {
+      "mass_kg": "12.0",
+      "initial_velocity_m_s": "1.5",
+      "available_stroke_mm": "30.0",
+      "allowable_peak_force_n": "9000"
+    },
+    "options": {
+      "force_scale": "1.00",
+      "stroke_scale": "1.00",
+      "noise_tolerance_n": "5.0",
+      "time_samples": "200"
+    }
+  },
   "module": "buffer_energy",
-  "version": 1,
-  "fields": {
-    "impact.mass_kg": "12.0",
-    "impact.initial_velocity_m_s": "1.5",
-    "impact.available_stroke_mm": "30.0",
-    "impact.allowable_peak_force_n": "9000",
-    "options.force_scale": "1.00",
-    "options.stroke_scale": "1.00",
-    "options.noise_tolerance_n": "5.0",
-    "options.time_samples": "200"
-  }
+  "ui_state": {
+    "curve_source": ""
+  },
+  "version": 1
 }

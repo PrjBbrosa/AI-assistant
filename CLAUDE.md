@@ -9,7 +9,7 @@
 - **GUI**: PySide6 (Qt6)
 - **打包**: PyInstaller（Windows .exe）
 - **测试**: pytest（headless 测试需 `QT_QPA_PLATFORM=offscreen`）
-- **依赖**: `requirements.txt`（仅 PySide6 + PyInstaller）
+- **依赖**: `requirements.txt`（PySide6 + PyInstaller + reportlab + matplotlib + openpyxl）
 
 ## 项目结构
 ```

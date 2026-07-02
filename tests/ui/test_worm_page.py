@@ -141,6 +141,19 @@ class WormGearPageTests(unittest.TestCase):
 
         self.assertIn("50.000", page.worm_dimension_labels["pitch_diameter_mm"].text())
 
+    def test_preview_refresh_swallows_unexpected_geometry_errors(self) -> None:
+        from unittest.mock import patch
+
+        page = WormGearPage()
+
+        with patch(
+            "app.ui.pages.worm_gear_page.calculate_worm_geometry",
+            side_effect=RuntimeError("preview exploded"),
+        ):
+            page._do_refresh_preview()
+
+        self.assertEqual(page.worm_dimension_labels["pitch_diameter_mm"].text(), "待输入")
+
     def test_page_exposes_manual_like_fields_and_advanced_parameters(self) -> None:
         page = WormGearPage()
 

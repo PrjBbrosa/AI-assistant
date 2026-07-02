@@ -167,6 +167,7 @@ class BufferEnergyPage(BaseChapterPage):
         self.btn_load_1 = self.add_action_button("测试案例 1", side="right")
         self.btn_load_2 = self.add_action_button("测试案例 2", side="right")
         self.btn_save_report.setEnabled(False)
+        self.btn_calculate.setEnabled(False)
 
         self.overview_curve_widget = BufferEnergyCurveWidget()
         self.curve_check_widget = BufferEnergyCurveWidget()
@@ -479,6 +480,7 @@ class BufferEnergyPage(BaseChapterPage):
             self._set_workbench_status_from_curve()
             self._set_curve_widgets_from_raw()
         self.btn_save_report.setEnabled(False)
+        self.btn_calculate.setEnabled(self._curve_data is not None)
 
     def _read_value(self, spec: FieldSpec) -> str:
         widget = self._field_widgets[spec.field_id]
@@ -527,6 +529,7 @@ class BufferEnergyPage(BaseChapterPage):
             QMessageBox.warning(self, "曲线导入失败", str(exc))
             self._curve_data = None
             self._curve_source = None
+            self.btn_calculate.setEnabled(False)
             self.curve_summary_label.setText("尚未导入曲线。")
             self._clear_curve_widgets()
             self._invalidate_result()
@@ -534,6 +537,7 @@ class BufferEnergyPage(BaseChapterPage):
 
         self._curve_data = data
         self._curve_source = path
+        self.btn_calculate.setEnabled(True)
         loading = data.get("loading", [])
         unloading = data.get("unloading", [])
         meta = data.get("metadata", {})
@@ -808,6 +812,7 @@ class BufferEnergyPage(BaseChapterPage):
         self._clear_curve_widgets()
         self.set_info("参数已清空，导出结果已失效。")
         self.btn_save_report.setEnabled(False)
+        self.btn_calculate.setEnabled(False)
 
     def _reset_result_outputs(self, message: str) -> None:
         for label in self.metric_labels.values():
@@ -1015,15 +1020,12 @@ class BufferEnergyPage(BaseChapterPage):
         return True
 
     def _apply_input_data(self, data: dict[str, Any]) -> None:
-        fields = data.get("fields")
         inputs = data.get("inputs") if isinstance(data.get("inputs"), dict) else {}
         ui_state = data.get("ui_state") if isinstance(data.get("ui_state"), dict) else {}
 
         for spec in FIELD_SPECS:
             value: Any | None = None
-            if isinstance(fields, dict) and spec.field_id in fields:
-                value = fields[spec.field_id]
-            elif spec.field_id in ui_state:
+            if spec.field_id in ui_state:
                 value = ui_state[spec.field_id]
             elif spec.mapping is not None:
                 section, key = spec.mapping
