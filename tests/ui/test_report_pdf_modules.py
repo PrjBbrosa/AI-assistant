@@ -474,3 +474,57 @@ class TestWormPdfReport:
         out = tmp_path / "worm_lc.pdf"
         generate_worm_report(out, payload, result)
         assert out.exists() and out.stat().st_size > 1000
+
+
+# ---------------------------------------------------------------------------
+# Bolt rich PDF tri-state (CRIT-1 regression)
+# ---------------------------------------------------------------------------
+def _bolt_incomplete_result():
+    """缺 R7/R8 输入的 payload -> overall_status=incomplete。"""
+    from core.bolt.calculator import calculate_vdi2230_core
+    base = {
+        "fastener": {"d": 12, "p": 1.75, "Rp02": 900},
+        "tightening": {"alpha_A": 1.4, "mu_thread": 0.12, "mu_bearing": 0.12, "utilization": 0.9},
+        "loads": {"FA_max": 5000, "seal_force_required": 1000},
+        "stiffness": {"bolt_stiffness": 300000, "clamped_stiffness": 900000},
+        "bearing": {"bearing_d_inner": 13, "bearing_d_outer": 20},
+    }
+    return base, calculate_vdi2230_core(base)
+
+
+class TestBoltTriStatePdf:
+    def test_incomplete_recommendations_no_false_green(self):
+        from app.ui.report_pdf import build_bolt_recommendations
+        _, result = _bolt_incomplete_result()
+        assert result["overall_status"] == "incomplete"
+        recs = build_bolt_recommendations(result)
+        # incomplete 时不得输出"满足全部校核"绿灯结论
+        assert not any("满足全部校核" in x for x in recs), recs
+        # 应提示存在未校核项
+        assert any("未校核" in x or "不完整" in x for x in recs), recs
+
+    def test_incomplete_pdf_nonempty(self, tmp_path):
+        from app.ui.report_pdf import generate_bolt_report
+        payload, result = _bolt_incomplete_result()
+        out = tmp_path / "bolt_incomplete.pdf"
+        generate_bolt_report(out, payload, result)
+        assert out.exists() and out.stat().st_size > 1000
+
+    def test_incomplete_pdf_not_rendered_as_fail(self, tmp_path):
+        import shutil
+        import subprocess
+        from app.ui.report_pdf import generate_bolt_report
+        payload, result = _bolt_incomplete_result()
+        out = tmp_path / "bolt_incomplete_text.pdf"
+        generate_bolt_report(out, payload, result)
+        pdftotext = shutil.which("pdftotext")
+        if pdftotext is None:
+            pytest.skip("pdftotext 不可用，跳过文本断言")
+        txt = subprocess.run(
+            [pdftotext, str(out), "-"], capture_output=True, text=True, check=True
+        ).stdout
+        # incomplete 应渲染为"校核不完整"，而非 FAIL
+        # pdftotext 可能在徽章文字中插入换行，先去除所有空白再断言
+        compact = "".join(txt.split())
+        assert "FAIL" not in compact, txt
+        assert "校核不完整" in compact, txt
