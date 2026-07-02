@@ -118,6 +118,7 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     operating_temp_c = float(advanced.get("operating_temp_c", 23.0))
     humidity_rh = float(advanced.get("humidity_rh", 50.0))
     wheel_plastic = PLASTIC_MATERIALS.get(wheel_material)
+    material_warnings: list[str] = []
     if wheel_plastic is not None:
         # 根据温度和湿度降额，覆盖许用值（优先于 MATERIAL_ALLOWABLE_HINTS 的常温干态值）
         sigma_hlim_derated, sigma_flim_derated = apply_derate(
@@ -125,6 +126,12 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
             operating_temp_c=operating_temp_c,
             humidity_rh=humidity_rh,
         )
+        if operating_temp_c > wheel_plastic.allowable_surface_temp_c:
+            material_warnings.append(
+                f"工作温度 {operating_temp_c:.1f} degC 超过 {wheel_plastic.name} "
+                f"允许表面温度 {wheel_plastic.allowable_surface_temp_c:.1f} degC，"
+                "材料性能可能急剧下降，请降低温度或更换材料。"
+            )
         wheel_allowable_defaults = {
             "contact_mpa": sigma_hlim_derated,
             "root_mpa": sigma_flim_derated,
@@ -158,9 +165,21 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     theoretical_center_distance_mm = module_mm * (diameter_factor_q + z2) / 2.0 + (x1 + x2) * module_mm
     center_distance_delta_mm = center_distance_mm - theoretical_center_distance_mm
     worm_tip_diameter_mm = pitch_diameter_worm_mm + 2.0 * module_mm * (1.0 + x1)
-    worm_root_diameter_mm = max(1e-6, pitch_diameter_worm_mm - 2.0 * module_mm * (1.2 - x1))
+    worm_root_diameter_mm = pitch_diameter_worm_mm - 2.0 * module_mm * (1.2 - x1)
+    if worm_root_diameter_mm <= 0:
+        raise InputError(
+            f"蜗杆齿根圆直径 df1={worm_root_diameter_mm:.3f} mm <= 0，"
+            f"q/m/x 组合几何不可行（q={diameter_factor_q}, m={module_mm}, x1={x1}）。"
+            "请增大 q 或 x1，或复核模数。"
+        )
     wheel_tip_diameter_mm = pitch_diameter_wheel_mm + 2.0 * module_mm * (1.0 + x2)
-    wheel_root_diameter_mm = max(1e-6, pitch_diameter_wheel_mm - 2.0 * module_mm * (1.2 - x2))
+    wheel_root_diameter_mm = pitch_diameter_wheel_mm - 2.0 * module_mm * (1.2 - x2)
+    if wheel_root_diameter_mm <= 0:
+        raise InputError(
+            f"蜗轮齿根圆直径 df2={wheel_root_diameter_mm:.3f} mm <= 0，"
+            f"q/m/x 组合几何不可行（q={diameter_factor_q}, m={module_mm}, x2={x2}）。"
+            "请增大齿数或 x2，或复核模数。"
+        )
     lead_mm = math.pi * pitch_diameter_worm_mm * math.tan(lead_angle_calc_rad)
     axial_pitch_mm = lead_mm / z1
     worm_face_width_mm = _positive(
@@ -263,6 +282,7 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
         geometry_warnings.append(
             f"中心距与理论中心距偏差较大：a-a_th={center_distance_delta_mm:.3f} mm。"
         )
+    load_capacity_warnings = [*geometry_warnings, *material_warnings]
 
     # Tooth geometry (needed for wheel_dimensions output regardless of LC enabled)
     tooth_height_mm = module_mm * (2.2 + x1 - x2)
@@ -649,10 +669,10 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
             "method": method,
             "status": (
                 f"{method} 最小子集校核通过"
-                if contact_ok and root_ok and not geometry_warnings
+                if contact_ok and root_ok and not load_capacity_warnings
                 else f"{method} 最小子集已计算（存在警告或不通过项）"
             ),
-            "warnings": geometry_warnings,
+            "warnings": load_capacity_warnings,
             "factors": {
                 "application_factor": application_factor,
                 "dynamic_factor_kv": dynamic_factor_kv,

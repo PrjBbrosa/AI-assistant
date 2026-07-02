@@ -486,6 +486,51 @@ class WormCalculatorTests(unittest.TestCase):
         # F_r = F_t2·tan(α_n)/cos(γ)，α_n=20° 下典型比值 0.36~0.40
         self.assertLess(forces["radial_force_wheel_n"] / f_t2, 0.6)
 
+    def test_operating_temp_above_plastic_surface_limit_warns_in_load_capacity(self):
+        data = self._base_payload()
+        data["advanced"]["operating_temp_c"] = 120.0
+
+        result = calculate_worm_geometry(data)
+
+        warnings = result["load_capacity"]["warnings"]
+        self.assertTrue(
+            any("允许表面温度" in warning for warning in warnings),
+            f"load_capacity warnings should mention 允许表面温度, got {warnings!r}",
+        )
+
+    def test_negative_worm_root_diameter_raises_input_error(self):
+        data = self._base_payload()
+        data["geometry"].update(
+            {
+                "z1": 1.0,
+                "diameter_factor_q": 1.0,
+                "lead_angle_deg": 45.0,
+                "center_distance_mm": 80.0,
+                "x1": -0.5,
+                "x2": 0.0,
+            }
+        )
+
+        with self.assertRaisesRegex(InputError, "q/m/x.*几何不可行"):
+            calculate_worm_geometry(data)
+
+    def test_negative_wheel_root_diameter_raises_input_error(self):
+        data = self._base_payload()
+        data["geometry"].update(
+            {
+                "z1": 1.0,
+                "z2": 1.0,
+                "diameter_factor_q": 10.0,
+                "lead_angle_deg": 5.71,
+                "center_distance_mm": 40.0,
+                "x1": 0.0,
+                "x2": -0.5,
+            }
+        )
+
+        with self.assertRaisesRegex(InputError, "q/m/x.*几何不可行"):
+            calculate_worm_geometry(data)
+
     # ---- Regression tests: efficiency boundary and warnings ----
 
     def test_low_lead_angle_high_friction_efficiency_not_clamped(self) -> None:

@@ -18,16 +18,30 @@ def _require(section: Dict[str, Any], key: str, section_name: str) -> Any:
     return section[key]
 
 
-def _positive(value: float, name: str, allow_zero: bool = False) -> float:
-    if allow_zero and value == 0:
-        return value
-    if value <= 0:
-        raise InputError(f"{name} 必须 > 0，当前值 {value}")
-    return value
+def _to_float(value: Any, name: str) -> float:
+    # 与 core.bolt._common.to_float 同构；若第三处复制，应抽为 core/_validation.py。
+    if isinstance(value, bool):
+        raise InputError(f"{name} 必须为有限数字，当前值: {value}")
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError) as exc:
+        raise InputError(f"{name} 必须为数字，当前值: {value}") from exc
+    if not math.isfinite(parsed):
+        raise InputError(f"{name} 必须为有限数字，当前值: {value}")
+    return parsed
+
+
+def _positive(value: Any, name: str, allow_zero: bool = False) -> float:
+    numeric = _to_float(value, name)
+    if allow_zero and numeric == 0:
+        return numeric
+    if numeric <= 0:
+        raise InputError(f"{name} 必须 > 0，当前值 {numeric}")
+    return numeric
 
 
 def _positive_int(value: Any, name: str) -> int:
-    numeric = float(value)
+    numeric = _to_float(value, name)
     if not numeric.is_integer():
         raise InputError(f"{name} 必须为整数，当前值 {value}")
     integer = int(numeric)
@@ -42,19 +56,19 @@ def _calculate_scenario_a(
     flank_safety_min: float,
 ) -> Dict[str, Any]:
     """Scenario A: involute spline tooth flank bearing stress check."""
-    m = _positive(float(_require(spline, "module_mm", "spline")), "spline.module_mm")
+    m = _positive(_require(spline, "module_mm", "spline"), "spline.module_mm")
     z = _positive_int(_require(spline, "tooth_count", "spline"), "spline.tooth_count")
     L = _positive(
-        float(_require(spline, "engagement_length_mm", "spline")),
+        _require(spline, "engagement_length_mm", "spline"),
         "spline.engagement_length_mm",
     )
     # k_alpha 合成齿向与齿面载荷分布（DIN 6892-1 的 K_1·K_2 保守上限），
     # 默认 1.3 对齐 UI 的 FieldSpec.default 与常规过盈固定连接经验值。
     k_alpha = _positive(
-        float(spline.get("k_alpha", 1.3)), "spline.k_alpha"
+        spline.get("k_alpha", 1.3), "spline.k_alpha"
     )
     p_zul = _positive(
-        float(_require(spline, "p_allowable_mpa", "spline")),
+        _require(spline, "p_allowable_mpa", "spline"),
         "spline.p_allowable_mpa",
     )
     geometry_mode = str(spline.get("geometry_mode", "approximate")).strip() or "approximate"
@@ -65,7 +79,7 @@ def _calculate_scenario_a(
         value = spline.get(key)
         if value in (None, ""):
             return None
-        return float(value)
+        return _to_float(value, f"spline.{key}")
 
     try:
         geo = derive_involute_geometry(
@@ -144,10 +158,13 @@ def _calculate_scenario_b(
     from core.interference.calculator import calculate_interference_fit
 
     l_nominal = _positive(
-        float(_require(smooth_fit, "fit_length_mm", "smooth_fit")),
+        _require(smooth_fit, "fit_length_mm", "smooth_fit"),
         "smooth_fit.fit_length_mm",
     )
-    relief_groove = float(smooth_fit.get("relief_groove_width_mm", 0.0))
+    relief_groove = _to_float(
+        smooth_fit.get("relief_groove_width_mm", 0.0),
+        "smooth_fit.relief_groove_width_mm",
+    )
     if relief_groove < 0:
         raise InputError("smooth_fit.relief_groove_width_mm 不能为负数")
     l_fit = l_nominal - relief_groove
@@ -156,15 +173,18 @@ def _calculate_scenario_b(
 
     delegate_data = {
         "geometry": {
-            "shaft_d_mm": float(smooth_fit.get("shaft_d_mm", 0)),
-            "shaft_inner_d_mm": float(smooth_fit.get("shaft_inner_d_mm", 0)),
-            "hub_outer_d_mm": float(smooth_fit.get("hub_outer_d_mm", 0)),
+            "shaft_d_mm": _to_float(smooth_fit.get("shaft_d_mm", 0), "smooth_fit.shaft_d_mm"),
+            "shaft_inner_d_mm": _to_float(
+                smooth_fit.get("shaft_inner_d_mm", 0),
+                "smooth_fit.shaft_inner_d_mm",
+            ),
+            "hub_outer_d_mm": _to_float(smooth_fit.get("hub_outer_d_mm", 0), "smooth_fit.hub_outer_d_mm"),
             "fit_length_mm": l_fit,
         },
         "materials": smooth_materials,
         "fit": {
-            "delta_min_um": float(smooth_fit.get("delta_min_um", 0)),
-            "delta_max_um": float(smooth_fit.get("delta_max_um", 0)),
+            "delta_min_um": _to_float(smooth_fit.get("delta_min_um", 0), "smooth_fit.delta_min_um"),
+            "delta_max_um": _to_float(smooth_fit.get("delta_max_um", 0), "smooth_fit.delta_max_um"),
         },
         "roughness": smooth_roughness,
         "friction": smooth_friction,
@@ -216,14 +236,14 @@ def calculate_spline_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     checks = data.get("checks", {})
 
     torque_required_nm = _positive(
-        float(_require(loads, "torque_required_nm", "loads")),
+        _require(loads, "torque_required_nm", "loads"),
         "loads.torque_required_nm",
     )
-    ka = _positive(float(loads.get("application_factor_ka", 1.0)), "loads.application_factor_ka")
+    ka = _positive(loads.get("application_factor_ka", 1.0), "loads.application_factor_ka")
     torque_design_nm = torque_required_nm * ka
 
     flank_safety_min = _positive(
-        float(checks.get("flank_safety_min", 1.3)), "checks.flank_safety_min"
+        checks.get("flank_safety_min", 1.3), "checks.flank_safety_min"
     )
 
     scenario_a = _calculate_scenario_a(spline, torque_design_nm, flank_safety_min)
@@ -236,16 +256,16 @@ def calculate_spline_fit(data: Dict[str, Any]) -> Dict[str, Any]:
         smooth_roughness = data.get("smooth_roughness", {})
         smooth_friction = data.get("smooth_friction", {})
         axial_required_n = _positive(
-            float(loads.get("axial_force_required_n", 0.0)),
+            loads.get("axial_force_required_n", 0.0),
             "loads.axial_force_required_n",
             allow_zero=True,
         )
         axial_design_n = axial_required_n * ka
         slip_safety_min = _positive(
-            float(checks.get("slip_safety_min", 1.5)), "checks.slip_safety_min"
+            checks.get("slip_safety_min", 1.5), "checks.slip_safety_min"
         )
         stress_safety_min = _positive(
-            float(checks.get("stress_safety_min", 1.2)), "checks.stress_safety_min"
+            checks.get("stress_safety_min", 1.2), "checks.stress_safety_min"
         )
         scenario_b = _calculate_scenario_b(
             smooth_fit, smooth_materials, smooth_roughness, smooth_friction,

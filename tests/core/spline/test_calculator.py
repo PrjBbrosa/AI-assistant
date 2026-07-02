@@ -120,6 +120,12 @@ class TestScenarioA:
         with pytest.raises(InputError, match="module_mm"):
             calculate_spline_fit(case)
 
+    def test_module_non_numeric_raises_chinese_input_error(self):
+        case = make_scenario_a_case()
+        case["spline"]["module_mm"] = "abc"
+        with pytest.raises(InputError, match="必须为数字"):
+            calculate_spline_fit(case)
+
     def test_missing_torque_raises(self):
         case = make_scenario_a_case()
         del case["loads"]["torque_required_nm"]

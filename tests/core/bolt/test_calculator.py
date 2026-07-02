@@ -68,6 +68,30 @@ class TestPhiNHardBlock:
             assert "phi_n" not in w.lower()
 
 
+class TestD13Validation:
+    def test_fastener_nominal_diameter_non_numeric_raises_chinese_input_error(self):
+        data = _base_input()
+        data["fastener"]["d"] = "M12"
+
+        with pytest.raises(InputError, match="必须为数字"):
+            calculate_vdi2230_core(data)
+
+    def test_yield_safety_operating_below_one_is_rejected(self):
+        data = _base_input()
+        data["checks"]["yield_safety_operating"] = 0.3
+
+        with pytest.raises(InputError, match="必须 >= 1"):
+            calculate_vdi2230_core(data)
+
+    def test_slip_friction_coefficient_above_one_is_rejected_when_slip_required(self):
+        data = _base_input()
+        data["loads"]["FQ_max"] = 1000.0
+        data["loads"]["slip_friction_coefficient"] = 1.5
+
+        with pytest.raises(InputError, match="摩擦系数"):
+            calculate_vdi2230_core(data)
+
+
 class TestBearingPressureR7:
     def test_r7_pass_when_pressure_below_limit(self):
         data = _base_input()
