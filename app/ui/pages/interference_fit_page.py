@@ -38,6 +38,7 @@ from app.ui.input_condition_store import (
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, export_report_lines
+from app.ui.theme import mark_input_field_label_wrap, mark_input_field_surface
 from app.ui.widgets.help_button import HelpButton
 from app.ui.widgets.press_force_curve import PressForceCurveWidget
 from core.interference.calculator import InputError, calculate_interference_fit
@@ -915,6 +916,7 @@ class InterferenceFitPage(BaseChapterPage):
         for spec in fields:
             field_card = QFrame(container)
             field_card.setObjectName("SubCard")
+            mark_input_field_surface(field_card)
             row = QGridLayout(field_card)
             row.setContentsMargins(12, 10, 12, 10)
             row.setHorizontalSpacing(10)
@@ -923,6 +925,7 @@ class InterferenceFitPage(BaseChapterPage):
             # 字段级 help_ref 存在时，把 label 与 HelpButton 包成水平布局（与 bolt_page 一致）
             if spec.help_ref:
                 label_widget = QWidget(field_card)
+                mark_input_field_label_wrap(label_widget)
                 label_layout = QHBoxLayout(label_widget)
                 label_layout.setContentsMargins(0, 0, 0, 0)
                 label_layout.setSpacing(4)

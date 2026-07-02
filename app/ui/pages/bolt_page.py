@@ -49,6 +49,7 @@ from app.ui.pages import bolt_help_content as bolt_help
 from app.ui.pages.bolt_flowchart import (
     FlowchartNavWidget, RStepDetailPage, R_STEPS,
 )
+from app.ui.theme import mark_input_field_label_wrap, mark_input_field_surface
 from core.bolt.calculator import InputError, calculate_vdi2230_core
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -1346,6 +1347,7 @@ class BoltPage(QWidget):
                 field_card.setObjectName("AutoCalcCard")
             else:
                 field_card.setObjectName("SubCard")
+            mark_input_field_surface(field_card)
             row = QGridLayout(field_card)
             row.setContentsMargins(12, 10, 12, 10)
             row.setHorizontalSpacing(10)
@@ -1361,6 +1363,7 @@ class BoltPage(QWidget):
             # 字段级 help_ref 存在时，把 label 与 HelpButton 包成一个水平布局放在 col 0
             if spec.help_ref:
                 label_widget = QWidget(field_card)
+                mark_input_field_label_wrap(label_widget)
                 label_layout = QHBoxLayout(label_widget)
                 label_layout.setContentsMargins(0, 0, 0, 0)
                 label_layout.setSpacing(4)

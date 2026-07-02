@@ -38,6 +38,7 @@ from app.ui.input_condition_store import (
 from app.ui.fonts import make_ui_font
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError
+from app.ui.theme import mark_input_field_label_wrap, mark_input_field_surface
 from app.ui.widgets.help_button import HelpButton
 from app.ui.widgets.hertz_input_diagram import HertzInputDiagramWidget
 from core.hertz.calculator import InputError, calculate_hertz_contact
@@ -374,6 +375,7 @@ class HertzContactPage(BaseChapterPage):
         for spec in fields:
             field_card = QFrame(container)
             field_card.setObjectName("SubCard")
+            mark_input_field_surface(field_card)
             row = QGridLayout(field_card)
             row.setContentsMargins(12, 10, 12, 10)
             row.setHorizontalSpacing(10)
@@ -389,6 +391,7 @@ class HertzContactPage(BaseChapterPage):
             # 字段级 help_ref 存在时把 label + HelpButton 包在一个水平容器里
             if spec.help_ref:
                 label_widget = QWidget(field_card)
+                mark_input_field_label_wrap(label_widget)
                 label_layout = QHBoxLayout(label_widget)
                 label_layout.setContentsMargins(0, 0, 0, 0)
                 label_layout.setSpacing(4)

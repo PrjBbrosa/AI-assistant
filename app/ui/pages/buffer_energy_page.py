@@ -40,6 +40,7 @@ from app.ui.input_condition_store import (
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError
+from app.ui.theme import mark_input_field_surface
 from app.ui.widgets.buffer_energy_curve import BufferEnergyCurveWidget
 from app.ui.widgets.buffer_response_curve import BufferResponseCurveWidget
 
@@ -422,6 +423,7 @@ class BufferEnergyPage(BaseChapterPage):
     def _build_field_card(self, spec: FieldSpec, parent: QWidget) -> QWidget:
         card = QFrame(parent)
         card.setObjectName("SubCard")
+        mark_input_field_surface(card)
         grid = QGridLayout(card)
         grid.setContentsMargins(12, 10, 12, 10)
         grid.setHorizontalSpacing(10)

@@ -4,12 +4,28 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFontMetrics
-from PySide6.QtWidgets import QApplication, QComboBox
+from PySide6.QtWidgets import QApplication, QComboBox, QFrame, QWidget
 
 from app.ui.fonts import UI_FONT_FAMILY_CSS
 
 
 _COMBOBOX_POLISH_INSTALLED = False
+INPUT_FIELD_SURFACE_ROLE = "inputField"
+INPUT_FIELD_LABEL_WRAP_OBJECT_NAME = "InputFieldLabelWrap"
+
+
+def mark_input_field_surface(frame: QFrame) -> None:
+    """Mark a frame as an input field row for theme-level surface styling."""
+    frame.setProperty("surfaceRole", INPUT_FIELD_SURFACE_ROLE)
+    frame.style().unpolish(frame)
+    frame.style().polish(frame)
+
+
+def mark_input_field_label_wrap(widget: QWidget) -> None:
+    """Mark a label/help wrapper inside an input field row as transparent."""
+    widget.setObjectName(INPUT_FIELD_LABEL_WRAP_OBJECT_NAME)
+    widget.style().unpolish(widget)
+    widget.style().polish(widget)
 
 
 def _install_combobox_popup_polish() -> None:
@@ -218,6 +234,18 @@ def apply_theme(app: QApplication) -> None:
             background-color: #E4DFD5;
             color: #4A4135;
             border: 1px solid #C9BFB0;
+        }
+        QFrame#SubCard[surfaceRole="inputField"],
+        QFrame#AutoCalcCard[surfaceRole="inputField"],
+        QFrame#DisabledSubCard[surfaceRole="inputField"] {
+            background-color: transparent;
+            border: none;
+            border-radius: 0px;
+        }
+        QFrame#SubCard[surfaceRole="inputField"] QWidget#InputFieldLabelWrap,
+        QFrame#AutoCalcCard[surfaceRole="inputField"] QWidget#InputFieldLabelWrap,
+        QFrame#DisabledSubCard[surfaceRole="inputField"] QWidget#InputFieldLabelWrap {
+            background-color: transparent;
         }
         QFrame#ProcessNode {
             background-color: #F1EAE0;

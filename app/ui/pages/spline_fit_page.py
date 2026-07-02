@@ -39,6 +39,7 @@ from app.ui.input_condition_store import (
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError
+from app.ui.theme import mark_input_field_label_wrap, mark_input_field_surface
 from app.ui.widgets.help_button import HelpButton
 from app.ui.widgets.press_force_curve import PressForceCurveWidget
 from core.spline.calculator import InputError, calculate_spline_fit
@@ -528,12 +529,14 @@ class SplineFitPage(BaseChapterPage):
     def _build_field_card(self, spec: FieldSpec) -> QFrame:
         card = QFrame()
         card.setObjectName("SubCard")
+        mark_input_field_surface(card)
         grid = QGridLayout(card)
         grid.setContentsMargins(8, 6, 8, 6)
         label_text = f"{spec.label} [{spec.unit}]" if spec.unit != "-" else spec.label
         if spec.help_ref:
             # 字段级 help_ref：label + HelpButton 水平布局放在 col 0
             label_wrap = QWidget()
+            mark_input_field_label_wrap(label_wrap)
             label_layout = QHBoxLayout(label_wrap)
             label_layout.setContentsMargins(0, 0, 0, 0)
             label_layout.setSpacing(4)

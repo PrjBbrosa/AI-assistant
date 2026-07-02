@@ -46,6 +46,7 @@ from app.ui.input_condition_store import (
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError
+from app.ui.theme import mark_input_field_surface
 from app.ui.widgets.worm_geometry_overview import WormGeometryOverviewWidget
 from app.ui.widgets.worm_performance_curve import WormPerformanceCurveWidget
 from app.ui.widgets.worm_stress_curve import WormStressCurveWidget
@@ -441,6 +442,7 @@ class WormGearPage(BaseChapterPage):
     def _create_input_row_card(self, spec: FieldSpec, parent: QWidget) -> QFrame:
         card = QFrame(parent)
         card.setObjectName("SubCard")
+        mark_input_field_surface(card)
         row = QGridLayout(card)
         row.setContentsMargins(12, 10, 12, 10)
         row.setHorizontalSpacing(10)
@@ -481,6 +483,7 @@ class WormGearPage(BaseChapterPage):
         for key, label_text, unit_text, hint_text in fields:
             row_card = QFrame(card)
             row_card.setObjectName("AutoCalcCard")
+            mark_input_field_surface(row_card)
             row = QGridLayout(row_card)
             row.setContentsMargins(12, 10, 12, 10)
             row.setHorizontalSpacing(10)
