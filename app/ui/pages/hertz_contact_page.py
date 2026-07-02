@@ -11,6 +11,7 @@ from typing import Any
 from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -36,7 +37,7 @@ from app.ui.input_condition_store import (
 )
 from app.ui.fonts import make_ui_font
 from app.ui.pages.base_chapter_page import BaseChapterPage
-from app.ui.report_export import ReportExportError, export_report_lines
+from app.ui.report_export import ReportExportError
 from app.ui.widgets.help_button import HelpButton
 from app.ui.widgets.hertz_input_diagram import HertzInputDiagramWidget
 from core.hertz.calculator import InputError, calculate_hertz_contact
@@ -923,17 +924,43 @@ class HertzContactPage(BaseChapterPage):
                 widget.currentIndexChanged.connect(self._mark_results_dirty)
 
     def _save_report(self) -> None:
-        if self._last_result is None:
+        if self._last_result is None or self._last_payload is None:
             QMessageBox.information(self, "无结果", "请先执行校核计算。")
             return
         default_path = EXAMPLES_DIR / "hertz_contact_report.pdf"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "导出结果说明",
+            str(default_path),
+            "PDF Files (*.pdf);;Word Files (*.docx);;Text Files (*.txt);;All Files (*)",
+        )
+        if not file_path:
+            return
+        out_path = Path(file_path)
         try:
-            out_path = export_report_lines(self, "导出结果说明", default_path, self._build_report_lines())
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            suffix = out_path.suffix.lower()
+            if suffix == ".pdf":
+                try:
+                    from app.ui.report_pdf_hertz import generate_hertz_report
+
+                    generate_hertz_report(out_path, self._last_payload, self._last_result)
+                except Exception:
+                    from app.ui.report_export import _export_pdf
+
+                    _export_pdf(out_path, self._build_report_lines())
+                    self.set_info(f"结果说明已导出: {out_path}（已使用简化格式）")
+                    return
+            elif suffix == ".docx":
+                from app.ui.report_export import _export_docx
+
+                _export_docx(out_path, self._build_report_lines())
+            else:
+                out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
         except (ReportExportError, OSError) as exc:
             QMessageBox.critical(self, "导出失败", f"导出失败：{exc}")
             return
-        if out_path is not None:
-            self.set_info(f"结果说明已导出: {out_path}")
+        self.set_info(f"结果说明已导出: {out_path}")
 
     def _build_report_lines(self) -> list[str]:
         assert self._last_result is not None
