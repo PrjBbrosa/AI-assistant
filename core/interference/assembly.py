@@ -168,6 +168,8 @@ def calculate_assembly_detail(
     detail["force_fit"] = {
         "press_in_force_n": press_in_force_n,
         "press_out_force_n": press_out_force_n,
+        # 经验倍数 2.5: 按压出力保守估算压装设备裕量；原始出处不可追溯。
+        # 数值由 spec 2026-07-02 D14 回归测试锁定，正式校核建议试验复核。
         "recommended_machine_force_n": 2.5 * press_out_force_n,
         "edge_length_recommendation_mm": _recommended_edge_length_mm(shaft_d_mm),
         "bevel_angle_max_deg": 5.0,

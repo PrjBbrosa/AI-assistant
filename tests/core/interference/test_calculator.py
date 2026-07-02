@@ -430,6 +430,69 @@ class InterferenceFitCalculatorTests(unittest.TestCase):
             result["pressure_mpa"]["p_min"],
         )
 
+    def test_empirical_bending_pressure_coefficient_is_locked(self) -> None:
+        """锁定张口缝弯矩附加压强的经验系数 2.25。"""
+        data = make_case()
+        data["loads"]["bending_moment_required_nm"] = 90.0
+        data["loads"]["application_factor_ka"] = 1.3
+
+        result = calculate_interference_fit(data)
+
+        d = float(data["geometry"]["shaft_d_mm"])
+        l_fit = float(data["geometry"]["fit_length_mm"])
+        bending_design_nm = (
+            float(data["loads"]["bending_moment_required_nm"])
+            * float(data["loads"]["application_factor_ka"])
+        )
+        expected_p_bending = 2.25 * bending_design_nm * 1000.0 / (d * l_fit * l_fit)
+        self.assertAlmostEqual(
+            result["additional_pressure_mpa"]["p_bending"],
+            expected_p_bending,
+            places=12,
+        )
+
+    def test_empirical_repeated_load_length_factor_is_locked(self) -> None:
+        """锁定重复载荷简化估算的经验因子 l_fit/(4d)。"""
+        data = make_case()
+        data["advanced"] = {
+            "repeated_load_mode": "on",
+        }
+
+        result = calculate_interference_fit(data)
+
+        d = float(data["geometry"]["shaft_d_mm"])
+        l_fit = float(data["geometry"]["fit_length_mm"])
+        expected_max_torque = result["capacity"]["torque_min_nm"] * l_fit / (4.0 * d)
+        self.assertTrue(result["repeated_load"]["applicable"])
+        self.assertAlmostEqual(
+            result["repeated_load"]["max_transferable_torque_nm"],
+            expected_max_torque,
+            places=12,
+        )
+
+    def test_empirical_force_fit_machine_force_multiplier_is_locked(self) -> None:
+        """锁定压装设备推荐力的经验倍数 2.5。"""
+        data = make_case()
+        data["assembly"] = {
+            "method": "force_fit",
+            "mu_press_in": 0.08,
+            "mu_press_out": 0.06,
+        }
+
+        result = calculate_interference_fit(data)
+
+        force_fit = result["assembly_detail"]["force_fit"]
+        p_max = result["pressure_mpa"]["p_max"]
+        contact_area = result["derived"]["contact_area_mm2"]
+        expected_press_out = 0.06 * p_max * contact_area
+        expected_machine_force = 2.5 * expected_press_out
+        self.assertAlmostEqual(force_fit["press_out_force_n"], expected_press_out, places=6)
+        self.assertAlmostEqual(
+            force_fit["recommended_machine_force_n"],
+            expected_machine_force,
+            places=6,
+        )
+
     def test_legacy_mu_static_is_still_supported(self) -> None:
         data = make_case()
         data["friction"] = {

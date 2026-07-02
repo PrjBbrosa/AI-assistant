@@ -319,7 +319,8 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     p_req_axial = slip_safety_min * p_req_axial_service
     p_req_combined = slip_safety_min * math.hypot(p_req_torque_service, p_req_axial_service)
     p_radial = radial_design_n / (d * l_fit) if radial_design_n > 0 else 0.0
-    # Conservative simplification of the handbook expression by taking QW = 0.
+    # 经验系数 2.25: 手册张口缝表达式取 QW = 0 的保守简化；原始出处不可追溯。
+    # 数值由 spec 2026-07-02 D14 回归测试锁定，正式校核建议 FEA 或试验复核。
     p_bending = 2.25 * bending_design_nm * 1000.0 / (d * l_fit * l_fit) if bending_design_nm > 0 else 0.0
     p_gap = p_radial + p_bending
     p_required = max(p_req_torque, p_req_axial, p_req_combined, p_gap)
@@ -401,6 +402,8 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
             repeated_notes.append("not applicable: rotating bending is excluded from the simplified estimate.")
         else:
             repeated_applicable = True
+            # 经验因子 l_fit/(4d): 重复载荷传递能力的保守估算；原始出处不可追溯。
+            # 数值由 spec 2026-07-02 D14 回归测试锁定，正式校核建议 FEA 或试验复核。
             repeated_max_torque_nm = torque_min_nm * l_fit / (4.0 * d)
             fretting_risk = torque_design_nm > repeated_max_torque_nm
             repeated_notes.append(
