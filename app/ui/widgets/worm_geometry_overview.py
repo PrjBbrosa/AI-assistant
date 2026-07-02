@@ -23,12 +23,7 @@ DEFAULT_GEOM_STATE: dict = {
 
 
 class WormGeometryOverviewWidget(QWidget):
-    """Render a dynamic engineering-style overview for worm geometry.
-
-    After ``set_geometry_state`` is called the diagram scales d1, d2 and the
-    centre distance proportionally.  The helix-line slope reflects the
-    handedness (right-hand: lines slope down-right; left-hand: down-left).
-    """
+    """Render a worm-pair diagram aligned with the DIN geometry calculation."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -57,18 +52,6 @@ class WormGeometryOverviewWidget(QWidget):
         z2: int,
         handedness: str,
     ) -> None:
-        """Update the geometry state and trigger a repaint.
-
-        Parameters
-        ----------
-        d1_mm:      蜗杆分度圆直径 (mm)
-        d2_mm:      蜗轮分度圆直径 (mm)
-        a_mm:       中心距 (mm)
-        gamma_deg:  导程角 (deg)
-        z1:         蜗杆头数
-        z2:         蜗轮齿数
-        handedness: "right" 或 "left"
-        """
         self._geom_state = {
             "d1_mm": max(float(d1_mm), 1.0),
             "d2_mm": max(float(d2_mm), 1.0),
@@ -80,6 +63,64 @@ class WormGeometryOverviewWidget(QWidget):
         }
         self.update()
 
+    def _panel_rect(self) -> QRectF:
+        return QRectF(14.0, 14.0, self.width() - 28.0, self.height() - 28.0)
+
+    def _diagram_rect_for_testing(self) -> QRectF:
+        panel = self._panel_rect()
+        return QRectF(panel.left() + 22, panel.top() + 44, panel.width() * 0.67, panel.height() - 66)
+
+    def _compute_geometry_layout(self, diagram: QRectF) -> dict:
+        d1_mm = self._geom_state["d1_mm"]
+        d2_mm = self._geom_state["d2_mm"]
+        a_mm = self._geom_state["a_mm"]
+
+        vertical_need = a_mm + d2_mm * 0.5 + d1_mm * 0.5 + 28.0
+        horizontal_need = max(d2_mm + 96.0, d1_mm * 3.0 + 120.0)
+        scale = min(
+            (diagram.width() - 70.0) / max(horizontal_need, 1.0),
+            (diagram.height() - 50.0) / max(vertical_need, 1.0),
+            2.2,
+        )
+        scale = max(scale, 0.35)
+
+        d1_px = d1_mm * scale
+        d2_px = d2_mm * scale
+        a_px = a_mm * scale
+        worm_w = max(d1_px * 3.2, 130.0)
+
+        center_x = diagram.left() + diagram.width() * 0.43
+        worm_axis_y = diagram.bottom() - max(44.0, d1_px * 0.5 + 34.0)
+        wheel_center_y = worm_axis_y - a_px
+        min_wheel_center_y = diagram.top() + d2_px * 0.5 + 18.0
+        if wheel_center_y < min_wheel_center_y:
+            shift = min_wheel_center_y - wheel_center_y
+            worm_axis_y += shift
+            wheel_center_y += shift
+
+        worm_rect = QRectF(center_x - worm_w * 0.5, worm_axis_y - d1_px * 0.5, worm_w, d1_px)
+        wheel_rect = QRectF(center_x - d2_px * 0.5, wheel_center_y - d2_px * 0.5, d2_px, d2_px)
+
+        dim_x = min(wheel_rect.left() - 26.0, worm_rect.left() - 18.0)
+        center_distance = {
+            "p0": QPointF(dim_x, wheel_center_y),
+            "p1": QPointF(dim_x, worm_axis_y),
+            "label": QRectF(dim_x - 72.0, (wheel_center_y + worm_axis_y) * 0.5 - 10.0, 64.0, 20.0),
+        }
+
+        return {
+            "scale": scale,
+            "d1_px": d1_px,
+            "d2_px": d2_px,
+            "a_px": a_px,
+            "center_x": center_x,
+            "worm_axis_y": worm_axis_y,
+            "wheel_center": QPointF(center_x, wheel_center_y),
+            "worm_rect": worm_rect,
+            "wheel_rect": wheel_rect,
+            "center_distance": center_distance,
+        }
+
     def paintEvent(self, event) -> None:  # noqa: N802
         del event
         painter = QPainter()
@@ -88,7 +129,7 @@ class WormGeometryOverviewWidget(QWidget):
         try:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
-            panel = QRectF(14.0, 14.0, self.width() - 28.0, self.height() - 28.0)
+            panel = self._panel_rect()
             painter.setPen(QPen(QColor("#D9D3CA"), 1.0))
             painter.setBrush(QColor("#FBF8F3"))
             painter.drawRoundedRect(panel, 12, 12)
@@ -101,218 +142,188 @@ class WormGeometryOverviewWidget(QWidget):
                 self._title,
             )
 
-            diagram = QRectF(panel.left() + 22, panel.top() + 44, panel.width() * 0.67, panel.height() - 66)
+            diagram = self._diagram_rect_for_testing()
             info = QRectF(diagram.right() + 16, diagram.top(), panel.right() - diagram.right() - 24, diagram.height())
 
             painter.setPen(QPen(QColor("#E4DDD2"), 1.0))
+            painter.setBrush(QColor("#FBF8F3"))
             painter.drawRoundedRect(diagram, 10, 10)
             painter.drawRoundedRect(info, 10, 10)
 
-            # --- 动态缩放 ---
-            d1_mm = self._geom_state["d1_mm"]
-            d2_mm = self._geom_state["d2_mm"]
-            a_mm = self._geom_state["a_mm"]
-            gamma_deg = self._geom_state["gamma_deg"]
-            z1 = self._geom_state["z1"]
-            z2 = self._geom_state["z2"]
-            handedness = self._geom_state["handedness"]
-
-            # 水平方向：蜗杆宽度约 2.5*d1 + 间隔 + d2；垂直方向：max(d1, d2) + 中心距偏移
-            horiz_needed_mm = d1_mm * 2.5 + d2_mm + 40.0
-            vert_needed_mm = max(d2_mm, 40.0) + a_mm * 0.5
-
-            scale_mm_to_px = min(
-                (diagram.width() - 80.0) / max(horiz_needed_mm, 1.0),
-                (diagram.height() - 100.0) / max(vert_needed_mm, 1.0),
-            )
-            # 为了可读性，限制最大 scale
-            scale_mm_to_px = min(scale_mm_to_px, 3.0)
-
-            d1_px = d1_mm * scale_mm_to_px
-            d2_px = d2_mm * scale_mm_to_px
-            a_px = a_mm * scale_mm_to_px
-
-            # 蜗杆轴中心线 y 位置（靠下一些给蜗轮留空间）
-            axis_y = diagram.top() + diagram.height() * 0.65
-
-            # 蜗杆矩形（表示分度圆直径范围，宽度取 2.5*d1）
-            worm_w = d1_px * 2.5
-            worm_rect = QRectF(
-                diagram.left() + 36,
-                axis_y - d1_px * 0.5,
-                worm_w,
-                d1_px,
-            )
-
-            # 蜗轮圆心：在蜗杆中心上方 a_px
-            wheel_center_x = worm_rect.center().x()
-            wheel_center_y = axis_y - a_px
-            wheel_center = QPointF(wheel_center_x, wheel_center_y)
-            wheel_rect = QRectF(
-                wheel_center_x - d2_px * 0.5,
-                wheel_center_y - d2_px * 0.5,
-                d2_px,
-                d2_px,
-            )
-
-            # 中心线（虚线）
-            painter.setPen(QPen(QColor("#8B7C67"), 1.2, Qt.PenStyle.DashLine))
-            painter.drawLine(
-                QPointF(worm_rect.left() - 26, worm_rect.center().y()),
-                QPointF(worm_rect.right() + 26, worm_rect.center().y()),
-            )
-            painter.drawLine(
-                QPointF(wheel_center.x(), wheel_rect.top() - 20),
-                QPointF(wheel_center.x(), wheel_rect.bottom() + 28),
-            )
-
-            # 蜗杆轮廓（圆角矩形）
-            painter.setPen(QPen(QColor("#7F7260"), 2.2))
-            painter.setBrush(QColor("#E6DCCE"))
-            painter.drawRoundedRect(worm_rect, min(d1_px * 0.35, 28), min(d1_px * 0.35, 28))
-
-            # 蜗轮轮廓（圆 + 内孔）
-            painter.setBrush(QColor("#E3D3C0"))
-            painter.drawEllipse(wheel_rect)
-            bore_ratio = 0.26
-            bore_rect = wheel_rect.adjusted(
-                wheel_rect.width() * bore_ratio,
-                wheel_rect.height() * bore_ratio,
-                -wheel_rect.width() * bore_ratio,
-                -wheel_rect.height() * bore_ratio,
-            )
-            painter.setBrush(QColor("#FBF8F3"))
-            painter.drawEllipse(bore_rect)
-
-            # 螺旋线（倾斜方向由 handedness 决定）
-            # 右旋：线从左上到右下（hand_sign = +1 即正斜率）
-            # 左旋：线从左下到右上（hand_sign = -1）
-            hand_sign = 1.0 if handedness == "right" else -1.0
-            painter.setPen(QPen(QColor("#B65E2C"), 2.1))
-            num_lines = max(3, min(9, int(worm_rect.width() / 10)))
-            for idx in range(num_lines):
-                x0 = worm_rect.left() + 8 + idx * (worm_rect.width() - 16) / max(num_lines - 1, 1)
-                painter.drawLine(
-                    QPointF(x0, worm_rect.top() + 7),
-                    QPointF(x0 + hand_sign * worm_rect.width() * 0.15, worm_rect.bottom() - 7),
-                )
-
-            # 蜗轮辐条线
-            painter.setPen(QPen(QColor("#8D6E63"), 1.4))
-            outer_radius = wheel_rect.width() * 0.5
-            inner_radius = bore_rect.width() * 0.5 + 8.0
-            for idx in range(18):
-                angle = math.radians(idx * 20.0)
-                cos_a = math.cos(angle)
-                sin_a = math.sin(angle)
-                painter.drawLine(
-                    QPointF(wheel_center.x() + inner_radius * cos_a, wheel_center.y() + inner_radius * sin_a),
-                    QPointF(wheel_center.x() + outer_radius * cos_a, wheel_center.y() + outer_radius * sin_a),
-                )
-
-            # 啮合区标记
-            mesh_spot = QPointF(worm_rect.center().x(), axis_y - 6)
-            painter.setPen(QPen(QColor("#C55A11"), 2.0))
-            painter.setBrush(QColor(197, 90, 17, 45))
-            painter.drawEllipse(mesh_spot, 14.0, 14.0)
-            painter.setFont(make_ui_font(9))
-            painter.setPen(QPen(QColor("#C55A11"), 1.0))
-            painter.drawText(
-                QRectF(mesh_spot.x() - 12, mesh_spot.y() - 34, 72, 16),
-                Qt.AlignmentFlag.AlignLeft,
-                "啮合区",
-            )
-
-            # 中心距尺寸线
-            a_y_line = axis_y + d1_px * 0.5 + 20.0
-            # 只有当 a_px 足够大时才画中心距线，否则会越界
-            if a_px > 20.0:
-                x_worm = worm_rect.center().x()
-                x_wheel = wheel_center.x()
-                a_line_y = max(worm_rect.top() - 28.0, panel.top() + 20.0)
-                painter.setPen(QPen(QColor("#35637A"), 1.6))
-                painter.drawLine(QPointF(x_worm, a_line_y), QPointF(x_wheel, a_line_y))
-                painter.drawLine(QPointF(x_worm, a_line_y - 8), QPointF(x_worm, a_line_y + 8))
-                painter.drawLine(QPointF(x_wheel, a_line_y - 8), QPointF(x_wheel, a_line_y + 8))
-                painter.setFont(make_ui_font(9, 500))
-                painter.drawText(
-                    QRectF((x_worm + x_wheel) * 0.5 - 42, a_line_y - 22, 84, 16),
-                    Qt.AlignmentFlag.AlignCenter,
-                    f"a={a_mm:.1f}mm",
-                )
-
-            # d1 尺寸标注
-            d1_x = worm_rect.left() + worm_rect.width() * 0.18
-            painter.setPen(QPen(QColor("#58707E"), 1.3))
-            painter.setFont(make_ui_font(9, 500))
-            painter.drawLine(QPointF(d1_x, worm_rect.top() - 12), QPointF(d1_x, worm_rect.bottom() + 12))
-            painter.drawLine(QPointF(d1_x - 8, worm_rect.top()), QPointF(d1_x + 8, worm_rect.top()))
-            painter.drawLine(QPointF(d1_x - 8, worm_rect.bottom()), QPointF(d1_x + 8, worm_rect.bottom()))
-            painter.drawText(
-                QRectF(d1_x - 22, worm_rect.top() - 30, 48, 16),
-                Qt.AlignmentFlag.AlignCenter,
-                f"d1={d1_mm:.0f}",
-            )
-
-            # d2 尺寸标注
-            d2_x = wheel_rect.right() + 18
-            painter.drawLine(QPointF(d2_x, wheel_rect.top()), QPointF(d2_x, wheel_rect.bottom()))
-            painter.drawLine(QPointF(d2_x - 8, wheel_rect.top()), QPointF(d2_x + 8, wheel_rect.top()))
-            painter.drawLine(QPointF(d2_x - 8, wheel_rect.bottom()), QPointF(d2_x + 8, wheel_rect.bottom()))
-            painter.drawText(
-                QRectF(d2_x - 22, wheel_rect.top() - 22, 52, 16),
-                Qt.AlignmentFlag.AlignCenter,
-                f"d2={d2_mm:.0f}",
-            )
-
-            # 导程角标注（圆弧）
-            painter.setPen(QPen(QColor("#A6472A"), 1.5))
-            gamma_center = QPointF(worm_rect.right() - 28, worm_rect.center().y())
-            painter.drawArc(QRectF(gamma_center.x() - 28, gamma_center.y() - 28, 56, 56), 0, 56 * 16)
-            painter.setFont(make_ui_font(9))
-            painter.drawText(
-                QRectF(gamma_center.x() + 10, gamma_center.y() - 32, 64, 16),
-                Qt.AlignmentFlag.AlignLeft,
-                f"gamma={gamma_deg:.1f}",
-            )
-
-            # 旋向箭头与文字
-            direction_label = "右旋示意" if handedness == "right" else "左旋示意"
-            painter.setPen(QPen(QColor("#7A3E2B"), 1.5))
-            arrow_y = worm_rect.bottom() + 20
-            painter.drawLine(
-                QPointF(worm_rect.left() + 16, arrow_y),
-                QPointF(worm_rect.right() - 10, arrow_y),
-            )
-            painter.drawLine(
-                QPointF(worm_rect.right() - 10, arrow_y),
-                QPointF(worm_rect.right() - 18, arrow_y - 8),
-            )
-            painter.drawLine(
-                QPointF(worm_rect.right() - 10, arrow_y),
-                QPointF(worm_rect.right() - 18, arrow_y + 8),
-            )
-            painter.setFont(make_ui_font(9))
-            painter.drawText(
-                QRectF(worm_rect.left() + 14, arrow_y + 4, 88, 16),
-                Qt.AlignmentFlag.AlignLeft,
-                direction_label,
-            )
-
-            # 右侧信息面板
-            painter.setPen(QPen(QColor("#5F584F"), 1.0))
-            painter.setFont(make_ui_font(9))
-            painter.drawText(
-                info.adjusted(14, 14, -14, -14),
-                int(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap),
-                "蜗杆副要点\n\n"
-                f"- z1={z1}  z2={z2}\n"
-                f"- d1={d1_mm:.1f} mm\n"
-                f"- d2={d2_mm:.1f} mm\n"
-                f"- a={a_mm:.1f} mm\n"
-                f"- gamma={gamma_deg:.2f} deg\n"
-                f"- {'右旋' if handedness == 'right' else '左旋'}\n\n"
-                f"说明\n{self._note}",
-            )
+            layout = self._compute_geometry_layout(diagram)
+            self._draw_pair(painter, diagram, layout)
+            self._draw_info_panel(painter, info)
         finally:
             painter.end()
+
+    def _draw_pair(self, painter: QPainter, diagram: QRectF, layout: dict) -> None:
+        d1_mm = self._geom_state["d1_mm"]
+        d2_mm = self._geom_state["d2_mm"]
+        a_mm = self._geom_state["a_mm"]
+        gamma_deg = self._geom_state["gamma_deg"]
+        handedness = self._geom_state["handedness"]
+
+        worm_rect: QRectF = layout["worm_rect"]
+        wheel_rect: QRectF = layout["wheel_rect"]
+        wheel_center: QPointF = layout["wheel_center"]
+        worm_axis_y = layout["worm_axis_y"]
+        center_distance = layout["center_distance"]
+
+        # Axes first, behind the shapes.
+        painter.setPen(QPen(QColor("#8B7C67"), 1.1, Qt.PenStyle.DashLine))
+        painter.drawLine(QPointF(worm_rect.left() - 36, worm_axis_y), QPointF(worm_rect.right() + 36, worm_axis_y))
+        painter.drawLine(QPointF(wheel_center.x(), wheel_rect.top() - 18), QPointF(wheel_center.x(), worm_rect.bottom() + 28))
+
+        # Wheel body with subtle tooth ticks.
+        painter.setPen(QPen(QColor("#7F7260"), 2.0))
+        painter.setBrush(QColor("#E3D3C0"))
+        painter.drawEllipse(wheel_rect)
+        bore = wheel_rect.adjusted(wheel_rect.width() * 0.32, wheel_rect.height() * 0.32, -wheel_rect.width() * 0.32, -wheel_rect.height() * 0.32)
+        painter.setBrush(QColor("#FBF8F3"))
+        painter.drawEllipse(bore)
+
+        outer_radius = wheel_rect.width() * 0.5
+        inner_radius = bore.width() * 0.5 + 7.0
+        painter.setPen(QPen(QColor("#8D6E63"), 1.2))
+        for idx in range(24):
+            angle = math.radians(idx * 15.0)
+            cos_a = math.cos(angle)
+            sin_a = math.sin(angle)
+            painter.drawLine(
+                QPointF(wheel_center.x() + inner_radius * cos_a, wheel_center.y() + inner_radius * sin_a),
+                QPointF(wheel_center.x() + outer_radius * cos_a, wheel_center.y() + outer_radius * sin_a),
+            )
+
+        # Worm body and helix.
+        painter.setPen(QPen(QColor("#7F7260"), 2.0))
+        painter.setBrush(QColor("#E6DCCE"))
+        painter.drawRoundedRect(worm_rect, min(worm_rect.height() * 0.45, 18), min(worm_rect.height() * 0.45, 18))
+
+        hand_sign = 1.0 if handedness == "right" else -1.0
+        painter.setPen(QPen(QColor("#B65E2C"), 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        line_count = max(5, min(11, int(worm_rect.width() / 18)))
+        for idx in range(line_count):
+            x0 = worm_rect.left() + 12 + idx * (worm_rect.width() - 24) / max(line_count - 1, 1)
+            painter.drawLine(
+                QPointF(x0, worm_rect.top() + 6),
+                QPointF(x0 + hand_sign * worm_rect.width() * 0.14, worm_rect.bottom() - 6),
+            )
+
+        # Mesh patch: placed between wheel pitch circle and worm crown.
+        mesh = QPointF(wheel_center.x(), (wheel_rect.bottom() + worm_rect.top()) * 0.5)
+        painter.setPen(QPen(QColor("#C55A11"), 1.8))
+        painter.setBrush(QColor(197, 90, 17, 48))
+        painter.drawEllipse(mesh, 15.0, 9.0)
+        self._draw_badge(painter, QRectF(mesh.x() - 78, mesh.y() - 34, 56, 22), "啮合区")
+
+        # Vertical center distance: this is the important corrected logic.
+        self._draw_dimension(
+            painter,
+            center_distance["p0"],
+            center_distance["p1"],
+            f"a={a_mm:.1f}mm",
+            QColor("#35637A"),
+            label_rect=center_distance["label"],
+        )
+
+        # d1 and d2 dimensions live outside shapes to avoid text overlap.
+        d1_x = worm_rect.left() - 18.0
+        self._draw_dimension(
+            painter,
+            QPointF(d1_x, worm_rect.top()),
+            QPointF(d1_x, worm_rect.bottom()),
+            f"d1={d1_mm:.0f}",
+            QColor("#58707E"),
+        )
+        d2_x = wheel_rect.right() + 20.0
+        self._draw_dimension(
+            painter,
+            QPointF(d2_x, wheel_rect.top()),
+            QPointF(d2_x, wheel_rect.bottom()),
+            f"d2={d2_mm:.0f}",
+            QColor("#58707E"),
+        )
+
+        # Lead angle guide near the worm, offset from the mesh label.
+        gamma_center = QPointF(worm_rect.right() - 34, worm_rect.top() - 8)
+        painter.setPen(QPen(QColor("#A6472A"), 1.4))
+        painter.drawLine(gamma_center, QPointF(gamma_center.x() + 56, gamma_center.y()))
+        slope = 56.0 * math.tan(math.radians(max(0.0, min(abs(gamma_deg), 38.0))))
+        painter.drawLine(gamma_center, QPointF(gamma_center.x() + 56, gamma_center.y() + slope))
+        painter.drawArc(QRectF(gamma_center.x() - 20, gamma_center.y() - 20, 40, 40), 0, 42 * 16)
+        self._draw_badge(painter, QRectF(gamma_center.x() + 62, gamma_center.y() - 12, 96, 22), f"gamma={gamma_deg:.1f}deg")
+
+        direction = "右旋" if handedness == "right" else "左旋"
+        arrow_y = min(diagram.bottom() - 20, worm_rect.bottom() + 22)
+        painter.setPen(QPen(QColor("#7A3E2B"), 1.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        x_start = worm_rect.left() + 16
+        x_end = worm_rect.right() - 16
+        if handedness != "right":
+            x_start, x_end = x_end, x_start
+        painter.drawLine(QPointF(x_start, arrow_y), QPointF(x_end, arrow_y))
+        self._draw_arrow_head(painter, QPointF(x_end, arrow_y), 1.0 if handedness == "right" else -1.0)
+        painter.setFont(make_ui_font(9))
+        painter.setPen(QPen(QColor("#7A3E2B"), 1.0))
+        painter.drawText(QRectF(worm_rect.left() + 10, arrow_y + 4, 112, 18), Qt.AlignmentFlag.AlignLeft, f"{direction}蜗杆")
+
+    def _draw_info_panel(self, painter: QPainter, info: QRectF) -> None:
+        z1 = self._geom_state["z1"]
+        z2 = self._geom_state["z2"]
+        d1_mm = self._geom_state["d1_mm"]
+        d2_mm = self._geom_state["d2_mm"]
+        a_mm = self._geom_state["a_mm"]
+        gamma_deg = self._geom_state["gamma_deg"]
+        handedness = self._geom_state["handedness"]
+
+        painter.setPen(QPen(QColor("#5F584F"), 1.0))
+        painter.setFont(make_ui_font(9))
+        painter.drawText(
+            info.adjusted(14, 14, -14, -14),
+            int(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap),
+            "蜗杆副要点\n\n"
+            f"- z1={z1}  z2={z2}\n"
+            f"- d1={d1_mm:.1f} mm\n"
+            f"- d2={d2_mm:.1f} mm\n"
+            f"- a={a_mm:.1f} mm\n"
+            f"- gamma={gamma_deg:.2f} deg\n"
+            f"- {'右旋' if handedness == 'right' else '左旋'}\n\n"
+            f"说明\n{self._note}",
+        )
+
+    def _draw_dimension(
+        self,
+        painter: QPainter,
+        p0: QPointF,
+        p1: QPointF,
+        label: str,
+        color: QColor,
+        *,
+        label_rect: QRectF | None = None,
+    ) -> None:
+        painter.setPen(QPen(color, 1.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(p0, p1)
+        if abs(p1.x() - p0.x()) < abs(p1.y() - p0.y()):
+            painter.drawLine(QPointF(p0.x() - 6, p0.y()), QPointF(p0.x() + 6, p0.y()))
+            painter.drawLine(QPointF(p1.x() - 6, p1.y()), QPointF(p1.x() + 6, p1.y()))
+            default_rect = QRectF(p0.x() + 8, (p0.y() + p1.y()) * 0.5 - 10, 74, 20)
+        else:
+            painter.drawLine(QPointF(p0.x(), p0.y() - 6), QPointF(p0.x(), p0.y() + 6))
+            painter.drawLine(QPointF(p1.x(), p1.y() - 6), QPointF(p1.x(), p1.y() + 6))
+            default_rect = QRectF((p0.x() + p1.x()) * 0.5 - 44, p0.y() - 24, 88, 20)
+        rect = label_rect or default_rect
+        painter.setPen(QPen(color, 1.0))
+        painter.setFont(make_ui_font(9, 600))
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
+
+    def _draw_badge(self, painter: QPainter, rect: QRectF, text: str) -> None:
+        painter.setPen(QPen(QColor("#CDBFAA"), 1.0))
+        painter.setBrush(QColor(251, 248, 243, 235))
+        painter.drawRoundedRect(rect, 5, 5)
+        painter.setPen(QPen(QColor("#5C574F"), 1.0))
+        painter.setFont(make_ui_font(8, 600))
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
+
+    def _draw_arrow_head(self, painter: QPainter, point: QPointF, x_direction: float) -> None:
+        size = 7.0
+        painter.drawLine(point, QPointF(point.x() - x_direction * size, point.y() - size * 0.7))
+        painter.drawLine(point, QPointF(point.x() - x_direction * size, point.y() + size * 0.7))

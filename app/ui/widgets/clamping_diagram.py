@@ -47,28 +47,28 @@ class ClampingDiagramWidget(QWidget):
         painter.setBrush(QColor("#F6F1EA"))
         painter.drawRoundedRect(panel, 12, 12)
 
-        # Regions: left legend / center diagram / right values
-        left_legend_rect = QRectF(panel.left() + 10, panel.top() + 16, panel.width() * 0.19, panel.height() - 32)
-        right_values_rect = QRectF(panel.left() + panel.width() * 0.74, panel.top() + 34, panel.width() * 0.23, panel.height() - 44)
+        # Regions: legend / engineering section / force stack.  Labels are
+        # deliberately outside the SVG body so they cannot cover the section.
+        left_legend_rect = QRectF(panel.left() + 16, panel.top() + 18, panel.width() * 0.17, panel.height() - 36)
+        right_values_rect = QRectF(panel.left() + panel.width() * 0.73, panel.top() + 24, panel.width() * 0.24, panel.height() - 48)
 
         # Center engineering cross-section drawing (SVG)
         diagram = QRectF(
-            panel.left() + panel.width() * 0.24,
-            panel.top() + 8.0,
-            panel.width() * 0.40,
-            panel.height() - 16.0,
+            panel.left() + panel.width() * 0.21,
+            panel.top() + 12.0,
+            panel.width() * 0.48,
+            panel.height() - 24.0,
         )
         self._svg_renderer.load(self._build_svg().encode("utf-8"))
         self._svg_renderer.render(painter, diagram)
 
-        cx = diagram.left() + diagram.width() * 0.44
         top = diagram.top() + diagram.height() * 0.16
         bottom = diagram.top() + diagram.height() * 0.86
         mid = (top + bottom) * 0.5
 
         # Force arrows
-        x_right = diagram.right() + panel.width() * 0.025
-        x_left = diagram.left() - panel.width() * 0.055
+        x_right = right_values_rect.left() + 24
+        x_left = diagram.left() - panel.width() * 0.035
 
         arrow_pen = QPen(QColor("#D97757"), 2.4, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
         painter.setPen(arrow_pen)
@@ -81,8 +81,8 @@ class ClampingDiagramWidget(QWidget):
         self._draw_arrow(painter, QPointF(x_left, bottom - 14), QPointF(x_left, bottom + 22))
 
         # Force labels in isolated boxes to avoid overlap
-        self._draw_label_box(painter, QRectF(x_right + 10, top + 18, 124, 28), "FM (预紧力)")
-        self._draw_label_box(painter, QRectF(x_right + 10, bottom - 54, 138, 28), "FK (残余夹紧力)")
+        self._draw_label_box(painter, QRectF(x_right + 18, top + 16, 126, 28), "FM 预紧力")
+        self._draw_label_box(painter, QRectF(x_right + 18, bottom - 54, 142, 28), "FK 残余夹紧力")
         self._draw_label_box(painter, QRectF(x_left - 56, top - 50, 98, 28), "FA (外载)")
 
         # Left-side component legend (to avoid overlap with drawing callouts)
@@ -97,7 +97,7 @@ class ClampingDiagramWidget(QWidget):
         painter.setFont(make_ui_font(10))
         painter.setPen(QPen(QColor("#6B665E"), 1.0))
         painter.drawText(
-            right_values_rect,
+            right_values_rect.adjusted(68, 2, -4, -4),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
             f"FM = {self._fm:,.0f} N\n"
             f"FA = {self._fa:,.0f} N\n"
@@ -146,55 +146,62 @@ class ClampingDiagramWidget(QWidget):
     </pattern>
   </defs>
 
+  <!-- load path: bolt head -> clamped parts -> nut -->
+  <path d="M330 150 L410 150 L490 356 L250 356 Z" fill="#d97757" opacity="0.12"/>
+  <path d="M325 356 L495 356 L448 418 L372 418 Z" fill="#d97757" opacity="0.11"/>
+
   <!-- Clamped members (continuous contact: no gaps) -->
-  <rect x="160" y="162" width="470" height="92" fill="#e8dfd3" stroke="#9e907d" stroke-width="2"/>
-  <rect x="160" y="254" width="470" height="92" fill="#e8dfd3" stroke="#9e907d" stroke-width="2"/>
-  <rect x="160" y="162" width="470" height="92" fill="url(#hatch)" opacity="0.28"/>
-  <rect x="160" y="254" width="470" height="92" fill="url(#hatch)" opacity="0.28"/>
+  <rect x="160" y="164" width="540" height="94" rx="3" fill="#e8dfd3" stroke="#9e907d" stroke-width="2"/>
+  <rect x="160" y="258" width="540" height="94" rx="3" fill="#e8dfd3" stroke="#9e907d" stroke-width="2"/>
+  <rect x="160" y="164" width="540" height="94" fill="url(#hatch)" opacity="0.22"/>
+  <rect x="160" y="258" width="540" height="94" fill="url(#hatch)" opacity="0.22"/>
 
   <!-- Contact plane between clamped parts -->
-  <line x1="160" y1="254" x2="630" y2="254" stroke="#8f816d" stroke-width="1.6"/>
+  <line x1="160" y1="258" x2="700" y2="258" stroke="#8f816d" stroke-width="1.6"/>
 
-  <!-- Bolt head -->
-  <polygon points="308,86 432,86 454,118 432,150 308,150 286,118"
+  <!-- Bolt head and bearing washer -->
+  <polygon points="336,78 464,78 490,116 464,154 336,154 310,116"
            fill="url(#steel)" stroke="#7f7260" stroke-width="2"/>
+  <rect x="300" y="154" width="200" height="14" rx="4" fill="#c7bdaf" stroke="#8a7d6c" stroke-width="1.4"/>
 
   <!-- Shank -->
-  <rect x="350" y="150" width="40" height="268" fill="url(#shank)" stroke="#7f7260" stroke-width="2"/>
+  <rect x="374" y="154" width="52" height="260" fill="url(#shank)" stroke="#7f7260" stroke-width="2"/>
+  <rect x="362" y="168" width="76" height="184" fill="none" stroke="#b8aa98" stroke-width="1.2" stroke-dasharray="5 5"/>
 
   <!-- Thread section -->
-  <rect x="350" y="294" width="40" height="124" fill="#c9bfae" opacity="0.55"/>
+  <rect x="374" y="292" width="52" height="122" fill="#c9bfae" opacity="0.55"/>
   <g stroke="#6f6251" stroke-width="1.5">
-    <line x1="350" y1="300" x2="390" y2="314"/>
-    <line x1="350" y1="316" x2="390" y2="330"/>
-    <line x1="350" y1="332" x2="390" y2="346"/>
-    <line x1="350" y1="348" x2="390" y2="362"/>
-    <line x1="350" y1="364" x2="390" y2="378"/>
-    <line x1="350" y1="380" x2="390" y2="394"/>
-    <line x1="350" y1="396" x2="390" y2="410"/>
+    <line x1="374" y1="300" x2="426" y2="316"/>
+    <line x1="374" y1="316" x2="426" y2="332"/>
+    <line x1="374" y1="332" x2="426" y2="348"/>
+    <line x1="374" y1="348" x2="426" y2="364"/>
+    <line x1="374" y1="364" x2="426" y2="380"/>
+    <line x1="374" y1="380" x2="426" y2="396"/>
+    <line x1="374" y1="396" x2="426" y2="412"/>
   </g>
 
   <!-- Nut -->
-  <polygon points="308,358 432,358 454,390 432,422 308,422 286,390"
+  <polygon points="336,360 464,360 490,398 464,436 336,436 310,398"
            fill="url(#steel)" stroke="#7f7260" stroke-width="2"/>
 
   <!-- Sectioned internal thread in nut -->
   <g stroke="#6f6251" stroke-width="1.3">
-    <line x1="350" y1="364" x2="390" y2="376"/>
-    <line x1="350" y1="378" x2="390" y2="390"/>
-    <line x1="350" y1="392" x2="390" y2="404"/>
-    <line x1="350" y1="406" x2="390" y2="418"/>
+    <line x1="374" y1="368" x2="426" y2="382"/>
+    <line x1="374" y1="384" x2="426" y2="398"/>
+    <line x1="374" y1="400" x2="426" y2="414"/>
+    <line x1="374" y1="416" x2="426" y2="430"/>
   </g>
 
   <!-- Center line -->
-  <line x1="370" y1="70" x2="370" y2="510" stroke="#9b8d7a" stroke-width="1.2" stroke-dasharray="8 8"/>
+  <line x1="400" y1="62" x2="400" y2="500" stroke="#9b8d7a" stroke-width="1.2" stroke-dasharray="8 8"/>
+  <text x="510" y="414" font-family="{UI_FONT_FAMILY_SVG}" font-size="15" fill="#5a564f">Nut</text>
 
   <!-- Component index markers -->
   <g font-family="{UI_FONT_FAMILY_SVG}" font-size="12" fill="#4b433a">
-    <circle cx="270" cy="118" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="266" y="123">1</text>
-    <circle cx="176" cy="206" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="172" y="211">2</text>
-    <circle cx="176" cy="300" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="172" y="305">3</text>
-    <circle cx="270" cy="390" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="266" y="395">4</text>
+    <circle cx="292" cy="116" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="288" y="121">1</text>
+    <circle cx="178" cy="210" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="174" y="215">2</text>
+    <circle cx="178" cy="306" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="174" y="311">3</text>
+    <circle cx="292" cy="398" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="288" y="403">4</text>
   </g>
 
 </svg>
@@ -219,61 +226,67 @@ class ClampingDiagramWidget(QWidget):
     </pattern>
   </defs>
 
+  <!-- load path: bolt head -> clamped parts -> tapped internal thread -->
+  <path d="M330 150 L410 150 L500 402 L300 402 Z" fill="#d97757" opacity="0.12"/>
+
   <!-- Clamped members -->
-  <rect x="160" y="162" width="470" height="92" fill="#e8dfd3" stroke="#9e907d" stroke-width="2"/>
-  <rect x="160" y="254" width="470" height="92" fill="#e8dfd3" stroke="#9e907d" stroke-width="2"/>
-  <rect x="160" y="162" width="470" height="92" fill="url(#hatch)" opacity="0.28"/>
-  <rect x="160" y="254" width="470" height="92" fill="url(#hatch)" opacity="0.28"/>
+  <rect x="160" y="164" width="540" height="94" rx="3" fill="#e8dfd3" stroke="#9e907d" stroke-width="2"/>
+  <rect x="160" y="258" width="540" height="132" rx="3" fill="#e8dfd3" stroke="#9e907d" stroke-width="2"/>
+  <rect x="160" y="164" width="540" height="94" fill="url(#hatch)" opacity="0.22"/>
+  <rect x="160" y="258" width="540" height="132" fill="url(#hatch)" opacity="0.22"/>
 
   <!-- Contact plane -->
-  <line x1="160" y1="254" x2="630" y2="254" stroke="#8f816d" stroke-width="1.6"/>
+  <line x1="160" y1="258" x2="700" y2="258" stroke="#8f816d" stroke-width="1.6"/>
 
-  <!-- Bolt head -->
-  <polygon points="308,86 432,86 454,118 432,150 308,150 286,118"
+  <!-- Bolt head and bearing washer -->
+  <polygon points="336,78 464,78 490,116 464,154 336,154 310,116"
            fill="url(#steel)" stroke="#7f7260" stroke-width="2"/>
+  <rect x="300" y="154" width="200" height="14" rx="4" fill="#c7bdaf" stroke="#8a7d6c" stroke-width="1.4"/>
 
   <!-- Shank -->
-  <rect x="350" y="150" width="40" height="214" fill="url(#shank)" stroke="#7f7260" stroke-width="2"/>
+  <rect x="374" y="154" width="52" height="244" fill="url(#shank)" stroke="#7f7260" stroke-width="2"/>
+  <rect x="362" y="168" width="76" height="222" fill="none" stroke="#b8aa98" stroke-width="1.2" stroke-dasharray="5 5"/>
 
   <!-- Threaded shank in tapped hole -->
-  <rect x="350" y="286" width="40" height="132" fill="#c9bfae" opacity="0.55"/>
+  <rect x="374" y="286" width="52" height="132" fill="#c9bfae" opacity="0.55"/>
   <g stroke="#6f6251" stroke-width="1.5">
-    <line x1="350" y1="292" x2="390" y2="306"/>
-    <line x1="350" y1="308" x2="390" y2="322"/>
-    <line x1="350" y1="324" x2="390" y2="338"/>
-    <line x1="350" y1="340" x2="390" y2="354"/>
-    <line x1="350" y1="356" x2="390" y2="370"/>
-    <line x1="350" y1="372" x2="390" y2="386"/>
-    <line x1="350" y1="388" x2="390" y2="402"/>
+    <line x1="374" y1="292" x2="426" y2="308"/>
+    <line x1="374" y1="308" x2="426" y2="324"/>
+    <line x1="374" y1="324" x2="426" y2="340"/>
+    <line x1="374" y1="340" x2="426" y2="356"/>
+    <line x1="374" y1="356" x2="426" y2="372"/>
+    <line x1="374" y1="372" x2="426" y2="388"/>
+    <line x1="374" y1="388" x2="426" y2="404"/>
   </g>
 
   <!-- Internal thread / tapped region -->
-  <rect x="338" y="286" width="64" height="132" fill="none" stroke="#7f7260" stroke-width="1.6"/>
+  <rect x="356" y="286" width="88" height="132" fill="none" stroke="#7f7260" stroke-width="1.6"/>
   <g stroke="#6f6251" stroke-width="1.3">
-    <line x1="338" y1="294" x2="350" y2="304"/>
-    <line x1="390" y1="304" x2="402" y2="294"/>
-    <line x1="338" y1="314" x2="350" y2="324"/>
-    <line x1="390" y1="324" x2="402" y2="314"/>
-    <line x1="338" y1="334" x2="350" y2="344"/>
-    <line x1="390" y1="344" x2="402" y2="334"/>
-    <line x1="338" y1="354" x2="350" y2="364"/>
-    <line x1="390" y1="364" x2="402" y2="354"/>
-    <line x1="338" y1="374" x2="350" y2="384"/>
-    <line x1="390" y1="384" x2="402" y2="374"/>
-    <line x1="338" y1="394" x2="350" y2="404"/>
-    <line x1="390" y1="404" x2="402" y2="394"/>
+    <line x1="356" y1="294" x2="374" y2="306"/>
+    <line x1="426" y1="306" x2="444" y2="294"/>
+    <line x1="356" y1="314" x2="374" y2="326"/>
+    <line x1="426" y1="326" x2="444" y2="314"/>
+    <line x1="356" y1="334" x2="374" y2="346"/>
+    <line x1="426" y1="346" x2="444" y2="334"/>
+    <line x1="356" y1="354" x2="374" y2="366"/>
+    <line x1="426" y1="366" x2="444" y2="354"/>
+    <line x1="356" y1="374" x2="374" y2="386"/>
+    <line x1="426" y1="386" x2="444" y2="374"/>
+    <line x1="356" y1="394" x2="374" y2="406"/>
+    <line x1="426" y1="406" x2="444" y2="394"/>
   </g>
-  <text x="436" y="408" font-family="{UI_FONT_FAMILY_SVG}" font-size="15" fill="#5a564f">内螺纹</text>
+  <text x="470" y="404" font-family="{UI_FONT_FAMILY_SVG}" font-size="15" fill="#5a564f">内螺纹</text>
+  <text x="470" y="382" font-family="{UI_FONT_FAMILY_SVG}" font-size="13" fill="#7a6c5a">m_eff</text>
 
   <!-- Center line -->
-  <line x1="370" y1="70" x2="370" y2="510" stroke="#9b8d7a" stroke-width="1.2" stroke-dasharray="8 8"/>
+  <line x1="400" y1="62" x2="400" y2="500" stroke="#9b8d7a" stroke-width="1.2" stroke-dasharray="8 8"/>
 
   <!-- Component index markers -->
   <g font-family="{UI_FONT_FAMILY_SVG}" font-size="12" fill="#4b433a">
-    <circle cx="270" cy="118" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="266" y="123">1</text>
-    <circle cx="176" cy="206" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="172" y="211">2</text>
-    <circle cx="176" cy="300" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="172" y="305">3</text>
-    <circle cx="430" cy="352" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="426" y="357">4</text>
+    <circle cx="292" cy="116" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="288" y="121">1</text>
+    <circle cx="178" cy="210" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="174" y="215">2</text>
+    <circle cx="178" cy="320" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="174" y="325">3</text>
+    <circle cx="454" cy="348" r="10" fill="#f5efe6" stroke="#9e907d" stroke-width="1.2"/><text x="450" y="353">4</text>
   </g>
 
 </svg>
@@ -340,11 +353,12 @@ class ThreadForceTriangleWidget(QWidget):
         painter.setBrush(QColor("#FBF8F3"))
         painter.drawRoundedRect(panel, 10, 10)
 
-        # Triangle area
-        base_y = panel.bottom() - 28
-        x0 = panel.left() + 54
-        x1 = panel.left() + panel.width() * 0.56
-        apex = QPointF(x1, panel.top() + 36)
+        # Triangle area.  Keep labels away from the vector edges; the right
+        # card carries the explanatory text and numeric values.
+        base_y = panel.bottom() - 38
+        x0 = panel.left() + 58
+        x1 = panel.left() + panel.width() * 0.58
+        apex = QPointF(x1, panel.top() + 42)
         p0 = QPointF(x0, base_y)
         p1 = QPointF(x1, base_y)
 
@@ -359,20 +373,35 @@ class ThreadForceTriangleWidget(QWidget):
 
         painter.setPen(QPen(QColor("#2E2A25"), 1.0))
         painter.setFont(make_ui_font(10, 600))
-        painter.drawText(QRectF(p0.x() + 10, base_y - 30, 150, 24), "Ft 螺纹切向力")
-        painter.drawText(QRectF((p0.x() + apex.x()) / 2 - 20, (p0.y() + apex.y()) / 2 - 32, 150, 24), "Fn 法向力")
-        painter.drawText(QRectF(p1.x() + 8, (p1.y() + apex.y()) / 2 - 12, 150, 24), "Fa 轴向分力")
+        painter.drawText(QRectF(p0.x() + 8, base_y - 28, 138, 22), "Ft 切向力")
+        painter.drawText(QRectF((p0.x() + apex.x()) / 2 - 82, (p0.y() + apex.y()) / 2 - 22, 110, 22), "Fn 法向力")
+        painter.drawText(QRectF(p1.x() + 10, (p1.y() + apex.y()) / 2 - 10, 104, 22), "Fa 轴向分力")
+
+        # Angle arcs: lead angle at the screw helix and equivalent friction
+        # angle near the resultant side.  They are intentionally short and
+        # labelled below the triangle so they do not collide with the edges.
+        painter.setPen(QPen(QColor("#A6472A"), 1.4))
+        painter.drawArc(QRectF(p0.x() + 18, base_y - 40, 78, 78), 0, 26 * 16)
+        painter.drawText(QRectF(p0.x() + 96, base_y - 24, 86, 20), f"lambda={self._lead_angle:.2f} deg")
+        painter.setPen(QPen(QColor("#7C6C54"), 1.4))
+        painter.drawArc(QRectF(p0.x() + 38, base_y - 66, 112, 112), 22 * 16, 34 * 16)
+        painter.drawText(QRectF(p0.x() + 190, base_y - 24, 98, 20), f"rho'={self._friction_angle:.2f} deg")
 
         painter.setFont(make_ui_font(10))
         painter.setPen(QPen(QColor("#6B665E"), 1.0))
+        info_rect = QRectF(panel.left() + panel.width() * 0.69, panel.top() + 22, panel.width() * 0.28, panel.height() - 44)
+        painter.setPen(QPen(QColor("#E4DDD2"), 1.0))
+        painter.setBrush(QColor("#FBF8F3"))
+        painter.drawRoundedRect(info_rect, 8, 8)
+        painter.setPen(QPen(QColor("#6B665E"), 1.0))
         painter.drawText(
-            QRectF(panel.left() + panel.width() * 0.67, panel.top() + 24, panel.width() * 0.30, panel.height() - 32),
+            info_rect.adjusted(12, 10, -12, -10),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
             "螺纹受力三角\n"
             f"FMmax = {self._fm_max:,.0f} N\n"
-            f"导程角 λ = {self._lead_angle:.2f}°\n"
-            f"摩擦角 ρ' = {self._friction_angle:.2f}°\n\n"
-            "用于理解螺纹传力与\n扭矩分解关系。",
+            f"lambda = {self._lead_angle:.2f} deg\n"
+            f"rho' = {self._friction_angle:.2f} deg\n\n"
+            "用于理解轴向预紧力、\n螺纹切向力与法向力的\n分解关系。",
         )
 
     def _draw_arrow(self, painter: QPainter, p0: QPointF, p1: QPointF, color: QColor, width: float) -> None:
