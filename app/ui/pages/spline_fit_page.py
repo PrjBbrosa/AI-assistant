@@ -871,26 +871,46 @@ class SplineFitPage(BaseChapterPage):
             return w.text().strip()
         return ""
 
+    def _reset_scenario_cards(self) -> None:
+        for key in ("a_badge", "b_badge"):
+            badge = self._result_labels.get(key)
+            if badge is None:
+                continue
+            badge.setText("待计算")
+            badge.setObjectName("WaitBadge")
+            badge.style().unpolish(badge)
+            badge.style().polish(badge)
+        for key in ("a_detail", "b_detail"):
+            detail = self._result_labels.get(key)
+            if detail is not None:
+                detail.setText("")
+        if self.curve_widget is not None:
+            self.curve_widget.setVisible(False)
+        if self.message_box is not None:
+            self.message_box.clear()
+
     def _run_calculation(self, *, strict: bool) -> None:
         try:
             payload = self._build_payload()
             result = calculate_spline_fit(payload)
+            self._display_result(result)
         except InputError as exc:
             self._last_payload = None
             self._last_result = None
+            self._reset_scenario_cards()
             self.set_overall_status(f"输入错误: {exc}", "fail" if strict else "wait")
             self.set_info(str(exc))
             return
         except Exception as exc:
             self._last_payload = None
             self._last_result = None
+            self._reset_scenario_cards()
             self.set_overall_status(f"内部错误: {exc}", "fail")
             self.set_info(f"计算过程中出现意外错误，请检查输入或联系开发者。\n{exc}")
             return
 
         self._last_payload = payload
         self._last_result = result
-        self._display_result(result)
 
     def _build_payload(self) -> dict:
         mode_text = self._get_value("mode")
@@ -1088,26 +1108,7 @@ class SplineFitPage(BaseChapterPage):
         self._apply_defaults()
         self._last_payload = None
         self._last_result = None
-        for key in ("a_badge", "b_badge"):
-            badge = self._result_labels.get(key)
-            if badge is None:
-                continue
-            badge.setText("等待计算" if key == "a_badge" else "未启用")
-            badge.setObjectName("WaitBadge")
-            badge.style().unpolish(badge)
-            badge.style().polish(badge)
-        details = {
-            "a_detail": "",
-            "b_detail": "仅花键模式，光滑段过盈校核已跳过。",
-        }
-        for key, text in details.items():
-            label = self._result_labels.get(key)
-            if label is not None:
-                label.setText(text)
-        if self.curve_widget is not None:
-            self.curve_widget.setVisible(False)
-        if self.message_box is not None:
-            self.message_box.clear()
+        self._reset_scenario_cards()
         self.set_overall_status("等待计算", "wait")
         self.set_info("参数已重置为默认值。")
         self._sync_state_from_ui(refresh=True)

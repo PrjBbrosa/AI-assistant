@@ -1075,20 +1075,39 @@ class WormGearPage(BaseChapterPage):
     def _calculate(self) -> None:
         try:
             payload = self._build_payload()
-            self._last_payload = payload
             result = calculate_worm_geometry(payload)
         except InputError as exc:
+            self._last_payload = None
+            self._last_result = None
+            self._mark_results_dirty()
             QMessageBox.critical(self, "输入参数错误", str(exc))
             return
         except Exception as exc:  # pragma: no cover
+            self._last_payload = None
+            self._last_result = None
+            self._mark_results_dirty()
             QMessageBox.critical(self, "计算异常", str(exc))
             return
 
+        self._last_payload = payload
+        try:
+            self._render_result(result)
+        except Exception as exc:
+            self._last_payload = None
+            self._last_result = None
+            self._reset_result_panels()
+            self._mark_results_dirty()
+            QMessageBox.critical(self, "渲染异常", str(exc))
+            self.set_info(f"结果渲染失败：{exc}")
+            return
         self._last_result = result
+
+    def _render_result(self, result: dict[str, Any]) -> None:
         geometry = result["geometry"]
         performance = result["performance"]
         curve = result["curve"]
         load_capacity = result["load_capacity"]
+        payload = self._last_payload or {}
         worm_dimensions = geometry["worm_dimensions"]
         wheel_dimensions = geometry["wheel_dimensions"]
         contact = load_capacity.get("contact", {})
@@ -1361,10 +1380,7 @@ class WormGearPage(BaseChapterPage):
         self._mark_results_dirty()
         self.set_info(f"已加载测试案例：{filename}")
 
-    def _clear(self) -> None:
-        self._last_result = None
-        self._last_payload = None
-        self._apply_defaults()
+    def _reset_result_panels(self) -> None:
         self.result_title.setText("尚未执行计算")
         self.result_summary.setText("执行计算后显示几何、基础性能以及 Method B 最小子集结果。")
         self.result_metrics.setPlainText("尚无结果。")
@@ -1375,9 +1391,28 @@ class WormGearPage(BaseChapterPage):
             temperature_rise_k=[],
             current_index=-1,
         )
+        self.stress_curve.clear()
+        self.geometry_overview.reset_geometry_state()
         self.geometry_overview.set_display_state("几何总览", "按 DIN 3975 展示蜗杆、蜗轮、中心距与导程角关系。")
         self.load_capacity_status.setText("DIN 3996 校核尚未开始")
+        self.load_capacity_status.setObjectName("WaitBadge")
+        self.load_capacity_status.style().unpolish(self.load_capacity_status)
+        self.load_capacity_status.style().polish(self.load_capacity_status)
         self.load_capacity_metrics.setPlainText("尚无 Load Capacity 结果。")
+        for _key, (_name, badge) in self._check_badges.items():
+            self._set_badge(badge, "待计算", "wait")
+        self._set_badge(self._overall_lc_badge, "待计算", "wait")
+        self._efficiency_subtitle_label.setText("执行计算后显示。")
+        self._efficiency_subtitle_card.setVisible(False)
+        for label in self._life_row_labels.values():
+            label.setText("—")
+        self._life_card.setVisible(False)
         self.set_overall_status("等待计算", "wait")
+
+    def _clear(self) -> None:
+        self._last_result = None
+        self._last_payload = None
+        self._apply_defaults()
+        self._reset_result_panels()
         self._mark_results_dirty()
         self.set_info("参数已重置，可重新执行蜗杆副计算。")

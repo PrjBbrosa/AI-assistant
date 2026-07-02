@@ -307,6 +307,8 @@ class HertzContactPage(BaseChapterPage):
             self._refresh_diagram_from_inputs()
 
         QTimer.singleShot(0, _deferred_sample_init)
+        self._connect_dirty_signals()
+        self._mark_results_dirty()
 
     def eventFilter(self, watched, event):  # noqa: N802
         if watched in self._widget_hints and event.type() in (QEvent.Type.FocusIn, QEvent.Type.Enter):
@@ -716,16 +718,23 @@ class HertzContactPage(BaseChapterPage):
             payload = self._build_payload()
             result = calculate_hertz_contact(payload)
             self._render_result(result)
-            self._last_payload = payload
-            self._last_result = result
             self.set_current_chapter(self.chapter_stack.count() - 1)
         except InputError as exc:
+            self._mark_results_dirty()
             QMessageBox.critical(self, "输入参数错误", str(exc))
             return
         except Exception as exc:  # pragma: no cover
+            self._last_payload = None
+            self._last_result = None
+            self._reset_result_display()
+            self._mark_results_dirty()
             QMessageBox.critical(self, "渲染异常", str(exc))
             self.set_info(f"结果渲染失败：{exc}")
             return
+
+        self._last_payload = payload
+        self._last_result = result
+        self._mark_results_fresh()
 
     def _render_result(self, result: dict[str, Any]) -> None:
         overall = bool(result.get("overall_pass"))
@@ -823,6 +832,7 @@ class HertzContactPage(BaseChapterPage):
         self._sync_material_inputs()
         self._apply_mode_visibility()
         self._refresh_diagram_from_inputs()
+        self._mark_results_dirty()
 
     def _load_sample(self, filename: str) -> None:
         sample_path = EXAMPLES_DIR / filename
@@ -841,6 +851,7 @@ class HertzContactPage(BaseChapterPage):
             return
 
         self._apply_input_data(data)
+        self._mark_results_dirty()
         self.set_info(f"已加载测试案例：{filename}。可直接执行校核并查看图示。")
 
     def _save_input_conditions(self) -> None:
@@ -877,12 +888,19 @@ class HertzContactPage(BaseChapterPage):
             return
 
         self._apply_input_data(data)
+        self._mark_results_dirty()
         self.set_info(f"已加载输入条件：{in_path}")
 
     def _clear(self) -> None:
         self._apply_defaults()
         self._last_payload = None
         self._last_result = None
+        self._reset_result_display()
+        self.set_info("参数已重置为默认值。")
+        self._refresh_diagram_from_inputs()
+        self._mark_results_dirty()
+
+    def _reset_result_display(self) -> None:
         self.result_title.setText("尚未执行计算")
         self.result_summary.setText("填写参数并点击\"执行校核\"后，这里显示结论。")
         self.metrics_text.setText("尚无结果。")
@@ -890,8 +908,19 @@ class HertzContactPage(BaseChapterPage):
         for badge in self._check_badges.values():
             self._set_badge(badge, "待计算", "wait")
         self.set_overall_status("等待计算", "wait")
-        self.set_info("参数已重置为默认值。")
-        self._refresh_diagram_from_inputs()
+
+    def _mark_results_dirty(self) -> None:
+        self.btn_save.setEnabled(False)
+
+    def _mark_results_fresh(self) -> None:
+        self.btn_save.setEnabled(True)
+
+    def _connect_dirty_signals(self) -> None:
+        for widget in self._field_widgets.values():
+            if isinstance(widget, QLineEdit):
+                widget.textEdited.connect(self._mark_results_dirty)
+            elif isinstance(widget, QComboBox):
+                widget.currentIndexChanged.connect(self._mark_results_dirty)
 
     def _save_report(self) -> None:
         if self._last_result is None:

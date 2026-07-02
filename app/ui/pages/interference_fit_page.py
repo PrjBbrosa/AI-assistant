@@ -849,6 +849,8 @@ class InterferenceFitPage(BaseChapterPage):
             self._sync_fretting_fields()
 
         QTimer.singleShot(0, _deferred_sample_init)
+        self._connect_dirty_signals()
+        self._mark_results_dirty()
 
     def eventFilter(self, watched, event):  # noqa: N802
         if watched in self._widget_hints and event.type() in (QEvent.Type.FocusIn, QEvent.Type.Enter):
@@ -1558,22 +1560,29 @@ class InterferenceFitPage(BaseChapterPage):
         try:
             payload = self._build_payload()
             result = calculate_interference_fit(payload)
+            self._render_result(result, payload)
+            self.set_current_chapter(self.chapter_stack.count() - 1)
         except InputError as exc:
+            self._mark_results_dirty()
             QMessageBox.critical(self, "输入参数错误", str(exc))
             return
         except Exception as exc:  # pragma: no cover
-            QMessageBox.critical(self, "计算异常", str(exc))
+            self._last_payload = None
+            self._last_result = None
+            self._reset_result_display()
+            self._mark_results_dirty()
+            QMessageBox.critical(self, "渲染异常", str(exc))
+            self.set_info(f"结果渲染失败：{exc}")
             return
 
         self._last_payload = payload
         self._last_result = result
-        self._render_result(result)
-        self.set_current_chapter(self.chapter_stack.count() - 1)
+        self._mark_results_fresh()
 
-    def _render_result(self, result: dict[str, Any]) -> None:
+    def _render_result(self, result: dict[str, Any], payload: dict[str, Any] | None = None) -> None:
         overall = bool(result.get("overall_pass"))
         checks = result["checks"]
-        fit_trace_lines = self._build_fit_trace_lines()
+        fit_trace_lines = self._build_fit_trace_lines(payload)
 
         if overall:
             self.result_title.setText("校核通过")
@@ -1599,8 +1608,8 @@ class InterferenceFitPage(BaseChapterPage):
         add_p = result["additional_pressure_mpa"]
         model = result.get("model", {})
         derived = result.get("derived", {})
-        assembly_lines = self._build_assembly_trace_lines()
-        fretting_lines = self._build_fretting_trace_lines()
+        assembly_lines = self._build_assembly_trace_lines(result)
+        fretting_lines = self._build_fretting_trace_lines(result)
         shaft_type = "hollow shaft" if model.get("shaft_type") == "hollow_shaft" else "solid shaft"
         shaft_inner_d_mm = float(derived.get("shaft_inner_d_mm", 0.0))
 
@@ -1676,10 +1685,11 @@ class InterferenceFitPage(BaseChapterPage):
             recs.append("[建议] 当前工况满足全部校核，建议至少保留 10% 工程裕量。")
         return recs
 
-    def _build_fit_trace_lines(self) -> list[str]:
+    def _build_fit_trace_lines(self, payload: dict[str, Any] | None = None) -> list[str]:
         fit_selection = {}
-        if isinstance(self._last_payload, dict):
-            fit_selection = self._last_payload.get("fit_selection", {})
+        source_payload = payload if isinstance(payload, dict) else self._last_payload
+        if isinstance(source_payload, dict):
+            fit_selection = source_payload.get("fit_selection", {})
         if not isinstance(fit_selection, dict):
             fit_selection = {}
 
@@ -1722,10 +1732,11 @@ class InterferenceFitPage(BaseChapterPage):
             )
         return lines
 
-    def _build_assembly_trace_lines(self) -> list[str]:
-        if not isinstance(self._last_result, dict):
+    def _build_assembly_trace_lines(self, result: dict[str, Any] | None = None) -> list[str]:
+        source_result = result if isinstance(result, dict) else self._last_result
+        if not isinstance(source_result, dict):
             return []
-        assembly_detail = self._last_result.get("assembly_detail", {})
+        assembly_detail = source_result.get("assembly_detail", {})
         if not isinstance(assembly_detail, dict):
             return []
 
@@ -1759,10 +1770,11 @@ class InterferenceFitPage(BaseChapterPage):
                 )
         return lines
 
-    def _build_fretting_trace_lines(self) -> list[str]:
-        if not isinstance(self._last_result, dict):
+    def _build_fretting_trace_lines(self, result: dict[str, Any] | None = None) -> list[str]:
+        source_result = result if isinstance(result, dict) else self._last_result
+        if not isinstance(source_result, dict):
             return []
-        fretting = self._last_result.get("fretting", {})
+        fretting = source_result.get("fretting", {})
         if not isinstance(fretting, dict):
             return []
 
@@ -1925,6 +1937,7 @@ class InterferenceFitPage(BaseChapterPage):
         self._sync_roughness_factor()
         self._sync_fit_mode_fields()
         self._sync_assembly_fields()
+        self._mark_results_dirty()
 
     def _load_sample(self, filename: str) -> None:
         sample_path = EXAMPLES_DIR / filename
@@ -1944,6 +1957,7 @@ class InterferenceFitPage(BaseChapterPage):
             return
 
         self._apply_input_data(data)
+        self._mark_results_dirty()
         self.set_info(f"已加载测试案例：{filename}。可直接执行校核并查看压入力曲线。")
 
     def _save_input_conditions(self) -> None:
@@ -1980,6 +1994,7 @@ class InterferenceFitPage(BaseChapterPage):
             return
 
         self._apply_input_data(data)
+        self._mark_results_dirty()
         self.set_info(f"已加载输入条件：{in_path}")
 
     def _clear(self) -> None:
@@ -1989,6 +2004,11 @@ class InterferenceFitPage(BaseChapterPage):
         self._sync_friction_from_material()
         self._last_payload = None
         self._last_result = None
+        self._reset_result_display()
+        self.set_info("参数已重置为默认值。")
+        self._mark_results_dirty()
+
+    def _reset_result_display(self) -> None:
         self.result_title.setText("尚未执行计算")
         self.result_summary.setText("填写参数并点击「执行校核」后，这里显示结论。")
         self.metrics_text.setText("尚无结果。")
@@ -1997,7 +2017,19 @@ class InterferenceFitPage(BaseChapterPage):
             self._set_badge(badge, "待计算", "wait")
         self.curve_widget.set_curve([], [], 0.0, 0.0, 0.0)
         self.set_overall_status("等待计算", "wait")
-        self.set_info("参数已重置为默认值。")
+
+    def _mark_results_dirty(self) -> None:
+        self.btn_save.setEnabled(False)
+
+    def _mark_results_fresh(self) -> None:
+        self.btn_save.setEnabled(True)
+
+    def _connect_dirty_signals(self) -> None:
+        for widget in self._field_widgets.values():
+            if isinstance(widget, QLineEdit):
+                widget.textEdited.connect(self._mark_results_dirty)
+            elif isinstance(widget, QComboBox):
+                widget.currentIndexChanged.connect(self._mark_results_dirty)
 
     def _save_report(self) -> None:
         if self._last_result is None or self._last_payload is None:

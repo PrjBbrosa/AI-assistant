@@ -413,7 +413,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "基础实体类型",
                 "-",
                 "用于自动柔度建模。选择几何模型后，勾选自动计算可替代手动输入顺从度。",
-                mapping=("clamped", "basic_solid"),
+                mapping=None,  # spec D12/W-10：payload 由专用翻译代码写入，避免中文双写
                 widget_type="choice",
                 options=("圆柱体", "锥体", "套筒"),
                 default="圆柱体",
@@ -449,7 +449,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "接触面粗糙度",
                 "-",
                 "用于嵌入损失自动估算。选择后当嵌入损失 FZ=0 时自动计算参考值。",
-                mapping=("clamped", "surface_class"),
+                mapping=None,  # spec D12/W-10：payload 由专用翻译代码写入，避免中文双写
                 widget_type="choice",
                 options=("粗糙 (Ra≈6.3μm)", "中等 (Ra≈3.2μm)", "精细 (Ra≈1.6μm)"),
                 default="中等 (Ra≈3.2μm)",
@@ -1182,9 +1182,6 @@ class BoltPage(QWidget):
         self.btn_flow_tab.clicked.connect(lambda: self._switch_nav_tab(1))
         self.flowchart_nav.node_clicked.connect(self._on_flow_node_clicked)
 
-        self._apply_defaults()
-        self._load_sample("input_case_01.json")
-        self._apply_check_level_visibility()
         bearing_mat_widget = self._field_widgets.get("bearing.bearing_material")
         if bearing_mat_widget and isinstance(bearing_mat_widget, QComboBox):
             bearing_mat_widget.currentTextChanged.connect(self._on_bearing_material_changed)
@@ -1254,6 +1251,12 @@ class BoltPage(QWidget):
         if jt_widget and isinstance(jt_widget, QComboBox):
             jt_widget.currentTextChanged.connect(self._sync_joint_diagram_from_ui)
             self._sync_joint_diagram_from_ui()
+
+        self._apply_defaults()
+        self._load_sample("input_case_01.json")
+        self._apply_check_level_visibility()
+        self._connect_dirty_signals()
+        self._mark_results_dirty()
 
     def eventFilter(self, watched, event):  # noqa: N802
         if watched in self._widget_hints and event.type() in (QEvent.Type.FocusIn, QEvent.Type.Enter):
@@ -2382,6 +2385,14 @@ class BoltPage(QWidget):
         ui_state = ui_state_data if isinstance(ui_state_data, dict) else {}
         options_data = inputs.get("options")
         options = options_data if isinstance(options_data, dict) else {}
+        fastener_data = inputs.get("fastener")
+        fastener = fastener_data if isinstance(fastener_data, dict) else {}
+        operating_data = inputs.get("operating")
+        operating = operating_data if isinstance(operating_data, dict) else {}
+        stiffness_data = inputs.get("stiffness")
+        stiffness = stiffness_data if isinstance(stiffness_data, dict) else {}
+        bearing_data = inputs.get("bearing")
+        bearing = bearing_data if isinstance(bearing_data, dict) else {}
         clamped_data = inputs.get("clamped")
         clamped = clamped_data if isinstance(clamped_data, dict) else {}
 
@@ -2422,6 +2433,30 @@ class BoltPage(QWidget):
             if restore_map is None:
                 return raw_text
             return restore_map.get(raw_text, raw_text)
+
+        def _float_or_none(raw: Any) -> float | None:
+            try:
+                return float(str(raw).strip())
+            except (TypeError, ValueError):
+                return None
+
+        def _numbers_match(raw: Any, preset: Any, *, tolerance: float = 1e-9) -> bool:
+            raw_num = _float_or_none(raw)
+            preset_num = _float_or_none(preset)
+            if raw_num is None or preset_num is None:
+                return False
+            relative_tol = abs(preset_num) * 1e-6
+            return abs(raw_num - preset_num) <= max(tolerance, relative_tol)
+
+        def _set_combo_text(field_id: str, text: str) -> bool:
+            widget = self._field_widgets.get(field_id)
+            if not isinstance(widget, QComboBox):
+                return False
+            idx = widget.findText(text)
+            if idx < 0:
+                return False
+            widget.setCurrentIndex(idx)
+            return True
 
         self._clear()
         for spec in self._field_specs.values():
@@ -2511,6 +2546,113 @@ class BoltPage(QWidget):
             idx = widget.findText(restored_text)
             if idx >= 0:
                 widget.setCurrentIndex(idx)
+
+        if "fastener.grade" not in ui_state and fastener.get("Rp02") not in (None, ""):
+            rp02_raw = fastener.get("Rp02")
+            rp02_value = _float_or_none(rp02_raw)
+            grade_widget = self._field_widgets.get("fastener.grade")
+            rp02_widget = self._field_widgets.get("fastener.Rp02")
+            if isinstance(grade_widget, QComboBox) and isinstance(rp02_widget, QLineEdit):
+                matched_grade = None
+                if rp02_value is not None:
+                    for grade_name, preset in BOLT_GRADE_TABLE.items():
+                        if abs(float(preset) - rp02_value) <= 0.5:
+                            matched_grade = grade_name
+                            break
+                if matched_grade is not None:
+                    if _set_combo_text("fastener.grade", matched_grade):
+                        self._on_grade_changed(matched_grade)
+                else:
+                    _set_combo_text("fastener.grade", "自定义")
+                    rp02_widget.setText(str(rp02_raw))
+                    rp02_widget.setReadOnly(False)
+
+        def _restore_thermal_material(
+            material_field_id: str,
+            alpha_field_id: str,
+            e_field_id: str,
+            alpha_raw: Any,
+            e_raw: Any,
+        ) -> None:
+            if material_field_id in ui_state:
+                return
+            has_alpha = alpha_raw not in (None, "")
+            has_e = e_raw not in (None, "")
+            if not has_alpha and not has_e:
+                return
+
+            material_widget = self._field_widgets.get(material_field_id)
+            alpha_widget = self._field_widgets.get(alpha_field_id)
+            e_widget = self._field_widgets.get(e_field_id)
+            if not isinstance(material_widget, QComboBox):
+                return
+
+            matched_material = None
+            for index in range(material_widget.count()):
+                material_name = material_widget.itemText(index)
+                if material_name == "自定义":
+                    continue
+                alpha_preset = THERMAL_EXPANSION_PRESETS.get(material_name)
+                e_preset = ELASTIC_MODULUS_PRESETS.get(material_name)
+                alpha_ok = not has_alpha or (
+                    alpha_preset is not None and _numbers_match(alpha_raw, alpha_preset)
+                )
+                e_ok = not has_e or (
+                    e_preset is not None and _numbers_match(e_raw, e_preset)
+                )
+                if alpha_ok and e_ok:
+                    matched_material = material_name
+                    break
+
+            if matched_material is not None:
+                material_widget.setCurrentText(matched_material)
+                if isinstance(alpha_widget, QLineEdit):
+                    alpha_widget.setText(
+                        str(alpha_raw) if has_alpha else THERMAL_EXPANSION_PRESETS[matched_material]
+                    )
+                    alpha_widget.setReadOnly(True)
+                if isinstance(e_widget, QLineEdit):
+                    e_widget.setText(str(e_raw) if has_e else ELASTIC_MODULUS_PRESETS[matched_material])
+                return
+
+            material_widget.setCurrentText("自定义")
+            if isinstance(alpha_widget, QLineEdit):
+                alpha_widget.setText(str(alpha_raw) if has_alpha else "")
+                alpha_widget.setReadOnly(False)
+            if isinstance(e_widget, QLineEdit) and has_e:
+                e_widget.setText(str(e_raw))
+
+        _restore_thermal_material(
+            "operating.bolt_material",
+            "operating.alpha_bolt",
+            "stiffness.E_bolt",
+            operating.get("alpha_bolt"),
+            stiffness.get("E_bolt"),
+        )
+        _restore_thermal_material(
+            "operating.clamped_material",
+            "operating.alpha_parts",
+            "stiffness.E_clamped",
+            operating.get("alpha_parts"),
+            stiffness.get("E_clamped"),
+        )
+
+        if "bearing.bearing_material" not in ui_state and bearing.get("p_G_allow") not in (None, ""):
+            bearing_material_widget = self._field_widgets.get("bearing.bearing_material")
+            bearing_allow_widget = self._field_widgets.get("bearing.p_G_allow")
+            if isinstance(bearing_material_widget, QComboBox):
+                matched_bearing = None
+                for material_name, preset in BEARING_MATERIAL_PRESETS.items():
+                    if _numbers_match(bearing["p_G_allow"], preset, tolerance=0.5):
+                        matched_bearing = material_name
+                        break
+                if matched_bearing is not None:
+                    bearing_material_widget.setCurrentText(matched_bearing)
+                else:
+                    bearing_material_widget.setCurrentText("自定义")
+                    if isinstance(bearing_allow_widget, QLineEdit):
+                        bearing_allow_widget.setText(str(bearing["p_G_allow"]))
+                        bearing_allow_widget.setReadOnly(False)
 
         # ---------- 多层被夹件 fallback 恢复（用于加载原始 payload JSON）----------
         # 正常 save/load 流程中，通用循环已通过 ui_state 恢复所有层字段。
@@ -2612,6 +2754,7 @@ class BoltPage(QWidget):
         case_widget = self._field_widgets.get("operating.setup_case")
         if isinstance(case_widget, QComboBox):
             self._on_setup_case_changed(case_widget.currentText())
+        self._mark_results_dirty()
 
     def _load_sample(self, filename: str) -> None:
         sample_path = EXAMPLES_DIR / filename
@@ -2631,6 +2774,7 @@ class BoltPage(QWidget):
 
         self._apply_input_data(data)
         self.info_label.setText(f"已加载测试案例：{filename}。可直接切换章节核对参数。")
+        self._mark_results_dirty()
 
     def _save_input_conditions(self) -> None:
         default_path = SAVED_INPUTS_DIR / "bolt_input_conditions.json"
@@ -2686,6 +2830,23 @@ class BoltPage(QWidget):
         self.thread_triangle_widget.set_thread_forces(0.0, 0.0, 0.0)
         self._apply_check_level_visibility()
         self.info_label.setText("参数已重置为默认值。")
+        self._mark_results_dirty()
+
+    def _mark_results_dirty(self) -> None:
+        """输入变更后禁用导出，防止报告与当前屏幕输入不一致。"""
+        self.btn_save.setEnabled(False)
+
+    def _mark_results_fresh(self) -> None:
+        """计算和渲染完整成功后允许导出。"""
+        self.btn_save.setEnabled(True)
+
+    def _connect_dirty_signals(self) -> None:
+        """将用户输入变更连接到导出失效。"""
+        for widget in self._field_widgets.values():
+            if isinstance(widget, QLineEdit):
+                widget.textEdited.connect(self._mark_results_dirty)
+            elif isinstance(widget, QComboBox):
+                widget.currentIndexChanged.connect(self._mark_results_dirty)
 
     def _read_widget_value(self, spec: FieldSpec) -> str:
         widget = self._field_widgets[spec.field_id]
@@ -2877,16 +3038,23 @@ class BoltPage(QWidget):
             QMessageBox.critical(self, "计算异常", str(exc))
             return
 
+        try:
+            self._render_result(payload, result)
+            self.flowchart_nav.update_from_result(result)
+            for r_page in self._r_pages:
+                r_page.build_input_echo(self._field_specs, self._field_widgets, result)
+                r_page.update_from_result(result, self._field_widgets)
+        except Exception as exc:  # noqa: BLE001
+            self._last_payload = None
+            self._last_result = None
+            self._mark_results_dirty()
+            QMessageBox.critical(self, "渲染异常", f"结果展示失败：{exc}")
+            self.info_label.setText(f"结果渲染失败：{exc}")
+            return
+
         self._last_payload = payload
         self._last_result = result
-        self._render_result(payload, result)
-
-        # Update flowchart navigation nodes
-        self.flowchart_nav.update_from_result(result)
-        # Update R detail pages
-        for r_page in self._r_pages:
-            r_page.build_input_echo(self._field_specs, self._field_widgets, result)
-            r_page.update_from_result(result, self._field_widgets)
+        self._mark_results_fresh()
 
         # Jump to result chapter after run.
         self.chapter_list.setCurrentRow(self.chapter_list.count() - 1)

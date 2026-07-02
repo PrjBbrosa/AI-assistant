@@ -11,6 +11,17 @@ from PySide6.QtWidgets import QWidget
 from app.ui.fonts import make_ui_font
 
 
+DEFAULT_GEOM_STATE: dict = {
+    "d1_mm": 40.0,
+    "d2_mm": 160.0,
+    "a_mm": 100.0,
+    "gamma_deg": 11.31,
+    "z1": 2,
+    "z2": 40,
+    "handedness": "right",
+}
+
+
 class WormGeometryOverviewWidget(QWidget):
     """Render a dynamic engineering-style overview for worm geometry.
 
@@ -23,21 +34,16 @@ class WormGeometryOverviewWidget(QWidget):
         super().__init__(parent)
         self._title = "几何总览"
         self._note = "按 DIN 3975 展示蜗杆螺旋、蜗轮副、中心距与导程角关系。"
-        # 默认几何状态（m=4, z1=2, z2=40, q=10）
-        self._geom_state: dict = {
-            "d1_mm": 40.0,
-            "d2_mm": 160.0,
-            "a_mm": 100.0,
-            "gamma_deg": 11.31,
-            "z1": 2,
-            "z2": 40,
-            "handedness": "right",
-        }
+        self._geom_state: dict = DEFAULT_GEOM_STATE.copy()
         self.setMinimumHeight(340)
 
     def set_display_state(self, title: str, note: str) -> None:
         self._title = title.strip() or "几何总览"
         self._note = note.strip() or "按 DIN 3975 展示蜗杆螺旋、蜗轮副、中心距与导程角关系。"
+        self.update()
+
+    def reset_geometry_state(self) -> None:
+        self._geom_state = DEFAULT_GEOM_STATE.copy()
         self.update()
 
     def set_geometry_state(

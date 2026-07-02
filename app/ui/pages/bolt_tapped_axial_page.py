@@ -383,7 +383,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         self.result_title = QLabel("尚未执行计算", summary_card)
         self.result_title.setObjectName("SubSectionTitle")
         self.result_summary = QLabel(
-            "填写参数并点击\u201c开始计算\u201d后，这里显示结论。", summary_card
+            '填写参数并点击"开始计算"后，这里显示结论。', summary_card
         )
         self.result_summary.setObjectName("SectionHint")
         self.result_summary.setWordWrap(True)
@@ -554,6 +554,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         self._refresh_thread_section()
         self._suspend_live_feedback = False
         self._invalidate_cache()
+        self._reset_result_panels()
 
     def _save_input_conditions(self) -> None:
         default_path = SAVED_INPUTS_DIR / "bolt_tapped_axial_input_conditions.json"
@@ -597,7 +598,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         self._refresh_thread_section()
         self._suspend_live_feedback = False
         self._invalidate_cache()
-        self.set_overall_status("等待计算", "wait")
+        self._reset_result_panels()
         self.set_info("参数已重置为默认值。")
 
     # --- Codex §3.2 / §3.4：AutoCalcCard + 缓存失效 ---
@@ -652,6 +653,15 @@ class BoltTappedAxialPage(BaseChapterPage):
         self._last_result = None
         self.btn_export_pdf.setEnabled(False)
 
+    def _reset_result_panels(self) -> None:
+        self.result_title.setText("尚未执行计算")
+        self.result_summary.setText("尚无结果。")
+        self.metrics_text.setText("尚无结果。")
+        self.message_box.clear()
+        for badge in self._check_badges.values():
+            self._set_badge(badge, "待计算", "wait")
+        self.set_overall_status("等待计算", "wait")
+
     def _on_input_changed(self, field_id: str) -> None:
         if self._suspend_live_feedback:
             return
@@ -661,6 +671,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         if field_id in ("fastener.d", "fastener.p"):
             self._refresh_thread_section()
         self._invalidate_cache()
+        self.set_overall_status("输入已变更，待重新计算", "wait")
 
     def _set_badge(self, label: QLabel, text: str, state: str) -> None:
         if state == "pass":
@@ -866,7 +877,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         if current != self._last_payload:
             QMessageBox.warning(
                 self, "输入已变更",
-                "当前表单与上次计算时的输入不一致，请先点击\u201c开始计算\u201d"
+                '当前表单与上次计算时的输入不一致，请先点击"开始计算"'
                 "刷新结果，再导出报告。",
             )
             return False

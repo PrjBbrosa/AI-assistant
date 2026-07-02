@@ -52,6 +52,15 @@ class WormStressCurveWidget(QWidget):
         self._sigma_f_nominal = float(sigma_f_nominal_mpa)
         self._redraw()
 
+    def clear(self) -> None:
+        self._theta_deg = []
+        self._sigma_h_mpa = []
+        self._sigma_f_mpa = []
+        self._sigma_h_nominal = 0.0
+        self._sigma_f_nominal = 0.0
+        self._figure.clear()
+        self._canvas.draw()
+
     def _draw_placeholder(self) -> None:
         self._figure.clear()
         ax = self._figure.add_subplot(111)
