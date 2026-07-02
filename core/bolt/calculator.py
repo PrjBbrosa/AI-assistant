@@ -7,9 +7,7 @@ import math
 from pathlib import Path
 from typing import Any, Dict
 
-
-class InputError(ValueError):
-    """Raised when input data is incomplete or physically invalid."""
+from ._common import InputError, check_thread_section_consistency, to_float
 
 
 def _require(section: Dict[str, Any], key: str, section_name: str) -> Any:
@@ -52,13 +50,12 @@ def load_input_json(path: Path) -> Dict[str, Any]:
 
 
 def _derive_thread_geometry(d: float, p: float, fastener: Dict[str, Any]) -> Dict[str, float]:
-    as_val = float(fastener.get("As", math.pi / 4.0 * (d - 0.9382 * p) ** 2))
-    d2 = float(fastener.get("d2", d - 0.64952 * p))
-    d3 = float(fastener.get("d3", d - 1.22687 * p))
+    # 始终采用 d/p 派生值；用户提供的 As/d2/d3 仅做一致性校验（spec D2）。
+    derived = check_thread_section_consistency(d, p, fastener)
     return {
-        "As": _positive(as_val, "fastener.As"),
-        "d2": _positive(d2, "fastener.d2"),
-        "d3": _positive(d3, "fastener.d3"),
+        "As": _positive(derived["As"], "fastener.As"),
+        "d2": _positive(derived["d2"], "fastener.d2"),
+        "d3": _positive(derived["d3"], "fastener.d3"),
     }
 
 
@@ -239,9 +236,9 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
 
     tightening_method = str(options.get("tightening_method", "torque"))
 
-    d = _positive(float(_require(fastener, "d", "fastener")), "fastener.d")
-    p = _positive(float(_require(fastener, "p", "fastener")), "fastener.p")
-    rp02 = _positive(float(_require(fastener, "Rp02", "fastener")), "fastener.Rp02")
+    d = _positive(to_float(_require(fastener, "d", "fastener"), "fastener.d"), "fastener.d")
+    p = _positive(to_float(_require(fastener, "p", "fastener"), "fastener.p"), "fastener.p")
+    rp02 = _positive(to_float(_require(fastener, "Rp02", "fastener"), "fastener.Rp02"), "fastener.Rp02")
     alpha_a = _positive(float(_require(tightening, "alpha_A", "tightening")), "tightening.alpha_A")
     if alpha_a < 1.0:
         raise InputError(f"tightening.alpha_A 必须 >= 1（当前值 {alpha_a}），散差系数不能使 FMmax < FMmin。")
@@ -483,9 +480,11 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     sigma_m = (fm_max + 0.5 * phi_n * fa_max) / geometry["As"]
     cycle_factor = (2_000_000.0 / load_cycles) ** 0.08 if load_cycles < 2_000_000.0 else 1.0
     sigma_asv = _fatigue_limit_asv(d, surface_treatment) * cycle_factor
-    goodman_factor = max(0.1, 1.0 - sigma_m / (0.9 * rp02))
+    # Ref: 2026-07-02 review CALC-1；不对 Goodman 因子设人为下限。
+    goodman_factor_raw = 1.0 - sigma_m / (0.9 * rp02)
+    goodman_factor = goodman_factor_raw if goodman_factor_raw > 0.0 else 0.0
     sigma_a_allow = sigma_asv * goodman_factor
-    pass_fatigue = sigma_a <= sigma_a_allow
+    pass_fatigue = (goodman_factor > 0.0) and (sigma_a <= sigma_a_allow)
 
     # 附加载荷能力参考估算（非 VDI 2230 正式校核项）：
     # 基于 10% 屈服强度裕量估算允许附加轴向载荷上限，供参考。
@@ -605,6 +604,17 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
                 f"αA = {alpha_a:.2f} 超出{method_cn}建议范围 [{lo}–{hi}]，"
                 "请确认装配工艺能力。"
             )
+    if check_level == "fatigue":
+        if goodman_factor_raw <= 0.0:
+            warnings.append(
+                "平均应力已超出 Goodman 折减范围（σ_m >= 0.9·Rp0.2），"
+                "疲劳许用幅为 0，疲劳不通过。"
+            )
+        elif goodman_factor_raw < 0.1:
+            warnings.append(
+                f"Goodman 因子偏低（{goodman_factor_raw:.3f} < 0.1），"
+                "疲劳裕度极小，建议降低平均应力或增大规格。"
+            )
 
     checks_out = {
         "assembly_von_mises_ok": pass_assembly,
@@ -619,6 +629,29 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         checks_out["bearing_pressure_ok"] = pass_bearing
     if r8_active:
         checks_out["thread_strip_ok"] = pass_strip
+
+    # ---- 总体三态判定（spec 2026-07-02 D3；对齐 tapped_axial_joint 契约）----
+    # check_level 主动关闭 thermal/fatigue 不计 incomplete；R7/R8 因缺输入
+    # 被动跳过必须显式标记，禁止伪绿灯。
+    not_checked: list[str] = []
+    if not r7_active:
+        not_checked.append("R7 支承面压强")
+    if not r8_active:
+        not_checked.append("R8 螺纹脱扣")
+
+    any_active_fail = any(value is False for value in checks_out.values())
+    if any_active_fail:
+        overall_status = "fail"
+    elif not_checked:
+        overall_status = "incomplete"
+    else:
+        overall_status = "pass"
+
+    if overall_status == "incomplete":
+        warnings.append(
+            "以下校核项因缺少输入未执行：" + "、".join(not_checked)
+            + "。总体结论标记为'不完整'；请补充输入后重新校核。"
+        )
 
     stresses_out = {
         "sigma_ax_assembly": sigma_ax_assembly,
@@ -698,9 +731,12 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
             "load_cycles": load_cycles,
             "cycle_factor": cycle_factor,
             "goodman_factor": goodman_factor,
+            "goodman_factor_raw": goodman_factor_raw,
             "surface_treatment": surface_treatment,
         },
-        "overall_pass": all(checks_out.values()),
+        "overall_pass": overall_status == "pass",
+        "overall_status": overall_status,
+        "not_checked": not_checked,
         "warnings": warnings,
         "scope_note": (
             f"连接形式：{'通孔螺栓连接' if joint_type == 'through' else '螺纹孔连接'}。"

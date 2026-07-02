@@ -873,6 +873,12 @@ CHECK_LABELS = {
     "thread_strip_ok": "螺纹脱扣校核",
 }
 
+_OVERALL_STATUS_TEXT = {
+    "pass": "通过",
+    "fail": "不通过",
+    "incomplete": "不完整（存在未校核项，见警告）",
+}
+
 CHECK_LEVELS: tuple[tuple[str, str], ...] = (
     ("常规校核", "basic"),
     ("考虑温度", "thermal"),
@@ -2871,19 +2877,34 @@ class BoltPage(QWidget):
         self.chapter_list.setCurrentRow(self.chapter_list.count() - 1)
 
     def _render_result(self, payload: dict[str, Any], result: dict[str, Any]) -> None:
-        overall = bool(result.get("overall_pass"))
+        overall_status = str(
+            result.get("overall_status", "pass" if result.get("overall_pass") else "fail")
+        )
         checks = result.get("checks", {})
         level = str(result.get("check_level", self._current_check_level()))
 
-        title = "校核通过" if overall else "校核不通过"
-        summary = (
-            "该工况满足当前模型下全部分项要求。"
-            if overall
-            else "该工况存在未满足项，请查看下方分项状态与调整建议。"
-        )
+        if overall_status == "pass":
+            title = "校核通过"
+            summary = "该工况满足当前模型下全部分项要求。"
+        elif overall_status == "incomplete":
+            title = "校核结论不完整"
+            summary = "无分项不通过，但存在未校核项（见'已跳过'徽章与警告），请补充输入后重新校核。"
+        else:
+            title = "校核不通过"
+            summary = "该工况存在未满足项，请查看下方分项状态与调整建议。"
         self.result_title.setText(title)
         self.result_summary.setText(summary)
-        self._set_badge(self.overall_badge, "总体通过" if overall else "总体不通过", overall)
+        if overall_status == "incomplete":
+            self.overall_badge.setText("结论不完整")
+            self.overall_badge.setObjectName("WaitBadge")
+            self.overall_badge.style().unpolish(self.overall_badge)
+            self.overall_badge.style().polish(self.overall_badge)
+        else:
+            self._set_badge(
+                self.overall_badge,
+                "总体通过" if overall_status == "pass" else "总体不通过",
+                overall_status == "pass",
+            )
 
         for key, badge in self._check_badges.items():
             if key == "residual_clamp_ok" and result.get("calculation_mode") == "design":
@@ -3008,6 +3029,9 @@ class BoltPage(QWidget):
                 recs.append("[建议] 螺纹脱扣不通过（壳体侧）：可加深旋合深度、换用更高强度壳体材料、或加大螺栓规格。")
             else:
                 recs.append("[建议] 螺纹脱扣不通过（螺栓侧）：可加深旋合深度或提高螺栓强度等级。")
+        not_checked = result.get("not_checked", [])
+        if not recs and not_checked:
+            recs.append("[建议] 当前结论不完整：请补充 " + "、".join(not_checked) + " 后重新校核。")
         if not recs:
             recs.append("[建议] 当前工况满足全部校核。建议保留 10% 以上工程裕量。")
         return recs
@@ -3063,7 +3087,10 @@ class BoltPage(QWidget):
             f"生成时间: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             f"校核层级: {result.get('check_level', self._current_check_level())}",
             "",
-            f"总体结论: {'通过' if result['overall_pass'] else '不通过'}",
+            "总体结论: " + _OVERALL_STATUS_TEXT.get(
+                str(result.get("overall_status", "pass" if result.get("overall_pass") else "fail")),
+                "不通过",
+            ),
             "",
             "分项结果:",
         ]

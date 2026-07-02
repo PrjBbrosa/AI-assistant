@@ -364,6 +364,22 @@ class BoltPageStateTests(unittest.TestCase):
         self.assertIn("- 支承面压强校核（R7）: 已跳过", report_lines)
         self.assertIn("- 螺纹脱扣校核: 已跳过", report_lines)
 
+    def test_incomplete_status_shows_wait_badge_and_report_headline(self) -> None:
+        """缺 R8 时 UI 不显示绿色总体通过。Ref: spec 2026-07-02 §D3。"""
+        page = BoltPage()
+        payload = _raw_bolt_payload()
+        result = calculate_vdi2230_core(payload)
+        page._last_payload = payload
+        page._last_result = result
+        page._render_result(payload, result)
+
+        self.assertEqual(page._last_result["overall_status"], "incomplete")  # type: ignore[index]
+        self.assertEqual(page.overall_badge.text(), "结论不完整")
+        self.assertEqual(page.overall_badge.objectName(), "WaitBadge")
+        headline = [line for line in page._build_report_lines() if line.startswith("总体结论")]
+        self.assertTrue(headline)
+        self.assertIn("不完整", headline[0])
+
     def test_flowchart_includes_optional_r8_thread_strip_step(self) -> None:
         page = BoltPage()
 

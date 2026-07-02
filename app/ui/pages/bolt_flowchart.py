@@ -256,11 +256,16 @@ class FlowchartNavWidget(QWidget):
             arrow.style().polish(arrow)
 
         # Update verdict
-        overall = result.get("overall_pass")
-        if overall is True:
+        overall_status = str(
+            result.get("overall_status", "pass" if result.get("overall_pass") else "fail")
+        )
+        if overall_status == "pass":
             self._verdict_badge.setObjectName("PassBadge")
             self._verdict_badge.setText("全部通过")
-        elif overall is False:
+        elif overall_status == "incomplete":
+            self._verdict_badge.setObjectName("WaitBadge")
+            self._verdict_badge.setText("结论不完整")
+        elif overall_status == "fail":
             self._verdict_badge.setObjectName("FailBadge")
             self._verdict_badge.setText("存在不通过")
         else:
