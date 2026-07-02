@@ -34,14 +34,18 @@ except ImportError:
     _PLASTIC_MATERIALS_AVAILABLE = False
 
 from app.ui.input_condition_store import (
+    InputConditionError,
     build_form_snapshot,
     build_saved_inputs_dir,
     choose_load_input_conditions_path,
     choose_save_input_conditions_path,
+    confirm_snapshot_module,
     read_input_conditions,
+    validate_snapshot,
     write_input_conditions,
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
+from app.ui.report_export import ReportExportError
 from app.ui.widgets.worm_geometry_overview import WormGeometryOverviewWidget
 from app.ui.widgets.worm_performance_curve import WormPerformanceCurveWidget
 from app.ui.widgets.worm_stress_curve import WormStressCurveWidget
@@ -58,6 +62,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES_DIR = PROJECT_ROOT / "examples"
 SAVED_INPUTS_DIR = build_saved_inputs_dir(PROJECT_ROOT)
 ASSETS_DIR = PROJECT_ROOT / "app" / "assets"
+MODULE_ID = "worm_gear"
 
 
 @dataclass(frozen=True)
@@ -778,7 +783,11 @@ class WormGearPage(BaseChapterPage):
         self._refresh_derived_geometry_preview()
 
     def _capture_input_snapshot(self) -> dict[str, Any]:
-        return build_form_snapshot(self._field_specs.values(), self._read_widget_value)
+        return build_form_snapshot(
+            self._field_specs.values(),
+            self._read_widget_value,
+            module_id=MODULE_ID,
+        )
 
     def _apply_input_data(self, data: dict[str, Any]) -> None:
         self._field_widgets["materials.worm_material"].blockSignals(True)
@@ -1263,25 +1272,28 @@ class WormGearPage(BaseChapterPage):
             return
         from PySide6.QtWidgets import QFileDialog
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "导出计算报告", "worm_report.pdf",
+            self, "导出计算报告", str(EXAMPLES_DIR / "worm_report.pdf"),
             "PDF Files (*.pdf);;Text Files (*.txt);;All Files (*)",
         )
         if not file_path:
             return
         out_path = Path(file_path)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        suffix = out_path.suffix.lower()
-        if suffix == ".pdf":
-            try:
-                import importlib
-                mod = importlib.import_module("app.ui.report_pdf_worm")
-                mod.generate_worm_report(out_path, self._last_payload or {}, self._last_result)
-            except Exception:
-                # Fallback to text
-                out_path = out_path.with_suffix(".txt")
+        try:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            suffix = out_path.suffix.lower()
+            if suffix == ".pdf":
+                try:
+                    import importlib
+                    mod = importlib.import_module("app.ui.report_pdf_worm")
+                    mod.generate_worm_report(out_path, self._last_payload or {}, self._last_result)
+                except Exception:
+                    out_path = out_path.with_suffix(".txt")
+                    self._write_text_report(out_path)
+            else:
                 self._write_text_report(out_path)
-        else:
-            self._write_text_report(out_path)
+        except (ReportExportError, OSError) as exc:
+            QMessageBox.critical(self, "导出失败", f"导出失败：{exc}")
+            return
         self.set_info(f"报告已导出: {out_path}")
 
     def _write_text_report(self, path: Path) -> None:
@@ -1311,15 +1323,20 @@ class WormGearPage(BaseChapterPage):
         if in_path is None:
             return
         try:
-            data = read_input_conditions(in_path)
+            data = validate_snapshot(read_input_conditions(in_path))
         except FileNotFoundError:
             QMessageBox.warning(self, "文件不存在", f"未找到输入条件文件：{in_path}")
             return
         except json.JSONDecodeError as exc:
             QMessageBox.critical(self, "文件损坏", f"输入条件文件不是有效 JSON：{exc}")
             return
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
         except OSError as exc:
             QMessageBox.critical(self, "加载失败", f"输入条件加载失败：{exc}")
+            return
+        if not confirm_snapshot_module(self, data, MODULE_ID):
             return
         self._apply_input_data(data)
         self._mark_results_dirty()
@@ -1331,9 +1348,14 @@ class WormGearPage(BaseChapterPage):
             QMessageBox.warning(self, "测试案例不存在", f"未找到测试案例文件：{sample_path}")
             return
         try:
-            data = read_input_conditions(sample_path)
+            data = validate_snapshot(read_input_conditions(sample_path))
         except json.JSONDecodeError as exc:
             QMessageBox.critical(self, "测试案例损坏", f"测试案例文件不是有效 JSON：{exc}")
+            return
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
+        if not confirm_snapshot_module(self, data, MODULE_ID):
             return
         self._apply_input_data(data)
         self._mark_results_dirty()

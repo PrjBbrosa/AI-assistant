@@ -7,10 +7,14 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtWidgets import QFileDialog, QWidget
+from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
 
 INPUT_FILTER = "JSON Files (*.json);;All Files (*)"
+
+
+class InputConditionError(ValueError):
+    """Raised when an input-condition file has an unsupported shape."""
 
 
 def build_saved_inputs_dir(project_root: Path) -> Path:
@@ -18,11 +22,34 @@ def build_saved_inputs_dir(project_root: Path) -> Path:
     return project_root / "saved_inputs"
 
 
+def validate_snapshot(data: Any) -> dict[str, Any]:
+    """Validate that loaded input conditions use a JSON object root."""
+    if not isinstance(data, dict):
+        raise InputConditionError("输入条件文件必须是 JSON 对象。")
+    return data
+
+
+def confirm_snapshot_module(parent: QWidget, data: dict[str, Any], module_id: str) -> bool:
+    """Ask before loading a snapshot saved by another module."""
+    module_tag = data.get("module")
+    if module_tag is None or module_tag == module_id:
+        return True
+    reply = QMessageBox.question(
+        parent,
+        "模块不匹配",
+        f"输入条件文件标记为 {module_tag}，当前模块为 {module_id}。是否继续加载？",
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.No,
+    )
+    return reply == QMessageBox.StandardButton.Yes
+
+
 def build_form_snapshot(
     field_specs: Iterable[Any],
     read_value: Callable[[Any], str],
     *,
     extra_state: dict[str, Any] | None = None,
+    module_id: str | None = None,
 ) -> dict[str, Any]:
     """Split current form values into mapped inputs and UI-only trace state."""
     inputs: dict[str, dict[str, Any]] = {}
@@ -40,6 +67,8 @@ def build_form_snapshot(
     if extra_state:
         ui_state.update(extra_state)
     snapshot: dict[str, Any] = {"inputs": inputs}
+    if module_id is not None:
+        snapshot["module"] = module_id
     if ui_state:
         snapshot["ui_state"] = ui_state
     return snapshot

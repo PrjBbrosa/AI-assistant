@@ -24,14 +24,18 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.input_condition_store import (
+    InputConditionError,
     build_form_snapshot,
     build_saved_inputs_dir,
     choose_load_input_conditions_path,
     choose_save_input_conditions_path,
+    confirm_snapshot_module,
     read_input_conditions,
+    validate_snapshot,
     write_input_conditions,
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
+from app.ui.report_export import ReportExportError
 from app.ui.widgets.help_button import HelpButton
 from core.bolt.tapped_axial_joint import (
     _derive_thread_section,
@@ -47,6 +51,7 @@ _AUTO_DERIVED_FIELDS: tuple[str, ...] = ("fastener.As", "fastener.d2", "fastener
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SAVED_INPUTS_DIR = build_saved_inputs_dir(PROJECT_ROOT)
 EXAMPLES_DIR = PROJECT_ROOT / "examples"
+MODULE_ID = "bolt_tapped_axial"
 
 
 @dataclass(frozen=True)
@@ -492,7 +497,7 @@ class BoltTappedAxialPage(BaseChapterPage):
                 raise ValueError(raw)
             return float(raw)
         except ValueError as exc:
-            raise ValueError(f"字段“{spec.label}”请输入有效数字，当前值: {raw}") from exc
+            raise ValueError(f"字段\"{spec.label}\"请输入有效数字，当前值: {raw}") from exc
 
     def _build_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {}
@@ -508,7 +513,11 @@ class BoltTappedAxialPage(BaseChapterPage):
         return payload
 
     def _capture_input_snapshot(self) -> dict[str, Any]:
-        return build_form_snapshot(self._field_specs.values(), self._read_widget_value)
+        return build_form_snapshot(
+            self._field_specs.values(),
+            self._read_widget_value,
+            module_id=MODULE_ID,
+        )
 
     def _apply_input_data(self, data: dict[str, Any]) -> None:
         inputs_data = data.get("inputs")
@@ -563,15 +572,20 @@ class BoltTappedAxialPage(BaseChapterPage):
         if in_path is None:
             return
         try:
-            data = read_input_conditions(in_path)
+            data = validate_snapshot(read_input_conditions(in_path))
         except FileNotFoundError:
             QMessageBox.warning(self, "文件不存在", f"未找到输入条件文件：{in_path}")
             return
         except json.JSONDecodeError as exc:
             QMessageBox.critical(self, "文件损坏", f"输入条件文件不是有效 JSON：{exc}")
             return
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
         except OSError as exc:
             QMessageBox.critical(self, "加载失败", f"输入条件加载失败：{exc}")
+            return
+        if not confirm_snapshot_module(self, data, MODULE_ID):
             return
 
         self._apply_input_data(data)
@@ -864,9 +878,14 @@ class BoltTappedAxialPage(BaseChapterPage):
             QMessageBox.warning(self, "测试案例不存在", f"未找到测试案例文件：{sample_path}")
             return
         try:
-            data = read_input_conditions(sample_path)
+            data = validate_snapshot(read_input_conditions(sample_path))
         except json.JSONDecodeError as exc:
             QMessageBox.critical(self, "测试案例损坏", f"测试案例文件不是有效 JSON：{exc}")
+            return
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
+        if not confirm_snapshot_module(self, data, MODULE_ID):
             return
 
         self._apply_input_data(data)
@@ -884,7 +903,7 @@ class BoltTappedAxialPage(BaseChapterPage):
             )
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, "导出 PDF 报告", "tapped_axial_report.pdf",
+            self, "导出 PDF 报告", str(EXAMPLES_DIR / "tapped_axial_report.pdf"),
             "PDF Files (*.pdf)"
         )
         if not path:
@@ -894,5 +913,7 @@ class BoltTappedAxialPage(BaseChapterPage):
                 Path(path), self._last_payload, self._last_result
             )
             self.set_info(f"PDF 报告已导出: {path}")
+        except (ReportExportError, OSError) as exc:
+            QMessageBox.critical(self, "导出失败", f"导出失败：{exc}")
         except Exception as exc:
             QMessageBox.critical(self, "导出失败", f"PDF 生成失败: {exc}")

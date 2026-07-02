@@ -27,15 +27,18 @@ from PySide6.QtWidgets import (
 
 from app.ui.fonts import make_ui_font
 from app.ui.input_condition_store import (
+    InputConditionError,
     build_form_snapshot,
     build_saved_inputs_dir,
     choose_load_input_conditions_path,
     choose_save_input_conditions_path,
+    confirm_snapshot_module,
     read_input_conditions,
+    validate_snapshot,
     write_input_conditions,
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
-from app.ui.report_export import export_report_lines
+from app.ui.report_export import ReportExportError, export_report_lines
 from app.ui.widgets.buffer_energy_curve import BufferEnergyCurveWidget
 from app.ui.widgets.buffer_response_curve import BufferResponseCurveWidget
 
@@ -43,6 +46,7 @@ from app.ui.widgets.buffer_response_curve import BufferResponseCurveWidget
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES_DIR = PROJECT_ROOT / "examples"
 SAVED_INPUTS_DIR = build_saved_inputs_dir(PROJECT_ROOT)
+MODULE_ID = "buffer_energy"
 
 DISCLAIMER_TEXT = (
     "本工具基于准静态 F-x 曲线的单次冲击能量法。回弹速度与时域响应均为反推估算值，"
@@ -855,7 +859,11 @@ class BufferEnergyPage(BaseChapterPage):
             QMessageBox.information(self, "无结果", "请先执行仿真，再导出结果说明。")
             return
         default_path = EXAMPLES_DIR / "buffer_energy_report.pdf"
-        out_path = export_report_lines(self, "导出结果说明", default_path, self._build_report_lines())
+        try:
+            out_path = export_report_lines(self, "导出结果说明", default_path, self._build_report_lines())
+        except (ReportExportError, OSError) as exc:
+            QMessageBox.critical(self, "导出失败", f"导出失败：{exc}")
+            return
         if out_path is not None:
             self.set_info(f"结果说明已导出: {out_path}")
 
@@ -948,9 +956,14 @@ class BufferEnergyPage(BaseChapterPage):
         if in_path is None:
             return
         try:
-            self._read_input_conditions(in_path)
+            loaded = self._read_input_conditions(in_path)
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
         except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
             QMessageBox.warning(self, "加载失败", str(exc))
+            return
+        if not loaded:
             return
         self.set_info(f"已加载输入条件：{in_path}")
 
@@ -959,18 +972,20 @@ class BufferEnergyPage(BaseChapterPage):
             self._field_specs.values(),
             self._read_value,
             extra_state={
-                "module": "buffer_energy",
                 "curve_source": str(self._curve_source) if self._curve_source else "",
             },
+            module_id=MODULE_ID,
         )
-        snapshot["module"] = "buffer_energy"
         snapshot["version"] = 1
         write_input_conditions(path, snapshot)
 
-    def _read_input_conditions(self, path: Path) -> None:
-        data = read_input_conditions(path)
+    def _read_input_conditions(self, path: Path) -> bool:
+        data = validate_snapshot(read_input_conditions(path))
+        if not confirm_snapshot_module(self, data, MODULE_ID):
+            return False
         self._apply_input_data(data)
         self._invalidate_result()
+        return True
 
     def _apply_input_data(self, data: dict[str, Any]) -> None:
         fields = data.get("fields")

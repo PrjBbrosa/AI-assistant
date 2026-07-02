@@ -24,16 +24,19 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.input_condition_store import (
+    InputConditionError,
     build_form_snapshot,
     build_saved_inputs_dir,
     choose_load_input_conditions_path,
     choose_save_input_conditions_path,
+    confirm_snapshot_module,
     read_input_conditions,
+    validate_snapshot,
     write_input_conditions,
 )
 from app.ui.fonts import make_ui_font
 from app.ui.pages.base_chapter_page import BaseChapterPage
-from app.ui.report_export import export_report_lines
+from app.ui.report_export import ReportExportError, export_report_lines
 from app.ui.widgets.help_button import HelpButton
 from app.ui.widgets.hertz_input_diagram import HertzInputDiagramWidget
 from core.hertz.calculator import InputError, calculate_hertz_contact
@@ -41,6 +44,7 @@ from core.hertz.calculator import InputError, calculate_hertz_contact
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES_DIR = PROJECT_ROOT / "examples"
 SAVED_INPUTS_DIR = build_saved_inputs_dir(PROJECT_ROOT)
+MODULE_ID = "hertz_contact"
 
 MATERIAL_LIBRARY: dict[str, dict[str, float] | None] = {
     "42CrMo": {"e_mpa": 210000.0, "nu": 0.29},
@@ -506,7 +510,7 @@ class HertzContactPage(BaseChapterPage):
         summary_layout.setSpacing(6)
         self.result_title = QLabel("尚未执行计算", summary_card)
         self.result_title.setObjectName("SubSectionTitle")
-        self.result_summary = QLabel("填写参数并点击“执行校核”后，这里显示结论。", summary_card)
+        self.result_summary = QLabel("填写参数并点击\"执行校核\"后，这里显示结论。", summary_card)
         self.result_summary.setObjectName("SectionHint")
         self.result_summary.setWordWrap(True)
         summary_layout.addWidget(self.result_title)
@@ -699,7 +703,7 @@ class HertzContactPage(BaseChapterPage):
                 try:
                     value = float(raw)
                 except ValueError as exc:
-                    raise InputError(f"字段“{spec.label}”请输入数字，当前值: {raw}") from exc
+                    raise InputError(f"字段\"{spec.label}\"请输入数字，当前值: {raw}") from exc
             sec, key = spec.mapping
             payload.setdefault(sec, {})[key] = value
 
@@ -777,7 +781,11 @@ class HertzContactPage(BaseChapterPage):
         return recs
 
     def _capture_input_snapshot(self) -> dict[str, Any]:
-        return build_form_snapshot(self._field_specs.values(), self._read_widget_value)
+        return build_form_snapshot(
+            self._field_specs.values(),
+            self._read_widget_value,
+            module_id=MODULE_ID,
+        )
 
     def _apply_input_data(self, data: dict[str, Any]) -> None:
         inputs_data = data.get("inputs")
@@ -822,9 +830,14 @@ class HertzContactPage(BaseChapterPage):
             QMessageBox.warning(self, "测试案例不存在", f"未找到测试案例文件: {sample_path}")
             return
         try:
-            data = read_input_conditions(sample_path)
+            data = validate_snapshot(read_input_conditions(sample_path))
         except json.JSONDecodeError as exc:
             QMessageBox.critical(self, "测试案例损坏", f"测试案例文件不是有效 JSON：{exc}")
+            return
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
+        if not confirm_snapshot_module(self, data, MODULE_ID):
             return
 
         self._apply_input_data(data)
@@ -847,15 +860,20 @@ class HertzContactPage(BaseChapterPage):
         if in_path is None:
             return
         try:
-            data = read_input_conditions(in_path)
+            data = validate_snapshot(read_input_conditions(in_path))
         except FileNotFoundError:
             QMessageBox.warning(self, "文件不存在", f"未找到输入条件文件：{in_path}")
             return
         except json.JSONDecodeError as exc:
             QMessageBox.critical(self, "文件损坏", f"输入条件文件不是有效 JSON：{exc}")
             return
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
         except OSError as exc:
             QMessageBox.critical(self, "加载失败", f"输入条件加载失败：{exc}")
+            return
+        if not confirm_snapshot_module(self, data, MODULE_ID):
             return
 
         self._apply_input_data(data)
@@ -866,7 +884,7 @@ class HertzContactPage(BaseChapterPage):
         self._last_payload = None
         self._last_result = None
         self.result_title.setText("尚未执行计算")
-        self.result_summary.setText("填写参数并点击“执行校核”后，这里显示结论。")
+        self.result_summary.setText("填写参数并点击\"执行校核\"后，这里显示结论。")
         self.metrics_text.setText("尚无结果。")
         self.message_box.clear()
         for badge in self._check_badges.values():
@@ -880,7 +898,11 @@ class HertzContactPage(BaseChapterPage):
             QMessageBox.information(self, "无结果", "请先执行校核计算。")
             return
         default_path = EXAMPLES_DIR / "hertz_contact_report.pdf"
-        out_path = export_report_lines(self, "导出结果说明", default_path, self._build_report_lines())
+        try:
+            out_path = export_report_lines(self, "导出结果说明", default_path, self._build_report_lines())
+        except (ReportExportError, OSError) as exc:
+            QMessageBox.critical(self, "导出失败", f"导出失败：{exc}")
+            return
         if out_path is not None:
             self.set_info(f"结果说明已导出: {out_path}")
 

@@ -31,16 +31,19 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.input_condition_store import (
+    InputConditionError,
     build_form_snapshot,
     build_saved_inputs_dir,
     choose_load_input_conditions_path,
     choose_save_input_conditions_path,
+    confirm_snapshot_module,
     read_input_conditions,
+    validate_snapshot,
     write_input_conditions,
 )
 from app.ui.widgets.clamping_diagram import ClampingDiagramWidget, ThreadForceTriangleWidget
 from app.ui.widgets.help_button import HelpButton
-from app.ui.report_export import export_report_lines
+from app.ui.report_export import ReportExportError
 from app.ui.pages.bolt_flowchart import (
     FlowchartNavWidget, RStepDetailPage, R_STEPS,
 )
@@ -49,6 +52,7 @@ from core.bolt.calculator import InputError, calculate_vdi2230_core
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES_DIR = PROJECT_ROOT / "examples"
 SAVED_INPUTS_DIR = build_saved_inputs_dir(PROJECT_ROOT)
+MODULE_ID = "bolt_vdi2230"
 
 
 def _export_bolt_pdf_report(
@@ -2360,6 +2364,7 @@ class BoltPage(QWidget):
                 "check_level": self._current_check_level(),
                 "calculation_mode": self.calc_mode_combo.currentData() or "design",
             },
+            module_id=MODULE_ID,
         )
         fastener = snapshot.setdefault("inputs", {}).setdefault("fastener", {})
         d_raw = self._resolve_thread_d()
@@ -2614,9 +2619,14 @@ class BoltPage(QWidget):
             QMessageBox.warning(self, "测试案例不存在", f"未找到测试案例文件: {sample_path}")
             return
         try:
-            data = read_input_conditions(sample_path)
+            data = validate_snapshot(read_input_conditions(sample_path))
         except json.JSONDecodeError as exc:
             QMessageBox.critical(self, "测试案例损坏", f"测试案例文件不是有效 JSON：{exc}")
+            return
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
+        if not confirm_snapshot_module(self, data, MODULE_ID):
             return
 
         self._apply_input_data(data)
@@ -2639,15 +2649,20 @@ class BoltPage(QWidget):
         if in_path is None:
             return
         try:
-            data = read_input_conditions(in_path)
+            data = validate_snapshot(read_input_conditions(in_path))
         except FileNotFoundError:
             QMessageBox.warning(self, "文件不存在", f"未找到输入条件文件：{in_path}")
             return
         except json.JSONDecodeError as exc:
             QMessageBox.critical(self, "文件损坏", f"输入条件文件不是有效 JSON：{exc}")
             return
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
         except OSError as exc:
             QMessageBox.critical(self, "加载失败", f"输入条件加载失败：{exc}")
+            return
+        if not confirm_snapshot_module(self, data, MODULE_ID):
             return
 
         self._apply_input_data(data)
@@ -3049,26 +3064,30 @@ class BoltPage(QWidget):
         if not file_path:
             return
         out_path = Path(file_path)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        suffix = out_path.suffix.lower()
-        if suffix == ".pdf":
-            report_lines = self._build_report_lines()
-            used_rich_pdf = _export_bolt_pdf_report(
-                out_path,
-                self._last_payload,
-                self._last_result,
-                report_lines,
-            )
-            if not used_rich_pdf:
-                self.info_label.setText(
-                    f"校核报告已导出: {out_path}（当前环境未安装 reportlab，已使用基础 PDF 导出）"
+        try:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            suffix = out_path.suffix.lower()
+            if suffix == ".pdf":
+                report_lines = self._build_report_lines()
+                used_rich_pdf = _export_bolt_pdf_report(
+                    out_path,
+                    self._last_payload,
+                    self._last_result,
+                    report_lines,
                 )
-                return
-        elif suffix == ".docx":
-            from app.ui.report_export import _export_docx
-            _export_docx(out_path, self._build_report_lines())
-        else:
-            out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
+                if not used_rich_pdf:
+                    self.info_label.setText(
+                        f"校核报告已导出: {out_path}（当前环境未安装 reportlab，已使用基础 PDF 导出）"
+                    )
+                    return
+            elif suffix == ".docx":
+                from app.ui.report_export import _export_docx
+                _export_docx(out_path, self._build_report_lines())
+            else:
+                out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
+        except (ReportExportError, OSError) as exc:
+            QMessageBox.critical(self, "导出失败", f"导出失败：{exc}")
+            return
         self.info_label.setText(f"校核报告已导出: {out_path}")
 
     def _build_report_lines(self) -> list[str]:
