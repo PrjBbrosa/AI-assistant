@@ -578,6 +578,34 @@ class WormCalculatorTests(unittest.TestCase):
         self.assertGreaterEqual(sc["sigma_h_peak_mpa"], sc["sigma_h_nominal_mpa"])
         self.assertGreaterEqual(sc["sigma_f_peak_mpa"], sc["sigma_f_nominal_mpa"])
 
+    def test_contact_nominal_matches_stress_curve_nominal(self) -> None:
+        """判定链与曲线链在分度圆同点的名义接触应力必须一致。
+
+        review CALC-5：旧判定链按双外凸取 rho_eq，低估应力约 2.5 倍。
+        Ref: spec 2026-07-02 §D5。
+        """
+        result = calculate_worm_geometry(self._base_payload())
+        lc = result["load_capacity"]
+        judged = lc["contact"]["sigma_hm_nominal_mpa"]
+        curve = lc["stress_curve"]["sigma_h_nominal_mpa"]
+        self.assertAlmostEqual(judged / curve, 1.0, places=9)
+
+    def test_equivalent_radius_uses_concave_lead_angle_model(self) -> None:
+        """rho_eq = rho1*rho2/(rho2-rho1)，rho1=r1*sin(gamma)，rho2=a-r1。Ref: spec §D5。"""
+        payload = self._base_payload()
+        result = calculate_worm_geometry(payload)
+        lc = result["load_capacity"]
+        geometry = result["geometry"]
+        r1 = geometry["pitch_diameter_worm_mm"] / 2.0
+        gamma = math.radians(geometry["lead_angle_deg"])
+        a = payload["geometry"]["center_distance_mm"]
+        rho1 = max(r1 * math.sin(gamma), 0.1)
+        rho2 = max(a - r1, 0.1)
+        expected = (rho1 * rho2) / (rho2 - rho1)
+        self.assertAlmostEqual(
+            lc["contact"]["equivalent_radius_mm"] / expected, 1.0, places=6
+        )
+
     def test_stress_curve_not_present_when_lc_disabled(self) -> None:
         payload = self._base_payload()
         payload["load_capacity"]["enabled"] = False

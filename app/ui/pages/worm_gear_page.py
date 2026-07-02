@@ -1094,11 +1094,11 @@ class WormGearPage(BaseChapterPage):
 
         # W-03: 当 LC 未启用时，应力/力/扭矩显示"未启用"而非 0.000
         if lc_enabled:
-            sigma_hm_line = f"齿面应力 sigma_Hm = {contact.get('sigma_hm_peak_mpa', 0.0):.3f} MPa"
+            sigma_hm_line = f"齿面接触应力 sigma_H = {contact.get('sigma_hm_peak_mpa', 0.0):.3f} MPa"
             sigma_f_line = f"齿根应力 sigma_F = {root.get('sigma_f_peak_mpa', 0.0):.3f} MPa"
             ripple_line = f"扭矩波动 peak = {ripple.get('output_torque_peak_nm', 0.0):.3f} N·m"
         else:
-            sigma_hm_line = "齿面应力 sigma_Hm = 未启用"
+            sigma_hm_line = "齿面接触应力 sigma_H = 未启用"
             sigma_f_line = "齿根应力 sigma_F = 未启用"
             ripple_line = "扭矩波动 peak = 未启用"
 
@@ -1173,8 +1173,8 @@ class WormGearPage(BaseChapterPage):
         # W-03: LC 未启用时，负载能力详情区显示"未计算"占位
         if lc_enabled:
             lc_metrics_lines = [
-                f"sigma_Hm,nom = {contact.get('sigma_hm_nominal_mpa', 0.0):.3f} MPa",
-                f"sigma_Hm,peak = {contact.get('sigma_hm_peak_mpa', 0.0):.3f} MPa",
+                f"sigma_H,nom = {contact.get('sigma_hm_nominal_mpa', 0.0):.3f} MPa",
+                f"sigma_H,peak = {contact.get('sigma_hm_peak_mpa', 0.0):.3f} MPa",
                 f"SH_peak = {contact.get('safety_factor_peak', 0.0):.3f}",
                 f"sigma_F,nom = {root.get('sigma_f_nominal_mpa', 0.0):.3f} MPa",
                 f"sigma_F,peak = {root.get('sigma_f_peak_mpa', 0.0):.3f} MPa",

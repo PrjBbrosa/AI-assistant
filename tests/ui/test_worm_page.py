@@ -228,10 +228,10 @@ class WormGearPageTests(unittest.TestCase):
         page._calculate()
 
         self.assertIn("最小子集", page.load_capacity_status.text())
-        self.assertIn("齿面应力", page.result_metrics.toPlainText())
+        self.assertIn("齿面接触应力", page.result_metrics.toPlainText())
         self.assertIn("齿根应力", page.result_metrics.toPlainText())
         self.assertIn("扭矩波动", page.result_metrics.toPlainText())
-        self.assertIn("sigma_Hm", page.load_capacity_metrics.toPlainText())
+        self.assertIn("sigma_H", page.load_capacity_metrics.toPlainText())
 
     def test_geometry_inconsistent_overall_not_pass(self) -> None:
         """geometry_consistent=False but contact_ok=True, root_ok=True ->
@@ -470,7 +470,7 @@ class WormGearPageTests(unittest.TestCase):
 
         lc_text = page.load_capacity_metrics.toPlainText()
         # When disabled, stress/force values are absent -> the UI must not render "0.000"
-        # for sigma_Hm, sigma_F, SH, SF, T2 lines
+        # for sigma_H, sigma_F, SH, SF, T2 lines
         self.assertNotIn("0.000", lc_text, (
             "load_capacity_metrics should not display '0.000' placeholder values "
             "when load capacity is disabled. Actual content:\n" + lc_text

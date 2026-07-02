@@ -197,8 +197,8 @@ def generate_worm_report(
         contact = lc.get("contact", {})
         if contact:
             contact_values = [
-                f"名义接触应力 sigma_Hm,nom = {_fmt(contact.get('sigma_hm_nominal_mpa'), 2, 'MPa')}",
-                f"峰值接触应力 sigma_Hm,peak = {_fmt(contact.get('sigma_hm_peak_mpa'), 2, 'MPa')}",
+                f"名义接触应力 sigma_H,nom = {_fmt(contact.get('sigma_hm_nominal_mpa'), 2, 'MPa')}",
+                f"峰值接触应力 sigma_H,peak = {_fmt(contact.get('sigma_hm_peak_mpa'), 2, 'MPa')}",
                 f"许用接触应力 sigma_HP = {_fmt(contact.get('allowable_contact_stress_mpa'), 2, 'MPa')}",
                 f"名义安全系数 SH,nom = {_fmt(contact.get('safety_factor_nominal'), 2)}",
                 f"峰值安全系数 SH,peak = {_fmt(contact.get('safety_factor_peak'), 2)}",
