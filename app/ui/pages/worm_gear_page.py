@@ -1300,6 +1300,8 @@ class WormGearPage(BaseChapterPage):
                 except Exception:
                     out_path = out_path.with_suffix(".txt")
                     self._write_text_report(out_path)
+                    self.set_info(f"报告已导出: {out_path}（已使用简化格式）")
+                    return
             else:
                 self._write_text_report(out_path)
         except (ReportExportError, OSError) as exc:

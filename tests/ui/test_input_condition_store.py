@@ -168,6 +168,57 @@ class InputConditionStoreTests(unittest.TestCase):
         question.assert_called_once()
         apply_input_data.assert_not_called()
 
+    def test_hertz_load_mismatched_module_proceeds_when_user_confirms(self) -> None:
+        from unittest.mock import patch
+
+        from PySide6.QtWidgets import QMessageBox
+
+        from app.ui.pages import hertz_contact_page
+
+        page = hertz_contact_page.HertzContactPage()
+        with tempfile.TemporaryDirectory() as tmp:
+            in_path = Path(tmp) / "other_module.json"
+            write_input_conditions(in_path, {"module": "worm_gear", "inputs": {}})
+
+            with (
+                patch(
+                    "app.ui.pages.hertz_contact_page.choose_load_input_conditions_path",
+                    return_value=in_path,
+                ),
+                patch.object(
+                    QMessageBox,
+                    "question",
+                    return_value=QMessageBox.StandardButton.Yes,
+                ) as question,
+                patch.object(page, "_apply_input_data") as apply_input_data,
+            ):
+                page._load_input_conditions()
+
+        question.assert_called_once()
+        apply_input_data.assert_called_once()
+
+    def test_confirm_snapshot_module_blocks_and_allows_by_reply(self) -> None:
+        from unittest.mock import patch
+
+        from PySide6.QtWidgets import QMessageBox, QWidget
+
+        parent = QWidget()
+        cross_module = {"module": "worm_gear", "inputs": {}}
+
+        with patch.object(
+            QMessageBox, "question", return_value=QMessageBox.StandardButton.No
+        ):
+            self.assertFalse(
+                input_condition_store.confirm_snapshot_module(parent, cross_module, "hertz_contact")
+            )
+
+        with patch.object(
+            QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes
+        ):
+            self.assertTrue(
+                input_condition_store.confirm_snapshot_module(parent, cross_module, "hertz_contact")
+            )
+
 
 class BaseChapterPageActionTests(unittest.TestCase):
     @classmethod

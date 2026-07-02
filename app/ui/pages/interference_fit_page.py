@@ -2054,6 +2054,8 @@ class InterferenceFitPage(BaseChapterPage):
                 except Exception:
                     from app.ui.report_export import _export_pdf
                     _export_pdf(out_path, self._build_report_lines())
+                    self.set_info(f"校核报告已导出: {out_path}（已使用简化格式）")
+                    return
             elif suffix == ".docx":
                 from app.ui.report_export import _export_docx
                 _export_docx(out_path, self._build_report_lines())

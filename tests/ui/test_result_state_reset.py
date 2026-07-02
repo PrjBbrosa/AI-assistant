@@ -132,14 +132,36 @@ def test_spline_input_error_resets_scenario_cards() -> None:
 
     assert page._last_payload is None
     assert page._last_result is None
-    for key in ("a_badge", "b_badge"):
-        badge = page._result_labels[key]
-        assert badge.text() == "待计算"
-        assert badge.objectName() == "WaitBadge"
+    # 默认"仅花键"模式：场景 A 显示"待计算"，场景 B 显示"未启用"（mode-aware 复位）
+    a_badge = page._result_labels["a_badge"]
+    assert a_badge.text() == "待计算"
+    assert a_badge.objectName() == "WaitBadge"
+    b_badge = page._result_labels["b_badge"]
+    assert b_badge.text() == "未启用"
+    assert b_badge.objectName() == "WaitBadge"
     assert page._result_labels["a_detail"].text() == ""
-    assert page._result_labels["b_detail"].text() == ""
+    assert page._result_labels["b_detail"].text() == "仅花键模式，光滑段过盈校核已跳过。"
     assert page.curve_widget is not None
     assert page.curve_widget.isHidden()
     assert page.message_box is not None
     assert page.message_box.toPlainText() == ""
     assert "花键输入错误" in page.info_label.text()
+
+
+def test_spline_combined_mode_reset_shows_pending_for_scenario_b() -> None:
+    app = _app()
+    page = SplineFitPage()
+    app.processEvents()
+
+    # 切到"联合"模式后，场景 B 复位应显示"待计算"而非"未启用"
+    page._widgets["mode"].setCurrentText("联合")
+    with patch(
+        "app.ui.pages.spline_fit_page.calculate_spline_fit",
+        side_effect=SplineInputError("花键输入错误"),
+    ):
+        page._run_calculation(strict=True)
+
+    b_badge = page._result_labels["b_badge"]
+    assert b_badge.text() == "待计算"
+    assert b_badge.objectName() == "WaitBadge"
+    assert page._result_labels["b_detail"].text() == ""

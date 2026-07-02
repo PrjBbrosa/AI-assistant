@@ -613,6 +613,8 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
         "fretting": fretting_result,
         "checks": checks_out,
         "overall_pass": overall_pass,
+        # "warnings" 与 "messages" 恒等（同一 list 对象）：messages 为既有 UI/PDF 消费键，
+        # warnings 为与 bolt/worm 模块 API 命名对齐的别名。二者不得独立演化。
         "messages": warnings,
         "warnings": warnings,
     }

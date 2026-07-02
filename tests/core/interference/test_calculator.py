@@ -68,6 +68,11 @@ class InterferenceFitCalculatorTests(unittest.TestCase):
         self.assertGreater(curve["force_n"][-1], curve["force_n"][0])
         self.assertIn("additional_pressure_mpa", result)
 
+    def test_messages_and_warnings_are_the_same_object(self) -> None:
+        # 契约锁定：messages 与 warnings 恒等（同一 list 对象），二者不得独立演化。
+        result = calculate_interference_fit(make_case())
+        self.assertIs(result["messages"], result["warnings"])
+
     def test_invalid_geometry_is_rejected(self) -> None:
         with self.assertRaises(InputError):
             calculate_interference_fit(

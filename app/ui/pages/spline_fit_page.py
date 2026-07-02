@@ -876,18 +876,27 @@ class SplineFitPage(BaseChapterPage):
         return ""
 
     def _reset_scenario_cards(self) -> None:
+        # 仅花键模式下场景 B 不参与计算，复位文案须与 _display_result 一致地
+        # 显示"未启用" + 跳过说明，避免用户误以为该项会被校核（mode-aware 复位）。
+        is_combined = MODE_MAP.get(self._get_value("mode")) == "combined"
         for key in ("a_badge", "b_badge"):
             badge = self._result_labels.get(key)
             if badge is None:
                 continue
-            badge.setText("待计算")
+            if key == "b_badge" and not is_combined:
+                badge.setText("未启用")
+            else:
+                badge.setText("待计算")
             badge.setObjectName("WaitBadge")
             badge.style().unpolish(badge)
             badge.style().polish(badge)
         for key in ("a_detail", "b_detail"):
             detail = self._result_labels.get(key)
             if detail is not None:
-                detail.setText("")
+                if key == "b_detail" and not is_combined:
+                    detail.setText("仅花键模式，光滑段过盈校核已跳过。")
+                else:
+                    detail.setText("")
         if self.curve_widget is not None:
             self.curve_widget.setVisible(False)
         if self.message_box is not None:

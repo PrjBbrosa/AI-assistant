@@ -1197,7 +1197,14 @@ class BoltPage(QWidget):
         field_id: str,
         handler: Callable[[str], None],
     ) -> QComboBox | None:
-        """Connect a field combo to a text handler and apply the initial state."""
+        """Connect a field combo to a text handler and apply the initial state.
+
+        注意：这里在 connect 之后立即 `handler(widget.currentText())` 触发一次，
+        使各联动字段（材料自动填充、锁定态等）在页面构建阶段即进入正确初值。
+        该初值随后会被 __init__ 末尾的 `_load_sample` 最终覆盖为样例数据；
+        若调整 __init__ 中 _wire_combo 与 _load_sample 的先后顺序，须复核这一
+        "构建期初值 -> 样例覆盖" 的依赖，避免联动字段停留在未覆盖的中间态。
+        """
         widget = self._field_widgets.get(field_id)
         if not isinstance(widget, QComboBox):
             return None
