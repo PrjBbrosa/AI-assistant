@@ -44,7 +44,7 @@ CHECK_LABELS = {
     "combined_ok": "联合作用校核",
     "gaping_ok": "张口缝校核",
     "fit_range_ok": "过盈覆盖需求校核",
-    "shaft_stress_ok": "轴侧应力校核",
+    "shaft_stress_ok": "轴侧应力校核（取内孔壁/配合面较大者）",
     "hub_stress_ok": "轮毂应力校核",
 }
 
@@ -248,7 +248,7 @@ def generate_interference_report(
     stress_min = safety.get("stress_safety_min", 0)
     stress_pass = stress_min >= 1.0 if isinstance(stress_min, (int, float)) else None
     stress_sf_values = [
-        f"轴侧安全系数: {_fmt(safety.get('shaft_sf'), 2)}",
+        f"轴侧安全系数（取内孔壁/配合面较大者）: {_fmt(safety.get('shaft_sf'), 2)}",
         f"轮毂安全系数: {_fmt(safety.get('hub_sf'), 2)}",
     ]
     elems.append(KeepTogether([
@@ -260,10 +260,18 @@ def generate_interference_report(
     # 9. Stress section
     elems.append(_section_title(styles, "等效应力"))
     stress_rows = [
-        ("轴 VM min/mean/max",
+        ("轴 VM min/mean/max（取内孔壁/配合面较大者）",
          f"{_fmt(stress.get('shaft_vm_min'), 1)} / "
          f"{_fmt(stress.get('shaft_vm_mean'), 1)} / "
          f"{_fmt(stress.get('shaft_vm_max'), 1)} MPa"),
+        ("轴配合面 VM min/mean/max",
+         f"{_fmt(stress.get('shaft_vm_interface_min'), 1)} / "
+         f"{_fmt(stress.get('shaft_vm_interface_mean'), 1)} / "
+         f"{_fmt(stress.get('shaft_vm_interface_max'), 1)} MPa"),
+        ("轴内孔壁 VM min/mean/max",
+         f"{_fmt(stress.get('shaft_vm_bore_min'), 1)} / "
+         f"{_fmt(stress.get('shaft_vm_bore_mean'), 1)} / "
+         f"{_fmt(stress.get('shaft_vm_bore_max'), 1)} MPa"),
         ("轮毂 VM min/mean/max",
          f"{_fmt(stress.get('hub_vm_min'), 1)} / "
          f"{_fmt(stress.get('hub_vm_mean'), 1)} / "

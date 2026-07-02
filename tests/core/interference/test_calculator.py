@@ -37,6 +37,16 @@ def make_case() -> dict:
     }
 
 
+def make_solid_case() -> dict:
+    return make_case()
+
+
+def make_hollow_case() -> dict:
+    data = make_case()
+    data["geometry"]["shaft_inner_d_mm"] = 28.0  # q = 0.7 for d = 40 mm.
+    return data
+
+
 class InterferenceFitCalculatorTests(unittest.TestCase):
     def test_nominal_case_outputs_pressure_torque_and_curve(self) -> None:
         result = calculate_interference_fit(make_case())
@@ -206,6 +216,35 @@ class InterferenceFitCalculatorTests(unittest.TestCase):
         self.assertLess(
             hollow_result["capacity"]["torque_min_nm"],
             solid_result["capacity"]["torque_min_nm"],
+        )
+
+    def test_hollow_shaft_bore_wall_governs_stress_check(self) -> None:
+        """空心轴判定必须取内孔壁 von Mises（高于配合面）。"""
+        result = calculate_interference_fit(make_hollow_case())
+
+        derived = result["derived"]
+        k_shaft = derived["shaft_geometry_factor"]
+        interface_coeff = (1.0 + k_shaft * k_shaft - k_shaft) ** 0.5
+        self.assertGreater(k_shaft, 1.0)
+        self.assertAlmostEqual(derived["shaft_bore_vm_coeff"], k_shaft + 1.0, places=9)
+        self.assertAlmostEqual(derived["shaft_interface_vm_coeff"], interface_coeff, places=9)
+
+        stress = result["stress_mpa"]
+        self.assertGreater(stress["shaft_vm_bore_max"], stress["shaft_vm_interface_max"])
+        self.assertAlmostEqual(stress["shaft_vm_max"], stress["shaft_vm_bore_max"], places=9)
+        self.assertTrue(any("内孔壁" in warning for warning in result["warnings"]))
+
+    def test_solid_shaft_stress_unchanged(self) -> None:
+        """实心轴行为不变：K=1，判定系数=1。"""
+        result = calculate_interference_fit(make_solid_case())
+
+        derived = result["derived"]
+        self.assertEqual(derived["shaft_geometry_factor"], 1.0)
+        self.assertEqual(derived["shaft_bore_vm_coeff"], 0.0)
+        self.assertAlmostEqual(
+            result["stress_mpa"]["shaft_vm_max"],
+            result["pressure_mpa"]["p_max"],
+            places=9,
         )
 
     def test_slip_safety_factor_increases_required_interference_and_can_exhaust_fit_window(self) -> None:

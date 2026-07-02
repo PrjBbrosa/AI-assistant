@@ -326,7 +326,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "materials.shaft_material",
                 "轴材料",
                 "-",
-                "选择后自动填充轴侧 E 与 nu；可切到“自定义”手工输入。",
+                "选择后自动填充轴侧 E 与 nu；可切到「自定义」手工输入。",
                 widget_type="choice",
                 options=MATERIAL_OPTIONS,
                 default="45钢",
@@ -365,7 +365,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "materials.hub_material",
                 "轮毂材料",
                 "-",
-                "选择后自动填充轮毂侧 E 与 nu；可切到“自定义”手工输入。",
+                "选择后自动填充轮毂侧 E 与 nu；可切到「自定义」手工输入。",
                 widget_type="choice",
                 options=MATERIAL_OPTIONS,
                 default="45钢",
@@ -700,7 +700,7 @@ CHECK_LABELS = {
     "combined_ok": "联合作用校核（扭矩 + 轴向）",
     "gaping_ok": "张口缝校核（p_min >= p_r + p_b）",
     "fit_range_ok": "最大过盈端覆盖需求校核",
-    "shaft_stress_ok": "轴侧应力安全系数校核",
+    "shaft_stress_ok": "轴侧应力安全系数校核（取内孔壁/配合面较大者）",
     "hub_stress_ok": "轮毂应力安全系数校核",
 }
 
@@ -710,7 +710,7 @@ BEGINNER_GUIDES: dict[str, str] = {
     "geometry.shaft_d_mm": "决定接触面积与接触半径，直接影响扭矩能力。",
     "geometry.shaft_inner_d_mm": "填 0 表示实心轴；内孔越大，轴越柔，通常会降低接触压力和传递能力。",
     "geometry.hub_outer_d_mm": "外径越大，轮毂柔度越低；按当前厚壁轮毂模型，同等过盈下接触压力越高。",
-    "fit.mode": "如果只知道标准配合代号，优先用“优选配合”；如果已有轴/孔偏差，改用“偏差换算”。",
+    "fit.mode": "如果只知道标准配合代号，优先用「优选配合」；如果已有轴/孔偏差，改用「偏差换算」。",
     "fit.preferred_fit_name": "当前只提供受限的常用孔基制优选配合，用于快速得到可追溯的过盈窗口。",
     "fit.shaft_upper_deviation_um": "偏差换算时，系统会自动把轴/孔偏差转换为 delta_min / delta_max。",
     "fit.shaft_lower_deviation_um": "若算出的最小过盈 < 0，则说明该组合包含间隙或过渡，不适用于当前模块。",
@@ -1062,7 +1062,7 @@ class InterferenceFitPage(BaseChapterPage):
         summary_layout.setSpacing(6)
         self.result_title = QLabel("尚未执行计算", summary_card)
         self.result_title.setObjectName("SubSectionTitle")
-        self.result_summary = QLabel("填写参数并点击“执行校核”后，这里显示结论。", summary_card)
+        self.result_summary = QLabel("填写参数并点击「执行校核」后，这里显示结论。", summary_card)
         self.result_summary.setObjectName("SectionHint")
         self.result_summary.setWordWrap(True)
         summary_layout.addWidget(self.result_title)
@@ -1485,7 +1485,7 @@ class InterferenceFitPage(BaseChapterPage):
             try:
                 value = float(raw)
             except ValueError as exc:
-                raise InputError(f"字段“{spec.label}”请输入数字，当前值: {raw}") from exc
+                raise InputError(f"字段「{spec.label}」请输入数字，当前值: {raw}") from exc
             sec, key = spec.mapping
             payload.setdefault(sec, {})[key] = value
 
@@ -1615,7 +1615,10 @@ class InterferenceFitPage(BaseChapterPage):
             *[f"• {line}" for line in fretting_lines],
             f"• 附加载荷压强: p_r={add_p['p_radial']:.2f} MPa, p_b={add_p['p_bending']:.2f} MPa, p_gap={add_p['p_gap']:.2f} MPa",
             f"• 粗糙度修正: s={rough['subsidence_um']:.2f} um, delta_eff,min/mean/max={rough['delta_effective_min_um']:.2f} / {rough['delta_effective_mean_um']:.2f} / {rough['delta_effective_max_um']:.2f} um",
-            f"• 应力 max: shaft_vm={stress['shaft_vm_max']:.1f} MPa, hub_vm={stress['hub_vm_max']:.1f} MPa, hub_sigma_theta={stress['hub_hoop_inner_max']:.1f} MPa",
+            f"• 应力 max: 轴 von Mises（取内孔壁/配合面较大者）={stress['shaft_vm_max']:.1f} MPa, "
+                f"hub_vm={stress['hub_vm_max']:.1f} MPa, hub_sigma_theta={stress['hub_hoop_inner_max']:.1f} MPa",
+            f"• 轴侧分量 max: 配合面={stress.get('shaft_vm_interface_max', 0.0):.1f} MPa, "
+                f"内孔壁={stress.get('shaft_vm_bore_max', 0.0):.1f} MPa",
             f"• 安全系数: S_torque={safety['torque_sf']:.2f}, S_axial={safety['axial_sf']:.2f}, "
                 f"S_comb={safety['combined_sf']:.2f}, S_shaft={safety['shaft_sf']:.2f}, S_hub={safety['hub_sf']:.2f}",
         ]
@@ -1969,7 +1972,7 @@ class InterferenceFitPage(BaseChapterPage):
         self._last_payload = None
         self._last_result = None
         self.result_title.setText("尚未执行计算")
-        self.result_summary.setText("填写参数并点击“执行校核”后，这里显示结论。")
+        self.result_summary.setText("填写参数并点击「执行校核」后，这里显示结论。")
         self.metrics_text.setText("尚无结果。")
         self.message_box.clear()
         for badge in self._check_badges.values():
@@ -2058,7 +2061,8 @@ class InterferenceFitPage(BaseChapterPage):
                 f"- F_min / mean / max: {cap['axial_min_n']:.3f} / {cap['axial_mean_n']:.3f} / {cap['axial_max_n']:.3f} N",
                 f"- F_press,min / mean / max: {asm['press_force_min_n']:.3f} / {asm['press_force_mean_n']:.3f} / {asm['press_force_max_n']:.3f} N",
                 f"- delta_required: {req['delta_required_um']:.3f} um",
-                f"- shaft_vm_max / hub_vm_max: {stress['shaft_vm_max']:.3f} / {stress['hub_vm_max']:.3f} MPa",
+                f"- 轴 von Mises（取内孔壁/配合面较大者）/ hub_vm_max: {stress['shaft_vm_max']:.3f} / {stress['hub_vm_max']:.3f} MPa",
+                f"- shaft_vm_interface_max / shaft_vm_bore_max: {stress.get('shaft_vm_interface_max', 0.0):.3f} / {stress.get('shaft_vm_bore_max', 0.0):.3f} MPa",
                 f"- S_torque / S_axial / S_comb: {safety['torque_sf']:.3f} / {safety['axial_sf']:.3f} / {safety['combined_sf']:.3f}",
                 f"- S_shaft / S_hub: {safety['shaft_sf']:.3f} / {safety['hub_sf']:.3f}",
                 "",
