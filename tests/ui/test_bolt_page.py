@@ -5,6 +5,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
+from app.ui.pages.bolt_flowchart import RStepDetailPage, R_STEPS
 from app.ui.pages.bolt_page import BoltPage
 from core.bolt.calculator import InputError, calculate_vdi2230_core
 
@@ -254,6 +255,35 @@ class BoltPageStateTests(unittest.TestCase):
         with self.assertRaisesRegex(InputError, "第1层热膨胀系数"):
             page._build_payload()
 
+    def test_layer_numeric_fields_reject_fullwidth_and_underscore_literals(self) -> None:
+        page = BoltPage()
+        page._field_widgets["clamped.part_count"].setCurrentText("2")  # type: ignore[attr-defined]
+
+        for raw in ("1_000", "１２", "+1000", ".5", "1."):
+            with self.subTest(raw=raw):
+                page._field_widgets["clamped.layer_1.thickness"].setText(raw)  # type: ignore[attr-defined]
+                with self.assertRaisesRegex(InputError, "请输入数字"):
+                    page._build_payload()
+
+    def test_layer_numeric_fields_accept_scientific_notation(self) -> None:
+        page = BoltPage()
+        page._field_widgets["clamped.part_count"].setCurrentText("2")  # type: ignore[attr-defined]
+        page._field_widgets["clamped.layer_1.thickness"].setText("1.5e3")  # type: ignore[attr-defined]
+
+        payload = page._build_payload()
+
+        self.assertEqual(payload["clamped"]["layers"][0]["l_K"], 1500.0)
+
+    def test_flowchart_intermediate_zero_values_render_as_zero(self) -> None:
+        detail = RStepDetailPage(R_STEPS[1])
+        zero_result = {"intermediate": {"phi_n": 0.0}}
+
+        detail.build_input_echo({}, {}, zero_result)
+        self.assertEqual(detail._input_labels["intermediate.phi_n"].text(), "0.00")
+
+        detail.update_from_result(zero_result, {})
+        self.assertEqual(detail._input_labels["intermediate.phi_n"].text(), "0.00")
+
     def test_result_summary_and_report_use_sigma_vm_work_for_r5(self) -> None:
         page = BoltPage()
         payload = _vm_governing_payload()
@@ -363,6 +393,22 @@ class BoltPageStateTests(unittest.TestCase):
 
         self.assertIn("- 支承面压强校核（R7）: 已跳过", report_lines)
         self.assertIn("- 螺纹脱扣校核: 已跳过", report_lines)
+
+    def test_incomplete_status_shows_wait_badge_and_report_headline(self) -> None:
+        """缺 R8 时 UI 不显示绿色总体通过。Ref: spec 2026-07-02 §D3。"""
+        page = BoltPage()
+        payload = _raw_bolt_payload()
+        result = calculate_vdi2230_core(payload)
+        page._last_payload = payload
+        page._last_result = result
+        page._render_result(payload, result)
+
+        self.assertEqual(page._last_result["overall_status"], "incomplete")  # type: ignore[index]
+        self.assertEqual(page.overall_badge.text(), "结论不完整")
+        self.assertEqual(page.overall_badge.objectName(), "WaitBadge")
+        headline = [line for line in page._build_report_lines() if line.startswith("总体结论")]
+        self.assertTrue(headline)
+        self.assertIn("不完整", headline[0])
 
     def test_flowchart_includes_optional_r8_thread_strip_step(self) -> None:
         page = BoltPage()

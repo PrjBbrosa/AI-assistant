@@ -219,6 +219,7 @@ class BufferEnergyPageTests(unittest.TestCase):
         self.assertIn("initial_energy", page.metric_labels)
         self.assertEqual(page.compare_preview_table.columnCount(), 4)
         self.assertFalse(page.btn_save_report.isEnabled())
+        self.assertFalse(page.btn_calculate.isEnabled())
 
     def test_open_curve_path_uses_loader_and_updates_summary(self) -> None:
         page = self._make_page()
@@ -228,6 +229,15 @@ class BufferEnergyPageTests(unittest.TestCase):
         self.assertIn("最大行程", page.curve_summary_label.text())
         self.assertIn("加载 3 点", page.curve_summary_label.text())
         self.assertFalse(page.btn_save_report.isEnabled())
+        self.assertTrue(page.btn_calculate.isEnabled())
+
+    def test_load_sample_enables_calculate_button(self) -> None:
+        page = self._make_page()
+        page._load_buffer_curve = lambda _path: _sample_curve()
+
+        page._load_sample("buffer_energy_case_01.csv")
+
+        self.assertTrue(page.btn_calculate.isEnabled())
 
     def test_open_curve_error_warns(self) -> None:
         page = self._make_page()
@@ -240,6 +250,7 @@ class BufferEnergyPageTests(unittest.TestCase):
             page._open_curve_path(Path("bad.csv"))
         self.assertTrue(mock_warn.called)
         self.assertIsNone(page._curve_data)
+        self.assertFalse(page.btn_calculate.isEnabled())
 
     def test_build_payload_matches_core_contract(self) -> None:
         page = self._make_page()
@@ -334,6 +345,7 @@ class BufferEnergyPageTests(unittest.TestCase):
         page._on_clear()
         self.assertIsNone(page._last_result)
         self.assertFalse(page.btn_save_report.isEnabled())
+        self.assertFalse(page.btn_calculate.isEnabled())
         self.assertEqual(page.compare_preview_table.rowCount(), 0)
         self.assertTrue(page.results_label.toPlainText().startswith("执行计算后"))
 
@@ -357,12 +369,58 @@ class BufferEnergyPageTests(unittest.TestCase):
             page._write_input_conditions(path)
             data = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(data["module"], "buffer_energy")
+            self.assertEqual(data["version"], 1)
+            self.assertIn("inputs", data)
+            self.assertIn("ui_state", data)
+            self.assertNotIn("fields", data)
             page._field_widgets["impact.mass_kg"].setText("0")
             page._field_widgets["impact.initial_velocity_m_s"].setText("0")
             page._read_input_conditions(path)
         self.assertEqual(page._field_widgets["impact.mass_kg"].text(), "99.5")
         self.assertEqual(page._field_widgets["impact.initial_velocity_m_s"].text(), "3.21")
         self.assertFalse(page.btn_save_report.isEnabled())
+
+    def test_example_input_conditions_use_current_snapshot_format(self) -> None:
+        data = json.loads(
+            Path("examples/buffer_energy_input_conditions.json").read_text(encoding="utf-8")
+        )
+
+        self.assertEqual(data["module"], "buffer_energy")
+        self.assertEqual(data["version"], 1)
+        self.assertIn("inputs", data)
+        self.assertIn("ui_state", data)
+        self.assertNotIn("fields", data)
+        self.assertEqual(data["inputs"]["impact"]["mass_kg"], "12.0")
+        self.assertEqual(data["inputs"]["options"]["time_samples"], "200")
+
+    def test_apply_input_data_uses_inputs_not_removed_flat_fields(self) -> None:
+        page = self._make_page()
+        snapshot = {
+            "module": "buffer_energy",
+            "version": 1,
+            "fields": {
+                "impact.mass_kg": "1.0",
+                "impact.initial_velocity_m_s": "1.0",
+            },
+            "inputs": {
+                "impact": {
+                    "mass_kg": "22.5",
+                    "initial_velocity_m_s": "4.2",
+                },
+                "options": {
+                    "time_samples": "120",
+                },
+            },
+            "ui_state": {
+                "curve_source": "",
+            },
+        }
+
+        page._apply_input_data(snapshot)
+
+        self.assertEqual(page._field_widgets["impact.mass_kg"].text(), "22.5")
+        self.assertEqual(page._field_widgets["impact.initial_velocity_m_s"].text(), "4.2")
+        self.assertEqual(page._field_widgets["options.time_samples"].text(), "120")
 
 
 class BufferEnergyMainWindowIntegrationTests(unittest.TestCase):

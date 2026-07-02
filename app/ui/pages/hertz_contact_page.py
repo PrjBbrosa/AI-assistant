@@ -11,6 +11,7 @@ from typing import Any
 from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -24,16 +25,19 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.input_condition_store import (
+    InputConditionError,
     build_form_snapshot,
     build_saved_inputs_dir,
     choose_load_input_conditions_path,
     choose_save_input_conditions_path,
+    confirm_snapshot_module,
     read_input_conditions,
+    validate_snapshot,
     write_input_conditions,
 )
 from app.ui.fonts import make_ui_font
 from app.ui.pages.base_chapter_page import BaseChapterPage
-from app.ui.report_export import export_report_lines
+from app.ui.report_export import ReportExportError
 from app.ui.widgets.help_button import HelpButton
 from app.ui.widgets.hertz_input_diagram import HertzInputDiagramWidget
 from core.hertz.calculator import InputError, calculate_hertz_contact
@@ -41,6 +45,7 @@ from core.hertz.calculator import InputError, calculate_hertz_contact
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES_DIR = PROJECT_ROOT / "examples"
 SAVED_INPUTS_DIR = build_saved_inputs_dir(PROJECT_ROOT)
+MODULE_ID = "hertz_contact"
 
 MATERIAL_LIBRARY: dict[str, dict[str, float] | None] = {
     "42CrMo": {"e_mpa": 210000.0, "nu": 0.29},
@@ -303,6 +308,8 @@ class HertzContactPage(BaseChapterPage):
             self._refresh_diagram_from_inputs()
 
         QTimer.singleShot(0, _deferred_sample_init)
+        self._connect_dirty_signals()
+        self._mark_results_dirty()
 
     def eventFilter(self, watched, event):  # noqa: N802
         if watched in self._widget_hints and event.type() in (QEvent.Type.FocusIn, QEvent.Type.Enter):
@@ -506,7 +513,7 @@ class HertzContactPage(BaseChapterPage):
         summary_layout.setSpacing(6)
         self.result_title = QLabel("尚未执行计算", summary_card)
         self.result_title.setObjectName("SubSectionTitle")
-        self.result_summary = QLabel("填写参数并点击“执行校核”后，这里显示结论。", summary_card)
+        self.result_summary = QLabel("填写参数并点击\"执行校核\"后，这里显示结论。", summary_card)
         self.result_summary.setObjectName("SectionHint")
         self.result_summary.setWordWrap(True)
         summary_layout.addWidget(self.result_title)
@@ -699,7 +706,7 @@ class HertzContactPage(BaseChapterPage):
                 try:
                     value = float(raw)
                 except ValueError as exc:
-                    raise InputError(f"字段“{spec.label}”请输入数字，当前值: {raw}") from exc
+                    raise InputError(f"字段\"{spec.label}\"请输入数字，当前值: {raw}") from exc
             sec, key = spec.mapping
             payload.setdefault(sec, {})[key] = value
 
@@ -712,16 +719,23 @@ class HertzContactPage(BaseChapterPage):
             payload = self._build_payload()
             result = calculate_hertz_contact(payload)
             self._render_result(result)
-            self._last_payload = payload
-            self._last_result = result
             self.set_current_chapter(self.chapter_stack.count() - 1)
         except InputError as exc:
+            self._mark_results_dirty()
             QMessageBox.critical(self, "输入参数错误", str(exc))
             return
         except Exception as exc:  # pragma: no cover
+            self._last_payload = None
+            self._last_result = None
+            self._reset_result_display()
+            self._mark_results_dirty()
             QMessageBox.critical(self, "渲染异常", str(exc))
             self.set_info(f"结果渲染失败：{exc}")
             return
+
+        self._last_payload = payload
+        self._last_result = result
+        self._mark_results_fresh()
 
     def _render_result(self, result: dict[str, Any]) -> None:
         overall = bool(result.get("overall_pass"))
@@ -777,7 +791,11 @@ class HertzContactPage(BaseChapterPage):
         return recs
 
     def _capture_input_snapshot(self) -> dict[str, Any]:
-        return build_form_snapshot(self._field_specs.values(), self._read_widget_value)
+        return build_form_snapshot(
+            self._field_specs.values(),
+            self._read_widget_value,
+            module_id=MODULE_ID,
+        )
 
     def _apply_input_data(self, data: dict[str, Any]) -> None:
         inputs_data = data.get("inputs")
@@ -815,6 +833,7 @@ class HertzContactPage(BaseChapterPage):
         self._sync_material_inputs()
         self._apply_mode_visibility()
         self._refresh_diagram_from_inputs()
+        self._mark_results_dirty()
 
     def _load_sample(self, filename: str) -> None:
         sample_path = EXAMPLES_DIR / filename
@@ -822,12 +841,18 @@ class HertzContactPage(BaseChapterPage):
             QMessageBox.warning(self, "测试案例不存在", f"未找到测试案例文件: {sample_path}")
             return
         try:
-            data = read_input_conditions(sample_path)
+            data = validate_snapshot(read_input_conditions(sample_path))
         except json.JSONDecodeError as exc:
             QMessageBox.critical(self, "测试案例损坏", f"测试案例文件不是有效 JSON：{exc}")
             return
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
+        if not confirm_snapshot_module(self, data, MODULE_ID):
+            return
 
         self._apply_input_data(data)
+        self._mark_results_dirty()
         self.set_info(f"已加载测试案例：{filename}。可直接执行校核并查看图示。")
 
     def _save_input_conditions(self) -> None:
@@ -847,42 +872,95 @@ class HertzContactPage(BaseChapterPage):
         if in_path is None:
             return
         try:
-            data = read_input_conditions(in_path)
+            data = validate_snapshot(read_input_conditions(in_path))
         except FileNotFoundError:
             QMessageBox.warning(self, "文件不存在", f"未找到输入条件文件：{in_path}")
             return
         except json.JSONDecodeError as exc:
             QMessageBox.critical(self, "文件损坏", f"输入条件文件不是有效 JSON：{exc}")
             return
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
         except OSError as exc:
             QMessageBox.critical(self, "加载失败", f"输入条件加载失败：{exc}")
             return
+        if not confirm_snapshot_module(self, data, MODULE_ID):
+            return
 
         self._apply_input_data(data)
+        self._mark_results_dirty()
         self.set_info(f"已加载输入条件：{in_path}")
 
     def _clear(self) -> None:
         self._apply_defaults()
         self._last_payload = None
         self._last_result = None
+        self._reset_result_display()
+        self.set_info("参数已重置为默认值。")
+        self._refresh_diagram_from_inputs()
+        self._mark_results_dirty()
+
+    def _reset_result_display(self) -> None:
         self.result_title.setText("尚未执行计算")
-        self.result_summary.setText("填写参数并点击“执行校核”后，这里显示结论。")
+        self.result_summary.setText("填写参数并点击\"执行校核\"后，这里显示结论。")
         self.metrics_text.setText("尚无结果。")
         self.message_box.clear()
         for badge in self._check_badges.values():
             self._set_badge(badge, "待计算", "wait")
         self.set_overall_status("等待计算", "wait")
-        self.set_info("参数已重置为默认值。")
-        self._refresh_diagram_from_inputs()
+
+    def _mark_results_dirty(self) -> None:
+        self.btn_save.setEnabled(False)
+
+    def _mark_results_fresh(self) -> None:
+        self.btn_save.setEnabled(True)
+
+    def _connect_dirty_signals(self) -> None:
+        for widget in self._field_widgets.values():
+            if isinstance(widget, QLineEdit):
+                widget.textEdited.connect(self._mark_results_dirty)
+            elif isinstance(widget, QComboBox):
+                widget.currentIndexChanged.connect(self._mark_results_dirty)
 
     def _save_report(self) -> None:
-        if self._last_result is None:
+        if self._last_result is None or self._last_payload is None:
             QMessageBox.information(self, "无结果", "请先执行校核计算。")
             return
         default_path = EXAMPLES_DIR / "hertz_contact_report.pdf"
-        out_path = export_report_lines(self, "导出结果说明", default_path, self._build_report_lines())
-        if out_path is not None:
-            self.set_info(f"结果说明已导出: {out_path}")
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "导出结果说明",
+            str(default_path),
+            "PDF Files (*.pdf);;Word Files (*.docx);;Text Files (*.txt);;All Files (*)",
+        )
+        if not file_path:
+            return
+        out_path = Path(file_path)
+        try:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            suffix = out_path.suffix.lower()
+            if suffix == ".pdf":
+                try:
+                    from app.ui.report_pdf_hertz import generate_hertz_report
+
+                    generate_hertz_report(out_path, self._last_payload, self._last_result)
+                except Exception:
+                    from app.ui.report_export import _export_pdf
+
+                    _export_pdf(out_path, self._build_report_lines())
+                    self.set_info(f"结果说明已导出: {out_path}（已使用简化格式）")
+                    return
+            elif suffix == ".docx":
+                from app.ui.report_export import _export_docx
+
+                _export_docx(out_path, self._build_report_lines())
+            else:
+                out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
+        except (ReportExportError, OSError) as exc:
+            QMessageBox.critical(self, "导出失败", f"导出失败：{exc}")
+            return
+        self.set_info(f"结果说明已导出: {out_path}")
 
     def _build_report_lines(self) -> list[str]:
         assert self._last_result is not None

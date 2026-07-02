@@ -118,6 +118,7 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     operating_temp_c = float(advanced.get("operating_temp_c", 23.0))
     humidity_rh = float(advanced.get("humidity_rh", 50.0))
     wheel_plastic = PLASTIC_MATERIALS.get(wheel_material)
+    material_warnings: list[str] = []
     if wheel_plastic is not None:
         # 根据温度和湿度降额，覆盖许用值（优先于 MATERIAL_ALLOWABLE_HINTS 的常温干态值）
         sigma_hlim_derated, sigma_flim_derated = apply_derate(
@@ -125,6 +126,12 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
             operating_temp_c=operating_temp_c,
             humidity_rh=humidity_rh,
         )
+        if operating_temp_c > wheel_plastic.allowable_surface_temp_c:
+            material_warnings.append(
+                f"工作温度 {operating_temp_c:.1f} degC 超过 {wheel_plastic.name} "
+                f"允许表面温度 {wheel_plastic.allowable_surface_temp_c:.1f} degC，"
+                "材料性能可能急剧下降，请降低温度或更换材料。"
+            )
         wheel_allowable_defaults = {
             "contact_mpa": sigma_hlim_derated,
             "root_mpa": sigma_flim_derated,
@@ -158,9 +165,21 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     theoretical_center_distance_mm = module_mm * (diameter_factor_q + z2) / 2.0 + (x1 + x2) * module_mm
     center_distance_delta_mm = center_distance_mm - theoretical_center_distance_mm
     worm_tip_diameter_mm = pitch_diameter_worm_mm + 2.0 * module_mm * (1.0 + x1)
-    worm_root_diameter_mm = max(1e-6, pitch_diameter_worm_mm - 2.0 * module_mm * (1.2 - x1))
+    worm_root_diameter_mm = pitch_diameter_worm_mm - 2.0 * module_mm * (1.2 - x1)
+    if worm_root_diameter_mm <= 0:
+        raise InputError(
+            f"蜗杆齿根圆直径 df1={worm_root_diameter_mm:.3f} mm <= 0，"
+            f"q/m/x 组合几何不可行（q={diameter_factor_q}, m={module_mm}, x1={x1}）。"
+            "请增大 q 或 x1，或复核模数。"
+        )
     wheel_tip_diameter_mm = pitch_diameter_wheel_mm + 2.0 * module_mm * (1.0 + x2)
-    wheel_root_diameter_mm = max(1e-6, pitch_diameter_wheel_mm - 2.0 * module_mm * (1.2 - x2))
+    wheel_root_diameter_mm = pitch_diameter_wheel_mm - 2.0 * module_mm * (1.2 - x2)
+    if wheel_root_diameter_mm <= 0:
+        raise InputError(
+            f"蜗轮齿根圆直径 df2={wheel_root_diameter_mm:.3f} mm <= 0，"
+            f"q/m/x 组合几何不可行（q={diameter_factor_q}, m={module_mm}, x2={x2}）。"
+            "请增大齿数或 x2，或复核模数。"
+        )
     lead_mm = math.pi * pitch_diameter_worm_mm * math.tan(lead_angle_calc_rad)
     axial_pitch_mm = lead_mm / z1
     worm_face_width_mm = _positive(
@@ -263,6 +282,7 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
         geometry_warnings.append(
             f"中心距与理论中心距偏差较大：a-a_th={center_distance_delta_mm:.3f} mm。"
         )
+    load_capacity_warnings = [*geometry_warnings, *material_warnings]
 
     # Tooth geometry (needed for wheel_dimensions output regardless of LC enabled)
     tooth_height_mm = module_mm * (2.2 + x1 - x2)
@@ -478,23 +498,39 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
 
     equivalent_modulus_mpa = 1.0 / (((1.0 - worm_nu * worm_nu) / worm_e_mpa) + ((1.0 - wheel_nu * wheel_nu) / wheel_e_mpa))
     contact_length_mm = max(1e-6, min(worm_face_width_mm, wheel_face_width_mm))
-    equivalent_radius_mm = 1.0 / ((2.0 / pitch_diameter_worm_mm) + (2.0 / pitch_diameter_wheel_mm))
+
+    # ---- 判定用等效曲率：与 stress_curve 同一模型（凸-凹 + 导程角投影）----
+    # review 2026-07-02 CALC-5：旧实现按双外凸圆柱取 rho_eq，高估等效半径，
+    # 判定应力被低估，疲劳寿命随之高估。
+    r_pitch_worm_mm = pitch_diameter_worm_mm / 2.0
+    rho1_nominal_mm = max(r_pitch_worm_mm * math.sin(lead_angle_calc_rad), 0.1)
+    rho2_nominal_mm = max(center_distance_mm - r_pitch_worm_mm, 0.1)
+    if rho2_nominal_mm > rho1_nominal_mm:
+        equivalent_radius_mm = (rho1_nominal_mm * rho2_nominal_mm) / (
+            rho2_nominal_mm - rho1_nominal_mm
+        )
+    else:
+        equivalent_radius_mm = rho1_nominal_mm * 10.0
+    equivalent_radius_mm = max(equivalent_radius_mm, 0.01)
+
     # 齿根弦齿厚（DIN 3975 简化）: s_Ft ≈ π·m·cos(α_n)/2
     tooth_root_thickness_mm = max(math.pi * module_mm * math.cos(normal_pressure_angle_rad) / 2.0, 1e-6)
 
-    def _mean_hertz_stress(normal_force_value_n: float) -> float:
+    def _hertz_contact_stress(normal_force_value_n: float) -> float:
+        # Hertz 线接触最大压力 p0 = sqrt(w*E'/(pi*rho_eq))，与 stress_curve 一致。
         specific_load = normal_force_value_n / contact_length_mm
-        semi_width_mm = math.sqrt((4.0 * specific_load * equivalent_radius_mm) / (math.pi * equivalent_modulus_mpa))
-        return specific_load / max(2.0 * semi_width_mm, 1e-6)
+        return math.sqrt(
+            specific_load * equivalent_modulus_mpa / (math.pi * equivalent_radius_mm)
+        )
 
     def _root_stress(tangential_force_value_n: float) -> float:
         section_modulus_mm3 = contact_length_mm * tooth_root_thickness_mm * tooth_root_thickness_mm / 6.0
         bending_moment_nmm = tangential_force_value_n * tooth_height_mm
         return bending_moment_nmm / max(section_modulus_mm3, 1e-6)
 
-    sigma_hm_nominal_mpa = _mean_hertz_stress(design_normal_force_n)
-    sigma_hm_rms_mpa = _mean_hertz_stress(design_normal_force_rms_n)
-    sigma_hm_peak_mpa = _mean_hertz_stress(design_normal_force_peak_n)
+    sigma_hm_nominal_mpa = _hertz_contact_stress(design_normal_force_n)
+    sigma_hm_rms_mpa = _hertz_contact_stress(design_normal_force_rms_n)
+    sigma_hm_peak_mpa = _hertz_contact_stress(design_normal_force_peak_n)
     sigma_f_nominal_mpa = _root_stress(design_tangential_force_n)
     sigma_f_rms_mpa = _root_stress(design_tangential_force_rms_n)
     sigma_f_peak_mpa = _root_stress(design_tangential_force_peak_n)
@@ -605,17 +641,9 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
         sigma_f_phi = design_tangential_force_n * h_phi / max(section_modulus_mm3, 1e-6)
         sigma_f_curve.append(sigma_f_phi)
 
-    # Nominal values at pitch circle
-    rho1_nom = r_pitch1_mm * math.sin(lead_angle_calc_rad)
-    rho2_nom = center_distance_mm - r_pitch1_mm
-    if rho2_nom > rho1_nom:
-        rho_eq_nom = (rho1_nom * rho2_nom) / (rho2_nom - rho1_nom)
-    else:
-        rho_eq_nom = rho1_nom * 10.0
-    rho_eq_nom = max(rho_eq_nom, 0.01)
-    sigma_h_nominal_curve = math.sqrt(
-        (design_normal_force_n / contact_length_mm) * equivalent_modulus_mpa / (math.pi * rho_eq_nom)
-    )
+    # Nominal values at pitch circle.
+    # 与判定链共用同一 rho_eq / 同一公式，保证两处数值恒等（spec D5 一致性契约）。
+    sigma_h_nominal_curve = _hertz_contact_stress(design_normal_force_n)
     h_nom = max(r_pitch1_mm - r_root1_mm, 0.01)
     section_mod = contact_length_mm * tooth_root_thickness_mm ** 2 / 6.0
     sigma_f_nominal_curve = design_tangential_force_n * h_nom / max(section_mod, 1e-6)
@@ -641,10 +669,10 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
             "method": method,
             "status": (
                 f"{method} 最小子集校核通过"
-                if contact_ok and root_ok and not geometry_warnings
+                if contact_ok and root_ok and not load_capacity_warnings
                 else f"{method} 最小子集已计算（存在警告或不通过项）"
             ),
-            "warnings": geometry_warnings,
+            "warnings": load_capacity_warnings,
             "factors": {
                 "application_factor": application_factor,
                 "dynamic_factor_kv": dynamic_factor_kv,
@@ -716,7 +744,7 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
             "assumptions": [
                 "当前结果为 Method B 风格最小工程子集，不是完整 DIN 3996 / ISO/TS 14521。",
                 "齿形假设：ZK 型（锥面砂轮展成）。",
-                "齿面应力采用线接触 Hertz 近似，等效曲率半径基于分度圆简化（未考虑蜗轮凹面修正）。",
+                "齿面应力采用线接触 Hertz 最大压力 p0，等效曲率按凸-凹接触（蜗轮包络凹面）与蜗杆导程角投影修正，与啮合应力曲线同一模型（2026-07-02 统一）。",
                 "接触长度取 min(b1, b2)，未考虑包角影响。",
                 "齿根应力采用等效悬臂梁近似。",
                 "蜗轮齿顶/齿根高系数与蜗杆相同（含变位修正），未单独处理间隙系数。",

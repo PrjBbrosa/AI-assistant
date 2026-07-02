@@ -37,6 +37,16 @@ def make_case() -> dict:
     }
 
 
+def make_solid_case() -> dict:
+    return make_case()
+
+
+def make_hollow_case() -> dict:
+    data = make_case()
+    data["geometry"]["shaft_inner_d_mm"] = 28.0  # q = 0.7 for d = 40 mm.
+    return data
+
+
 class InterferenceFitCalculatorTests(unittest.TestCase):
     def test_nominal_case_outputs_pressure_torque_and_curve(self) -> None:
         result = calculate_interference_fit(make_case())
@@ -57,6 +67,11 @@ class InterferenceFitCalculatorTests(unittest.TestCase):
         self.assertEqual(len(curve["force_n"]), 41)
         self.assertGreater(curve["force_n"][-1], curve["force_n"][0])
         self.assertIn("additional_pressure_mpa", result)
+
+    def test_messages_and_warnings_are_the_same_object(self) -> None:
+        # 契约锁定：messages 与 warnings 恒等（同一 list 对象），二者不得独立演化。
+        result = calculate_interference_fit(make_case())
+        self.assertIs(result["messages"], result["warnings"])
 
     def test_invalid_geometry_is_rejected(self) -> None:
         with self.assertRaises(InputError):
@@ -206,6 +221,35 @@ class InterferenceFitCalculatorTests(unittest.TestCase):
         self.assertLess(
             hollow_result["capacity"]["torque_min_nm"],
             solid_result["capacity"]["torque_min_nm"],
+        )
+
+    def test_hollow_shaft_bore_wall_governs_stress_check(self) -> None:
+        """空心轴判定必须取内孔壁 von Mises（高于配合面）。"""
+        result = calculate_interference_fit(make_hollow_case())
+
+        derived = result["derived"]
+        k_shaft = derived["shaft_geometry_factor"]
+        interface_coeff = (1.0 + k_shaft * k_shaft - k_shaft) ** 0.5
+        self.assertGreater(k_shaft, 1.0)
+        self.assertAlmostEqual(derived["shaft_bore_vm_coeff"], k_shaft + 1.0, places=9)
+        self.assertAlmostEqual(derived["shaft_interface_vm_coeff"], interface_coeff, places=9)
+
+        stress = result["stress_mpa"]
+        self.assertGreater(stress["shaft_vm_bore_max"], stress["shaft_vm_interface_max"])
+        self.assertAlmostEqual(stress["shaft_vm_max"], stress["shaft_vm_bore_max"], places=9)
+        self.assertTrue(any("内孔壁" in warning for warning in result["warnings"]))
+
+    def test_solid_shaft_stress_unchanged(self) -> None:
+        """实心轴行为不变：K=1，判定系数=1。"""
+        result = calculate_interference_fit(make_solid_case())
+
+        derived = result["derived"]
+        self.assertEqual(derived["shaft_geometry_factor"], 1.0)
+        self.assertEqual(derived["shaft_bore_vm_coeff"], 0.0)
+        self.assertAlmostEqual(
+            result["stress_mpa"]["shaft_vm_max"],
+            result["pressure_mpa"]["p_max"],
+            places=9,
         )
 
     def test_slip_safety_factor_increases_required_interference_and_can_exhaust_fit_window(self) -> None:
@@ -389,6 +433,69 @@ class InterferenceFitCalculatorTests(unittest.TestCase):
         self.assertGreater(
             result["additional_pressure_mpa"]["p_gap"],
             result["pressure_mpa"]["p_min"],
+        )
+
+    def test_empirical_bending_pressure_coefficient_is_locked(self) -> None:
+        """锁定张口缝弯矩附加压强的经验系数 2.25。"""
+        data = make_case()
+        data["loads"]["bending_moment_required_nm"] = 90.0
+        data["loads"]["application_factor_ka"] = 1.3
+
+        result = calculate_interference_fit(data)
+
+        d = float(data["geometry"]["shaft_d_mm"])
+        l_fit = float(data["geometry"]["fit_length_mm"])
+        bending_design_nm = (
+            float(data["loads"]["bending_moment_required_nm"])
+            * float(data["loads"]["application_factor_ka"])
+        )
+        expected_p_bending = 2.25 * bending_design_nm * 1000.0 / (d * l_fit * l_fit)
+        self.assertAlmostEqual(
+            result["additional_pressure_mpa"]["p_bending"],
+            expected_p_bending,
+            places=12,
+        )
+
+    def test_empirical_repeated_load_length_factor_is_locked(self) -> None:
+        """锁定重复载荷简化估算的经验因子 l_fit/(4d)。"""
+        data = make_case()
+        data["advanced"] = {
+            "repeated_load_mode": "on",
+        }
+
+        result = calculate_interference_fit(data)
+
+        d = float(data["geometry"]["shaft_d_mm"])
+        l_fit = float(data["geometry"]["fit_length_mm"])
+        expected_max_torque = result["capacity"]["torque_min_nm"] * l_fit / (4.0 * d)
+        self.assertTrue(result["repeated_load"]["applicable"])
+        self.assertAlmostEqual(
+            result["repeated_load"]["max_transferable_torque_nm"],
+            expected_max_torque,
+            places=12,
+        )
+
+    def test_empirical_force_fit_machine_force_multiplier_is_locked(self) -> None:
+        """锁定压装设备推荐力的经验倍数 2.5。"""
+        data = make_case()
+        data["assembly"] = {
+            "method": "force_fit",
+            "mu_press_in": 0.08,
+            "mu_press_out": 0.06,
+        }
+
+        result = calculate_interference_fit(data)
+
+        force_fit = result["assembly_detail"]["force_fit"]
+        p_max = result["pressure_mpa"]["p_max"]
+        contact_area = result["derived"]["contact_area_mm2"]
+        expected_press_out = 0.06 * p_max * contact_area
+        expected_machine_force = 2.5 * expected_press_out
+        self.assertAlmostEqual(force_fit["press_out_force_n"], expected_press_out, places=6)
+        self.assertAlmostEqual(
+            force_fit["recommended_machine_force_n"],
+            expected_machine_force,
+            places=6,
         )
 
     def test_legacy_mu_static_is_still_supported(self) -> None:

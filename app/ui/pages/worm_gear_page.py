@@ -34,14 +34,18 @@ except ImportError:
     _PLASTIC_MATERIALS_AVAILABLE = False
 
 from app.ui.input_condition_store import (
+    InputConditionError,
     build_form_snapshot,
     build_saved_inputs_dir,
     choose_load_input_conditions_path,
     choose_save_input_conditions_path,
+    confirm_snapshot_module,
     read_input_conditions,
+    validate_snapshot,
     write_input_conditions,
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
+from app.ui.report_export import ReportExportError
 from app.ui.widgets.worm_geometry_overview import WormGeometryOverviewWidget
 from app.ui.widgets.worm_performance_curve import WormPerformanceCurveWidget
 from app.ui.widgets.worm_stress_curve import WormStressCurveWidget
@@ -58,6 +62,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES_DIR = PROJECT_ROOT / "examples"
 SAVED_INPUTS_DIR = build_saved_inputs_dir(PROJECT_ROOT)
 ASSETS_DIR = PROJECT_ROOT / "app" / "assets"
+MODULE_ID = "worm_gear"
 
 
 @dataclass(frozen=True)
@@ -778,7 +783,11 @@ class WormGearPage(BaseChapterPage):
         self._refresh_derived_geometry_preview()
 
     def _capture_input_snapshot(self) -> dict[str, Any]:
-        return build_form_snapshot(self._field_specs.values(), self._read_widget_value)
+        return build_form_snapshot(
+            self._field_specs.values(),
+            self._read_widget_value,
+            module_id=MODULE_ID,
+        )
 
     def _apply_input_data(self, data: dict[str, Any]) -> None:
         self._field_widgets["materials.worm_material"].blockSignals(True)
@@ -1002,11 +1011,15 @@ class WormGearPage(BaseChapterPage):
         try:
             payload = self._build_payload()
             geometry = calculate_worm_geometry(payload)["geometry"]
-        except (InputError, ValueError):
+        except Exception:
             self._reset_dimension_preview_labels()
             self.set_info("输入不完整或无效，预览已重置")
             return
 
+        self._apply_geometry_preview(geometry)
+
+    def _apply_geometry_preview(self, geometry: dict[str, Any]) -> None:
+        """Update derived geometry labels from an already calculated geometry block."""
         self._set_dimension_group_values(self.worm_dimension_labels, geometry.get("worm_dimensions", {}), WORM_DIMENSION_FIELDS)
         self._set_dimension_group_values(self.wheel_dimension_labels, geometry.get("wheel_dimensions", {}), WHEEL_DIMENSION_FIELDS)
 
@@ -1066,20 +1079,39 @@ class WormGearPage(BaseChapterPage):
     def _calculate(self) -> None:
         try:
             payload = self._build_payload()
-            self._last_payload = payload
             result = calculate_worm_geometry(payload)
         except InputError as exc:
+            self._last_payload = None
+            self._last_result = None
+            self._mark_results_dirty()
             QMessageBox.critical(self, "输入参数错误", str(exc))
             return
         except Exception as exc:  # pragma: no cover
+            self._last_payload = None
+            self._last_result = None
+            self._mark_results_dirty()
             QMessageBox.critical(self, "计算异常", str(exc))
             return
 
+        self._last_payload = payload
+        try:
+            self._render_result(result)
+        except Exception as exc:
+            self._last_payload = None
+            self._last_result = None
+            self._reset_result_panels()
+            self._mark_results_dirty()
+            QMessageBox.critical(self, "渲染异常", str(exc))
+            self.set_info(f"结果渲染失败：{exc}")
+            return
         self._last_result = result
+
+    def _render_result(self, result: dict[str, Any]) -> None:
         geometry = result["geometry"]
         performance = result["performance"]
         curve = result["curve"]
         load_capacity = result["load_capacity"]
+        payload = self._last_payload or {}
         worm_dimensions = geometry["worm_dimensions"]
         wheel_dimensions = geometry["wheel_dimensions"]
         contact = load_capacity.get("contact", {})
@@ -1094,11 +1126,11 @@ class WormGearPage(BaseChapterPage):
 
         # W-03: 当 LC 未启用时，应力/力/扭矩显示"未启用"而非 0.000
         if lc_enabled:
-            sigma_hm_line = f"齿面应力 sigma_Hm = {contact.get('sigma_hm_peak_mpa', 0.0):.3f} MPa"
+            sigma_hm_line = f"齿面接触应力 sigma_H = {contact.get('sigma_hm_peak_mpa', 0.0):.3f} MPa"
             sigma_f_line = f"齿根应力 sigma_F = {root.get('sigma_f_peak_mpa', 0.0):.3f} MPa"
             ripple_line = f"扭矩波动 peak = {ripple.get('output_torque_peak_nm', 0.0):.3f} N·m"
         else:
-            sigma_hm_line = "齿面应力 sigma_Hm = 未启用"
+            sigma_hm_line = "齿面接触应力 sigma_H = 未启用"
             sigma_f_line = "齿根应力 sigma_F = 未启用"
             ripple_line = "扭矩波动 peak = 未启用"
 
@@ -1122,19 +1154,7 @@ class WormGearPage(BaseChapterPage):
                 ]
             )
         )
-        # 温升曲线：优先用 core 提供的 temperature_rise_k，否则从热容量派生
-        thermal_cap_kw_curve = curve.get("thermal_capacity_kw", [])
-        power_loss_curve = curve.get("power_loss_kw", [])
-        if curve.get("temperature_rise_k"):
-            temp_rise_curve = curve["temperature_rise_k"]
-        elif thermal_cap_kw_curve and power_loss_curve:
-            # 简化派生：ΔT ≈ P_loss / Q_th * 50 K（50 K 为参考允许温升）
-            temp_rise_curve = [
-                p / max(q, 1e-6) * 50.0
-                for p, q in zip(power_loss_curve, thermal_cap_kw_curve)
-            ]
-        else:
-            temp_rise_curve = []
+        temp_rise_curve = curve.get("temperature_rise_k", [])
         self.performance_curve.set_curves(
             load_factor=curve["load_factor"],
             efficiency=curve["efficiency"],
@@ -1173,8 +1193,8 @@ class WormGearPage(BaseChapterPage):
         # W-03: LC 未启用时，负载能力详情区显示"未计算"占位
         if lc_enabled:
             lc_metrics_lines = [
-                f"sigma_Hm,nom = {contact.get('sigma_hm_nominal_mpa', 0.0):.3f} MPa",
-                f"sigma_Hm,peak = {contact.get('sigma_hm_peak_mpa', 0.0):.3f} MPa",
+                f"sigma_H,nom = {contact.get('sigma_hm_nominal_mpa', 0.0):.3f} MPa",
+                f"sigma_H,peak = {contact.get('sigma_hm_peak_mpa', 0.0):.3f} MPa",
                 f"SH_peak = {contact.get('safety_factor_peak', 0.0):.3f}",
                 f"sigma_F,nom = {root.get('sigma_f_nominal_mpa', 0.0):.3f} MPa",
                 f"sigma_F,peak = {root.get('sigma_f_peak_mpa', 0.0):.3f} MPa",
@@ -1193,7 +1213,7 @@ class WormGearPage(BaseChapterPage):
             ]
 
         self.load_capacity_metrics.setPlainText("\n".join(lc_metrics_lines))
-        self._refresh_derived_geometry_preview()
+        self._apply_geometry_preview(geometry)
 
         # W-03 + W-02: LC 未启用时不显示通过/不通过徽章；几何不一致时总体为不通过
         if lc_enabled:
@@ -1263,25 +1283,30 @@ class WormGearPage(BaseChapterPage):
             return
         from PySide6.QtWidgets import QFileDialog
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "导出计算报告", "worm_report.pdf",
+            self, "导出计算报告", str(EXAMPLES_DIR / "worm_report.pdf"),
             "PDF Files (*.pdf);;Text Files (*.txt);;All Files (*)",
         )
         if not file_path:
             return
         out_path = Path(file_path)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        suffix = out_path.suffix.lower()
-        if suffix == ".pdf":
-            try:
-                import importlib
-                mod = importlib.import_module("app.ui.report_pdf_worm")
-                mod.generate_worm_report(out_path, self._last_payload or {}, self._last_result)
-            except Exception:
-                # Fallback to text
-                out_path = out_path.with_suffix(".txt")
+        try:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            suffix = out_path.suffix.lower()
+            if suffix == ".pdf":
+                try:
+                    import importlib
+                    mod = importlib.import_module("app.ui.report_pdf_worm")
+                    mod.generate_worm_report(out_path, self._last_payload or {}, self._last_result)
+                except Exception:
+                    out_path = out_path.with_suffix(".txt")
+                    self._write_text_report(out_path)
+                    self.set_info(f"报告已导出: {out_path}（已使用简化格式）")
+                    return
+            else:
                 self._write_text_report(out_path)
-        else:
-            self._write_text_report(out_path)
+        except (ReportExportError, OSError) as exc:
+            QMessageBox.critical(self, "导出失败", f"导出失败：{exc}")
+            return
         self.set_info(f"报告已导出: {out_path}")
 
     def _write_text_report(self, path: Path) -> None:
@@ -1311,15 +1336,20 @@ class WormGearPage(BaseChapterPage):
         if in_path is None:
             return
         try:
-            data = read_input_conditions(in_path)
+            data = validate_snapshot(read_input_conditions(in_path))
         except FileNotFoundError:
             QMessageBox.warning(self, "文件不存在", f"未找到输入条件文件：{in_path}")
             return
         except json.JSONDecodeError as exc:
             QMessageBox.critical(self, "文件损坏", f"输入条件文件不是有效 JSON：{exc}")
             return
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
         except OSError as exc:
             QMessageBox.critical(self, "加载失败", f"输入条件加载失败：{exc}")
+            return
+        if not confirm_snapshot_module(self, data, MODULE_ID):
             return
         self._apply_input_data(data)
         self._mark_results_dirty()
@@ -1331,18 +1361,20 @@ class WormGearPage(BaseChapterPage):
             QMessageBox.warning(self, "测试案例不存在", f"未找到测试案例文件：{sample_path}")
             return
         try:
-            data = read_input_conditions(sample_path)
+            data = validate_snapshot(read_input_conditions(sample_path))
         except json.JSONDecodeError as exc:
             QMessageBox.critical(self, "测试案例损坏", f"测试案例文件不是有效 JSON：{exc}")
+            return
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
+        if not confirm_snapshot_module(self, data, MODULE_ID):
             return
         self._apply_input_data(data)
         self._mark_results_dirty()
         self.set_info(f"已加载测试案例：{filename}")
 
-    def _clear(self) -> None:
-        self._last_result = None
-        self._last_payload = None
-        self._apply_defaults()
+    def _reset_result_panels(self) -> None:
         self.result_title.setText("尚未执行计算")
         self.result_summary.setText("执行计算后显示几何、基础性能以及 Method B 最小子集结果。")
         self.result_metrics.setPlainText("尚无结果。")
@@ -1353,9 +1385,28 @@ class WormGearPage(BaseChapterPage):
             temperature_rise_k=[],
             current_index=-1,
         )
+        self.stress_curve.clear()
+        self.geometry_overview.reset_geometry_state()
         self.geometry_overview.set_display_state("几何总览", "按 DIN 3975 展示蜗杆、蜗轮、中心距与导程角关系。")
         self.load_capacity_status.setText("DIN 3996 校核尚未开始")
+        self.load_capacity_status.setObjectName("WaitBadge")
+        self.load_capacity_status.style().unpolish(self.load_capacity_status)
+        self.load_capacity_status.style().polish(self.load_capacity_status)
         self.load_capacity_metrics.setPlainText("尚无 Load Capacity 结果。")
+        for _key, (_name, badge) in self._check_badges.items():
+            self._set_badge(badge, "待计算", "wait")
+        self._set_badge(self._overall_lc_badge, "待计算", "wait")
+        self._efficiency_subtitle_label.setText("执行计算后显示。")
+        self._efficiency_subtitle_card.setVisible(False)
+        for label in self._life_row_labels.values():
+            label.setText("—")
+        self._life_card.setVisible(False)
         self.set_overall_status("等待计算", "wait")
+
+    def _clear(self) -> None:
+        self._last_result = None
+        self._last_payload = None
+        self._apply_defaults()
+        self._reset_result_panels()
         self._mark_results_dirty()
         self.set_info("参数已重置，可重新执行蜗杆副计算。")

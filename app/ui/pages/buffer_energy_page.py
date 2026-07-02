@@ -10,6 +10,7 @@ from typing import Any
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -27,15 +28,18 @@ from PySide6.QtWidgets import (
 
 from app.ui.fonts import make_ui_font
 from app.ui.input_condition_store import (
+    InputConditionError,
     build_form_snapshot,
     build_saved_inputs_dir,
     choose_load_input_conditions_path,
     choose_save_input_conditions_path,
+    confirm_snapshot_module,
     read_input_conditions,
+    validate_snapshot,
     write_input_conditions,
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
-from app.ui.report_export import export_report_lines
+from app.ui.report_export import ReportExportError
 from app.ui.widgets.buffer_energy_curve import BufferEnergyCurveWidget
 from app.ui.widgets.buffer_response_curve import BufferResponseCurveWidget
 
@@ -43,6 +47,7 @@ from app.ui.widgets.buffer_response_curve import BufferResponseCurveWidget
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES_DIR = PROJECT_ROOT / "examples"
 SAVED_INPUTS_DIR = build_saved_inputs_dir(PROJECT_ROOT)
+MODULE_ID = "buffer_energy"
 
 DISCLAIMER_TEXT = (
     "本工具基于准静态 F-x 曲线的单次冲击能量法。回弹速度与时域响应均为反推估算值，"
@@ -162,6 +167,7 @@ class BufferEnergyPage(BaseChapterPage):
         self.btn_load_1 = self.add_action_button("测试案例 1", side="right")
         self.btn_load_2 = self.add_action_button("测试案例 2", side="right")
         self.btn_save_report.setEnabled(False)
+        self.btn_calculate.setEnabled(False)
 
         self.overview_curve_widget = BufferEnergyCurveWidget()
         self.curve_check_widget = BufferEnergyCurveWidget()
@@ -474,6 +480,7 @@ class BufferEnergyPage(BaseChapterPage):
             self._set_workbench_status_from_curve()
             self._set_curve_widgets_from_raw()
         self.btn_save_report.setEnabled(False)
+        self.btn_calculate.setEnabled(self._curve_data is not None)
 
     def _read_value(self, spec: FieldSpec) -> str:
         widget = self._field_widgets[spec.field_id]
@@ -522,6 +529,7 @@ class BufferEnergyPage(BaseChapterPage):
             QMessageBox.warning(self, "曲线导入失败", str(exc))
             self._curve_data = None
             self._curve_source = None
+            self.btn_calculate.setEnabled(False)
             self.curve_summary_label.setText("尚未导入曲线。")
             self._clear_curve_widgets()
             self._invalidate_result()
@@ -529,6 +537,7 @@ class BufferEnergyPage(BaseChapterPage):
 
         self._curve_data = data
         self._curve_source = path
+        self.btn_calculate.setEnabled(True)
         loading = data.get("loading", [])
         unloading = data.get("unloading", [])
         meta = data.get("metadata", {})
@@ -803,6 +812,7 @@ class BufferEnergyPage(BaseChapterPage):
         self._clear_curve_widgets()
         self.set_info("参数已清空，导出结果已失效。")
         self.btn_save_report.setEnabled(False)
+        self.btn_calculate.setEnabled(False)
 
     def _reset_result_outputs(self, message: str) -> None:
         for label in self.metric_labels.values():
@@ -851,13 +861,43 @@ class BufferEnergyPage(BaseChapterPage):
         )
 
     def _on_save_report(self) -> None:
-        if self._last_result is None:
+        if self._last_result is None or self._last_payload is None:
             QMessageBox.information(self, "无结果", "请先执行仿真，再导出结果说明。")
             return
         default_path = EXAMPLES_DIR / "buffer_energy_report.pdf"
-        out_path = export_report_lines(self, "导出结果说明", default_path, self._build_report_lines())
-        if out_path is not None:
-            self.set_info(f"结果说明已导出: {out_path}")
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "导出结果说明",
+            str(default_path),
+            "PDF Files (*.pdf);;Word Files (*.docx);;Text Files (*.txt);;All Files (*)",
+        )
+        if not file_path:
+            return
+        out_path = Path(file_path)
+        try:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            suffix = out_path.suffix.lower()
+            if suffix == ".pdf":
+                try:
+                    from app.ui.report_pdf_buffer import generate_buffer_report
+
+                    generate_buffer_report(out_path, self._last_payload, self._last_result)
+                except Exception:
+                    from app.ui.report_export import _export_pdf
+
+                    _export_pdf(out_path, self._build_report_lines())
+                    self.set_info(f"结果说明已导出: {out_path}（已使用简化格式）")
+                    return
+            elif suffix == ".docx":
+                from app.ui.report_export import _export_docx
+
+                _export_docx(out_path, self._build_report_lines())
+            else:
+                out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
+        except (ReportExportError, OSError) as exc:
+            QMessageBox.critical(self, "导出失败", f"导出失败：{exc}")
+            return
+        self.set_info(f"结果说明已导出: {out_path}")
 
     def _build_report_lines(self) -> list[str]:
         if self._last_result is None:
@@ -948,9 +988,14 @@ class BufferEnergyPage(BaseChapterPage):
         if in_path is None:
             return
         try:
-            self._read_input_conditions(in_path)
+            loaded = self._read_input_conditions(in_path)
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
         except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
             QMessageBox.warning(self, "加载失败", str(exc))
+            return
+        if not loaded:
             return
         self.set_info(f"已加载输入条件：{in_path}")
 
@@ -959,29 +1004,28 @@ class BufferEnergyPage(BaseChapterPage):
             self._field_specs.values(),
             self._read_value,
             extra_state={
-                "module": "buffer_energy",
                 "curve_source": str(self._curve_source) if self._curve_source else "",
             },
+            module_id=MODULE_ID,
         )
-        snapshot["module"] = "buffer_energy"
         snapshot["version"] = 1
         write_input_conditions(path, snapshot)
 
-    def _read_input_conditions(self, path: Path) -> None:
-        data = read_input_conditions(path)
+    def _read_input_conditions(self, path: Path) -> bool:
+        data = validate_snapshot(read_input_conditions(path))
+        if not confirm_snapshot_module(self, data, MODULE_ID):
+            return False
         self._apply_input_data(data)
         self._invalidate_result()
+        return True
 
     def _apply_input_data(self, data: dict[str, Any]) -> None:
-        fields = data.get("fields")
         inputs = data.get("inputs") if isinstance(data.get("inputs"), dict) else {}
         ui_state = data.get("ui_state") if isinstance(data.get("ui_state"), dict) else {}
 
         for spec in FIELD_SPECS:
             value: Any | None = None
-            if isinstance(fields, dict) and spec.field_id in fields:
-                value = fields[spec.field_id]
-            elif spec.field_id in ui_state:
+            if spec.field_id in ui_state:
                 value = ui_state[spec.field_id]
             elif spec.mapping is not None:
                 section, key = spec.mapping

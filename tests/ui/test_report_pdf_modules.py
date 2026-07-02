@@ -1,7 +1,13 @@
-"""Tests for module-specific PDF report generators."""
+from pathlib import Path
 
 import pytest
-from pathlib import Path
+from PySide6.QtWidgets import QApplication
+
+
+@pytest.fixture(scope="module")
+def qapp():
+    app = QApplication.instance() or QApplication([])
+    return app
 
 
 def _interference_payload():
@@ -45,6 +51,157 @@ def _interference_result():
         "derived": {"shaft_inner_d_mm": 0},
         "messages": [],
     }
+
+
+def _hertz_payload():
+    return {
+        "geometry": {
+            "contact_mode": "line",
+            "r1_mm": 30.0,
+            "r2_mm": 0.0,
+            "length_mm": 20.0,
+        },
+        "materials": {
+            "e1_mpa": 210000.0,
+            "nu1": 0.29,
+            "e2_mpa": 210000.0,
+            "nu2": 0.30,
+        },
+        "loads": {"normal_force_n": 12000.0},
+        "checks": {"allowable_p0_mpa": 1500.0},
+        "options": {"curve_points": 41, "curve_force_scale": 1.30},
+    }
+
+
+def _hertz_result(payload=None):
+    from core.hertz.calculator import calculate_hertz_contact
+
+    return calculate_hertz_contact(payload or _hertz_payload())
+
+
+def _buffer_payload():
+    return {
+        "curve": {
+            "loading": [
+                {"x_mm": 0.0, "force_n": 0.0},
+                {"x_mm": 10.0, "force_n": 4000.0},
+                {"x_mm": 20.0, "force_n": 8000.0},
+            ],
+            "unloading": [
+                {"x_mm": 0.0, "force_n": 0.0},
+                {"x_mm": 10.0, "force_n": 1600.0},
+                {"x_mm": 20.0, "force_n": 3200.0},
+            ],
+        },
+        "impact": {
+            "mass_kg": 10.0,
+            "initial_velocity_m_s": 1.0,
+            "available_stroke_mm": 20.0,
+            "allowable_peak_force_n": 9000.0,
+        },
+        "options": {
+            "force_scale": 1.0,
+            "stroke_scale": 1.0,
+            "noise_tolerance_n": 5.0,
+            "time_samples": 80,
+        },
+    }
+
+
+def _buffer_result(payload=None):
+    from core.buffer.calculator import calculate_buffer_energy
+
+    return calculate_buffer_energy(payload or _buffer_payload())
+
+
+class TestHertzPdfReport:
+    def test_creates_nonempty_pdf(self, tmp_path):
+        from app.ui.report_pdf_hertz import generate_hertz_report
+
+        out = tmp_path / "hertz_report.pdf"
+        generate_hertz_report(out, _hertz_payload(), _hertz_result())
+        assert out.exists()
+        assert out.stat().st_size > 1000
+
+    def test_missing_optional_contact_fields_do_not_crash(self, tmp_path):
+        from app.ui.report_pdf_hertz import generate_hertz_report
+
+        result = _hertz_result()
+        result["contact"].pop("contact_area_mm2")
+        result["contact"].pop("semi_width_mm")
+        out = tmp_path / "hertz_sparse.pdf"
+        generate_hertz_report(out, _hertz_payload(), result)
+        assert out.exists()
+        assert out.stat().st_size > 1000
+
+    def test_page_pdf_export_uses_reportlab_module(self, qapp, tmp_path):
+        from app.ui.pages.hertz_contact_page import HertzContactPage
+
+        page = HertzContactPage()
+        page._last_payload = _hertz_payload()
+        page._last_result = _hertz_result()
+        out = tmp_path / "hertz_page.pdf"
+
+        from unittest.mock import patch
+
+        with (
+            patch(
+                "app.ui.pages.hertz_contact_page.QFileDialog.getSaveFileName",
+                return_value=(str(out), "PDF Files (*.pdf)"),
+            ),
+            patch(
+                "app.ui.report_pdf_hertz.generate_hertz_report",
+                side_effect=lambda path, payload, result: path.write_bytes(b"%PDF hertz"),
+            ) as generate,
+        ):
+            page._save_report()
+
+        generate.assert_called_once()
+
+
+class TestBufferPdfReport:
+    def test_creates_nonempty_pdf(self, tmp_path):
+        from app.ui.report_pdf_buffer import generate_buffer_report
+
+        out = tmp_path / "buffer_report.pdf"
+        generate_buffer_report(out, _buffer_payload(), _buffer_result())
+        assert out.exists()
+        assert out.stat().st_size > 1000
+
+    def test_missing_optional_impact_fields_do_not_crash(self, tmp_path):
+        from app.ui.report_pdf_buffer import generate_buffer_report
+
+        result = _buffer_result()
+        result["impact"].pop("peak_force_n")
+        result.pop("time_response", None)
+        out = tmp_path / "buffer_sparse.pdf"
+        generate_buffer_report(out, _buffer_payload(), result)
+        assert out.exists()
+        assert out.stat().st_size > 1000
+
+    def test_page_pdf_export_uses_reportlab_module(self, qapp, tmp_path):
+        from app.ui.pages.buffer_energy_page import BufferEnergyPage
+
+        page = BufferEnergyPage()
+        page._last_payload = _buffer_payload()
+        page._last_result = _buffer_result()
+        out = tmp_path / "buffer_page.pdf"
+
+        from unittest.mock import patch
+
+        with (
+            patch(
+                "app.ui.pages.buffer_energy_page.QFileDialog.getSaveFileName",
+                return_value=(str(out), "PDF Files (*.pdf)"),
+            ),
+            patch(
+                "app.ui.report_pdf_buffer.generate_buffer_report",
+                side_effect=lambda path, payload, result: path.write_bytes(b"%PDF buffer"),
+            ) as generate,
+        ):
+            page._on_save_report()
+
+        generate.assert_called_once()
 
 
 class TestInterferencePdfReport:
@@ -317,3 +474,57 @@ class TestWormPdfReport:
         out = tmp_path / "worm_lc.pdf"
         generate_worm_report(out, payload, result)
         assert out.exists() and out.stat().st_size > 1000
+
+
+# ---------------------------------------------------------------------------
+# Bolt rich PDF tri-state (CRIT-1 regression)
+# ---------------------------------------------------------------------------
+def _bolt_incomplete_result():
+    """缺 R7/R8 输入的 payload -> overall_status=incomplete。"""
+    from core.bolt.calculator import calculate_vdi2230_core
+    base = {
+        "fastener": {"d": 12, "p": 1.75, "Rp02": 900},
+        "tightening": {"alpha_A": 1.4, "mu_thread": 0.12, "mu_bearing": 0.12, "utilization": 0.9},
+        "loads": {"FA_max": 5000, "seal_force_required": 1000},
+        "stiffness": {"bolt_stiffness": 300000, "clamped_stiffness": 900000},
+        "bearing": {"bearing_d_inner": 13, "bearing_d_outer": 20},
+    }
+    return base, calculate_vdi2230_core(base)
+
+
+class TestBoltTriStatePdf:
+    def test_incomplete_recommendations_no_false_green(self):
+        from app.ui.report_pdf import build_bolt_recommendations
+        _, result = _bolt_incomplete_result()
+        assert result["overall_status"] == "incomplete"
+        recs = build_bolt_recommendations(result)
+        # incomplete 时不得输出"满足全部校核"绿灯结论
+        assert not any("满足全部校核" in x for x in recs), recs
+        # 应提示存在未校核项
+        assert any("未校核" in x or "不完整" in x for x in recs), recs
+
+    def test_incomplete_pdf_nonempty(self, tmp_path):
+        from app.ui.report_pdf import generate_bolt_report
+        payload, result = _bolt_incomplete_result()
+        out = tmp_path / "bolt_incomplete.pdf"
+        generate_bolt_report(out, payload, result)
+        assert out.exists() and out.stat().st_size > 1000
+
+    def test_incomplete_pdf_not_rendered_as_fail(self, tmp_path):
+        import shutil
+        import subprocess
+        from app.ui.report_pdf import generate_bolt_report
+        payload, result = _bolt_incomplete_result()
+        out = tmp_path / "bolt_incomplete_text.pdf"
+        generate_bolt_report(out, payload, result)
+        pdftotext = shutil.which("pdftotext")
+        if pdftotext is None:
+            pytest.skip("pdftotext 不可用，跳过文本断言")
+        txt = subprocess.run(
+            [pdftotext, str(out), "-"], capture_output=True, text=True, check=True
+        ).stdout
+        # incomplete 应渲染为"校核不完整"，而非 FAIL
+        # pdftotext 可能在徽章文字中插入换行，先去除所有空白再断言
+        compact = "".join(txt.split())
+        assert "FAIL" not in compact, txt
+        assert "校核不完整" in compact, txt

@@ -256,11 +256,16 @@ class FlowchartNavWidget(QWidget):
             arrow.style().polish(arrow)
 
         # Update verdict
-        overall = result.get("overall_pass")
-        if overall is True:
+        overall_status = str(
+            result.get("overall_status", "pass" if result.get("overall_pass") else "fail")
+        )
+        if overall_status == "pass":
             self._verdict_badge.setObjectName("PassBadge")
             self._verdict_badge.setText("全部通过")
-        elif overall is False:
+        elif overall_status == "incomplete":
+            self._verdict_badge.setObjectName("WaitBadge")
+            self._verdict_badge.setText("结论不完整")
+        elif overall_status == "fail":
             self._verdict_badge.setObjectName("FailBadge")
             self._verdict_badge.setText("存在不通过")
         else:
@@ -387,8 +392,8 @@ class RStepDetailPage(QFrame):
                 label_text, unit = _INTERMEDIATE_LABELS.get(fid, (fid, ""))
                 name_label = QLabel(label_text, self._input_card)
                 name_label.setObjectName("SubSectionTitle")
-                val = inter.get(_INTER_KEY_MAP.get(fid, ""), 0)
-                value_text = f"{val:,.2f}" if val else "—"
+                val = inter.get(_INTER_KEY_MAP.get(fid, ""))
+                value_text = f"{val:,.2f}" if val is not None else "—"
                 val_label = QLabel(value_text, self._input_card)
                 val_label.setObjectName("SectionHint")
                 unit_label = QLabel(unit, self._input_card)
@@ -427,8 +432,8 @@ class RStepDetailPage(QFrame):
         for fid, label in self._input_labels.items():
             if fid.startswith("intermediate."):
                 inter = result.get("intermediate", {})
-                val = inter.get(_INTER_KEY_MAP.get(fid, ""), 0)
-                label.setText(f"{val:,.2f}" if val else "—")
+                val = inter.get(_INTER_KEY_MAP.get(fid, ""))
+                label.setText(f"{val:,.2f}" if val is not None else "—")
                 continue
             widget = field_widgets.get(fid)
             if widget:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -24,14 +25,18 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.input_condition_store import (
+    InputConditionError,
     build_form_snapshot,
     build_saved_inputs_dir,
     choose_load_input_conditions_path,
     choose_save_input_conditions_path,
+    confirm_snapshot_module,
     read_input_conditions,
+    validate_snapshot,
     write_input_conditions,
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
+from app.ui.report_export import ReportExportError, export_report_lines
 from app.ui.widgets.help_button import HelpButton
 from core.bolt.tapped_axial_joint import (
     _derive_thread_section,
@@ -47,6 +52,8 @@ _AUTO_DERIVED_FIELDS: tuple[str, ...] = ("fastener.As", "fastener.d2", "fastener
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SAVED_INPUTS_DIR = build_saved_inputs_dir(PROJECT_ROOT)
 EXAMPLES_DIR = PROJECT_ROOT / "examples"
+MODULE_ID = "bolt_tapped_axial"
+_NUMBER_RE = re.compile(r"^-?\d+(\.\d+)?([eE][+-]?\d+)?$", flags=re.ASCII)
 
 
 @dataclass(frozen=True)
@@ -212,6 +219,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         self.btn_load_inputs = self.add_action_button("加载输入条件")
         self.btn_calculate = self.add_action_button("执行校核", primary=True)
         self.btn_clear = self.add_action_button("清空参数")
+        self.btn_export_text = self.add_action_button("导出文本报告")
         self.btn_export_pdf = self.add_action_button("导出结果说明")
         self.btn_load_1 = self.add_action_button("测试案例 1", side="right")
         self.btn_load_2 = self.add_action_button("测试案例 2", side="right")
@@ -224,6 +232,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         self.btn_load_inputs.clicked.connect(self._load_input_conditions)
         self.btn_clear.clicked.connect(self._clear)
         self.btn_calculate.clicked.connect(self._run_calculation)
+        self.btn_export_text.clicked.connect(self._export_text_report)
         self.btn_export_pdf.clicked.connect(self._export_pdf_report)
         self.btn_load_1.clicked.connect(lambda: self._load_sample("tapped_axial_joint_case_01.json"))
         self.btn_load_2.clicked.connect(lambda: self._load_sample("tapped_axial_joint_case_02.json"))
@@ -378,7 +387,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         self.result_title = QLabel("尚未执行计算", summary_card)
         self.result_title.setObjectName("SubSectionTitle")
         self.result_summary = QLabel(
-            "填写参数并点击\u201c开始计算\u201d后，这里显示结论。", summary_card
+            '填写参数并点击"开始计算"后，这里显示结论。', summary_card
         )
         self.result_summary.setObjectName("SectionHint")
         self.result_summary.setWordWrap(True)
@@ -488,11 +497,11 @@ class BoltTappedAxialPage(BaseChapterPage):
         if raw == "":
             return None
         try:
-            if raw.lower() in {"nan", "inf", "-inf"}:
+            if not _NUMBER_RE.fullmatch(raw):
                 raise ValueError(raw)
             return float(raw)
         except ValueError as exc:
-            raise ValueError(f"字段“{spec.label}”请输入有效数字，当前值: {raw}") from exc
+            raise ValueError(f"字段\"{spec.label}\"请输入有效数字，当前值: {raw}") from exc
 
     def _build_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {}
@@ -508,7 +517,11 @@ class BoltTappedAxialPage(BaseChapterPage):
         return payload
 
     def _capture_input_snapshot(self) -> dict[str, Any]:
-        return build_form_snapshot(self._field_specs.values(), self._read_widget_value)
+        return build_form_snapshot(
+            self._field_specs.values(),
+            self._read_widget_value,
+            module_id=MODULE_ID,
+        )
 
     def _apply_input_data(self, data: dict[str, Any]) -> None:
         inputs_data = data.get("inputs")
@@ -545,6 +558,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         self._refresh_thread_section()
         self._suspend_live_feedback = False
         self._invalidate_cache()
+        self._reset_result_panels()
 
     def _save_input_conditions(self) -> None:
         default_path = SAVED_INPUTS_DIR / "bolt_tapped_axial_input_conditions.json"
@@ -563,15 +577,20 @@ class BoltTappedAxialPage(BaseChapterPage):
         if in_path is None:
             return
         try:
-            data = read_input_conditions(in_path)
+            data = validate_snapshot(read_input_conditions(in_path))
         except FileNotFoundError:
             QMessageBox.warning(self, "文件不存在", f"未找到输入条件文件：{in_path}")
             return
         except json.JSONDecodeError as exc:
             QMessageBox.critical(self, "文件损坏", f"输入条件文件不是有效 JSON：{exc}")
             return
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
         except OSError as exc:
             QMessageBox.critical(self, "加载失败", f"输入条件加载失败：{exc}")
+            return
+        if not confirm_snapshot_module(self, data, MODULE_ID):
             return
 
         self._apply_input_data(data)
@@ -583,7 +602,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         self._refresh_thread_section()
         self._suspend_live_feedback = False
         self._invalidate_cache()
-        self.set_overall_status("等待计算", "wait")
+        self._reset_result_panels()
         self.set_info("参数已重置为默认值。")
 
     # --- Codex §3.2 / §3.4：AutoCalcCard + 缓存失效 ---
@@ -636,7 +655,17 @@ class BoltTappedAxialPage(BaseChapterPage):
         """Clear cached calculation result and disable export buttons."""
         self._last_payload = None
         self._last_result = None
+        self.btn_export_text.setEnabled(False)
         self.btn_export_pdf.setEnabled(False)
+
+    def _reset_result_panels(self) -> None:
+        self.result_title.setText("尚未执行计算")
+        self.result_summary.setText("尚无结果。")
+        self.metrics_text.setText("尚无结果。")
+        self.message_box.clear()
+        for badge in self._check_badges.values():
+            self._set_badge(badge, "待计算", "wait")
+        self.set_overall_status("等待计算", "wait")
 
     def _on_input_changed(self, field_id: str) -> None:
         if self._suspend_live_feedback:
@@ -647,6 +676,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         if field_id in ("fastener.d", "fastener.p"):
             self._refresh_thread_section()
         self._invalidate_cache()
+        self.set_overall_status("输入已变更，待重新计算", "wait")
 
     def _set_badge(self, label: QLabel, text: str, state: str) -> None:
         if state == "pass":
@@ -675,6 +705,7 @@ class BoltTappedAxialPage(BaseChapterPage):
 
         self._last_payload = payload
         self._last_result = result
+        self.btn_export_text.setEnabled(True)
         self.btn_export_pdf.setEnabled(True)
         self._render_result(result)
         self.set_current_chapter(self.chapter_list.count() - 1)
@@ -852,11 +883,27 @@ class BoltTappedAxialPage(BaseChapterPage):
         if current != self._last_payload:
             QMessageBox.warning(
                 self, "输入已变更",
-                "当前表单与上次计算时的输入不一致，请先点击\u201c开始计算\u201d"
+                '当前表单与上次计算时的输入不一致，请先点击"开始计算"'
                 "刷新结果，再导出报告。",
             )
             return False
         return True
+
+    def _export_text_report(self) -> None:
+        if not self._ensure_export_payload_matches_current_inputs():
+            return
+        try:
+            path = export_report_lines(
+                self,
+                "导出文本报告",
+                EXAMPLES_DIR / "tapped_axial_report.txt",
+                self._build_report_lines(),
+            )
+        except (ReportExportError, OSError) as exc:
+            QMessageBox.critical(self, "导出失败", f"导出失败：{exc}")
+            return
+        if path is not None:
+            self.set_info(f"文本报告已导出: {path}")
 
     def _load_sample(self, filename: str) -> None:
         sample_path = EXAMPLES_DIR / filename
@@ -864,9 +911,14 @@ class BoltTappedAxialPage(BaseChapterPage):
             QMessageBox.warning(self, "测试案例不存在", f"未找到测试案例文件：{sample_path}")
             return
         try:
-            data = read_input_conditions(sample_path)
+            data = validate_snapshot(read_input_conditions(sample_path))
         except json.JSONDecodeError as exc:
             QMessageBox.critical(self, "测试案例损坏", f"测试案例文件不是有效 JSON：{exc}")
+            return
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
+        if not confirm_snapshot_module(self, data, MODULE_ID):
             return
 
         self._apply_input_data(data)
@@ -884,7 +936,7 @@ class BoltTappedAxialPage(BaseChapterPage):
             )
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, "导出 PDF 报告", "tapped_axial_report.pdf",
+            self, "导出 PDF 报告", str(EXAMPLES_DIR / "tapped_axial_report.pdf"),
             "PDF Files (*.pdf)"
         )
         if not path:
@@ -894,5 +946,7 @@ class BoltTappedAxialPage(BaseChapterPage):
                 Path(path), self._last_payload, self._last_result
             )
             self.set_info(f"PDF 报告已导出: {path}")
+        except (ReportExportError, OSError) as exc:
+            QMessageBox.critical(self, "导出失败", f"导出失败：{exc}")
         except Exception as exc:
             QMessageBox.critical(self, "导出失败", f"PDF 生成失败: {exc}")

@@ -16,6 +16,14 @@ from app.ui.fonts import make_ui_font
 EXPORT_FILTER = "PDF Files (*.pdf);;Word Files (*.docx);;Text Files (*.txt);;All Files (*)"
 
 
+class ReportExportError(RuntimeError):
+    """Raised when a report cannot be written safely."""
+
+
+def _wrap_export_error(exc: OSError) -> ReportExportError:
+    return ReportExportError(f"导出失败：目标文件可能被其他程序占用或无写入权限。{exc}")
+
+
 def export_report_lines(
     parent: QWidget,
     dialog_title: str,
@@ -33,24 +41,40 @@ def export_report_lines(
         return None
 
     out_path = Path(file_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise _wrap_export_error(exc) from exc
     suffix = out_path.suffix.lower()
     if suffix == ".pdf":
         _export_pdf(out_path, lines)
     elif suffix == ".docx":
-        _export_docx(out_path, lines)
+        try:
+            _export_docx(out_path, lines)
+        except OSError as exc:
+            raise _wrap_export_error(exc) from exc
     else:
-        out_path.write_text("\n".join(lines), encoding="utf-8")
+        try:
+            out_path.write_text("\n".join(lines), encoding="utf-8")
+        except OSError as exc:
+            raise _wrap_export_error(exc) from exc
     return out_path
 
 
 def _export_pdf(out_path: Path, lines: Sequence[str]) -> None:
-    writer = QPdfWriter(str(out_path))
-    writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
-    document = QTextDocument()
-    document.setDefaultFont(make_ui_font(10))
-    document.setPlainText("\n".join(lines))
-    document.print_(writer)
+    try:
+        writer = QPdfWriter(str(out_path))
+        writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+        document = QTextDocument()
+        document.setDefaultFont(make_ui_font(10))
+        document.setPlainText("\n".join(lines))
+        document.print_(writer)
+        if not out_path.exists() or out_path.stat().st_size <= 0:
+            raise ReportExportError("导出失败：目标文件可能被其他程序占用或无写入权限。")
+    except ReportExportError:
+        raise
+    except OSError as exc:
+        raise _wrap_export_error(exc) from exc
 
 
 def _export_docx(out_path: Path, lines: Sequence[str]) -> None:

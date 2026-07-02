@@ -26,15 +26,18 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.input_condition_store import (
+    InputConditionError,
     build_form_snapshot,
     build_saved_inputs_dir,
     choose_load_input_conditions_path,
     choose_save_input_conditions_path,
+    confirm_snapshot_module,
     read_input_conditions,
+    validate_snapshot,
     write_input_conditions,
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
-from app.ui.report_export import export_report_lines
+from app.ui.report_export import ReportExportError, export_report_lines
 from app.ui.widgets.help_button import HelpButton
 from app.ui.widgets.press_force_curve import PressForceCurveWidget
 from core.interference.calculator import InputError, calculate_interference_fit
@@ -47,6 +50,7 @@ from core.interference.fit_selection import (
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES_DIR = PROJECT_ROOT / "examples"
 SAVED_INPUTS_DIR = build_saved_inputs_dir(PROJECT_ROOT)
+MODULE_ID = "interference_fit"
 
 MATERIAL_LIBRARY: dict[str, dict[str, float] | None] = {
     "45钢": {"e_mpa": 210000.0, "nu": 0.30},
@@ -326,7 +330,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "materials.shaft_material",
                 "轴材料",
                 "-",
-                "选择后自动填充轴侧 E 与 nu；可切到“自定义”手工输入。",
+                "选择后自动填充轴侧 E 与 nu；可切到「自定义」手工输入。",
                 widget_type="choice",
                 options=MATERIAL_OPTIONS,
                 default="45钢",
@@ -365,7 +369,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "materials.hub_material",
                 "轮毂材料",
                 "-",
-                "选择后自动填充轮毂侧 E 与 nu；可切到“自定义”手工输入。",
+                "选择后自动填充轮毂侧 E 与 nu；可切到「自定义」手工输入。",
                 widget_type="choice",
                 options=MATERIAL_OPTIONS,
                 default="45钢",
@@ -700,7 +704,7 @@ CHECK_LABELS = {
     "combined_ok": "联合作用校核（扭矩 + 轴向）",
     "gaping_ok": "张口缝校核（p_min >= p_r + p_b）",
     "fit_range_ok": "最大过盈端覆盖需求校核",
-    "shaft_stress_ok": "轴侧应力安全系数校核",
+    "shaft_stress_ok": "轴侧应力安全系数校核（取内孔壁/配合面较大者）",
     "hub_stress_ok": "轮毂应力安全系数校核",
 }
 
@@ -710,7 +714,7 @@ BEGINNER_GUIDES: dict[str, str] = {
     "geometry.shaft_d_mm": "决定接触面积与接触半径，直接影响扭矩能力。",
     "geometry.shaft_inner_d_mm": "填 0 表示实心轴；内孔越大，轴越柔，通常会降低接触压力和传递能力。",
     "geometry.hub_outer_d_mm": "外径越大，轮毂柔度越低；按当前厚壁轮毂模型，同等过盈下接触压力越高。",
-    "fit.mode": "如果只知道标准配合代号，优先用“优选配合”；如果已有轴/孔偏差，改用“偏差换算”。",
+    "fit.mode": "如果只知道标准配合代号，优先用「优选配合」；如果已有轴/孔偏差，改用「偏差换算」。",
     "fit.preferred_fit_name": "当前只提供受限的常用孔基制优选配合，用于快速得到可追溯的过盈窗口。",
     "fit.shaft_upper_deviation_um": "偏差换算时，系统会自动把轴/孔偏差转换为 delta_min / delta_max。",
     "fit.shaft_lower_deviation_um": "若算出的最小过盈 < 0，则说明该组合包含间隙或过渡，不适用于当前模块。",
@@ -845,6 +849,8 @@ class InterferenceFitPage(BaseChapterPage):
             self._sync_fretting_fields()
 
         QTimer.singleShot(0, _deferred_sample_init)
+        self._connect_dirty_signals()
+        self._mark_results_dirty()
 
     def eventFilter(self, watched, event):  # noqa: N802
         if watched in self._widget_hints and event.type() in (QEvent.Type.FocusIn, QEvent.Type.Enter):
@@ -1062,7 +1068,7 @@ class InterferenceFitPage(BaseChapterPage):
         summary_layout.setSpacing(6)
         self.result_title = QLabel("尚未执行计算", summary_card)
         self.result_title.setObjectName("SubSectionTitle")
-        self.result_summary = QLabel("填写参数并点击“执行校核”后，这里显示结论。", summary_card)
+        self.result_summary = QLabel("填写参数并点击「执行校核」后，这里显示结论。", summary_card)
         self.result_summary.setObjectName("SectionHint")
         self.result_summary.setWordWrap(True)
         summary_layout.addWidget(self.result_title)
@@ -1485,7 +1491,7 @@ class InterferenceFitPage(BaseChapterPage):
             try:
                 value = float(raw)
             except ValueError as exc:
-                raise InputError(f"字段“{spec.label}”请输入数字，当前值: {raw}") from exc
+                raise InputError(f"字段「{spec.label}」请输入数字，当前值: {raw}") from exc
             sec, key = spec.mapping
             payload.setdefault(sec, {})[key] = value
 
@@ -1554,22 +1560,29 @@ class InterferenceFitPage(BaseChapterPage):
         try:
             payload = self._build_payload()
             result = calculate_interference_fit(payload)
+            self._render_result(result, payload)
+            self.set_current_chapter(self.chapter_stack.count() - 1)
         except InputError as exc:
+            self._mark_results_dirty()
             QMessageBox.critical(self, "输入参数错误", str(exc))
             return
         except Exception as exc:  # pragma: no cover
-            QMessageBox.critical(self, "计算异常", str(exc))
+            self._last_payload = None
+            self._last_result = None
+            self._reset_result_display()
+            self._mark_results_dirty()
+            QMessageBox.critical(self, "渲染异常", str(exc))
+            self.set_info(f"结果渲染失败：{exc}")
             return
 
         self._last_payload = payload
         self._last_result = result
-        self._render_result(result)
-        self.set_current_chapter(self.chapter_stack.count() - 1)
+        self._mark_results_fresh()
 
-    def _render_result(self, result: dict[str, Any]) -> None:
+    def _render_result(self, result: dict[str, Any], payload: dict[str, Any] | None = None) -> None:
         overall = bool(result.get("overall_pass"))
         checks = result["checks"]
-        fit_trace_lines = self._build_fit_trace_lines()
+        fit_trace_lines = self._build_fit_trace_lines(payload)
 
         if overall:
             self.result_title.setText("校核通过")
@@ -1595,8 +1608,8 @@ class InterferenceFitPage(BaseChapterPage):
         add_p = result["additional_pressure_mpa"]
         model = result.get("model", {})
         derived = result.get("derived", {})
-        assembly_lines = self._build_assembly_trace_lines()
-        fretting_lines = self._build_fretting_trace_lines()
+        assembly_lines = self._build_assembly_trace_lines(result)
+        fretting_lines = self._build_fretting_trace_lines(result)
         shaft_type = "hollow shaft" if model.get("shaft_type") == "hollow_shaft" else "solid shaft"
         shaft_inner_d_mm = float(derived.get("shaft_inner_d_mm", 0.0))
 
@@ -1615,7 +1628,10 @@ class InterferenceFitPage(BaseChapterPage):
             *[f"• {line}" for line in fretting_lines],
             f"• 附加载荷压强: p_r={add_p['p_radial']:.2f} MPa, p_b={add_p['p_bending']:.2f} MPa, p_gap={add_p['p_gap']:.2f} MPa",
             f"• 粗糙度修正: s={rough['subsidence_um']:.2f} um, delta_eff,min/mean/max={rough['delta_effective_min_um']:.2f} / {rough['delta_effective_mean_um']:.2f} / {rough['delta_effective_max_um']:.2f} um",
-            f"• 应力 max: shaft_vm={stress['shaft_vm_max']:.1f} MPa, hub_vm={stress['hub_vm_max']:.1f} MPa, hub_sigma_theta={stress['hub_hoop_inner_max']:.1f} MPa",
+            f"• 应力 max: 轴 von Mises（取内孔壁/配合面较大者）={stress['shaft_vm_max']:.1f} MPa, "
+                f"hub_vm={stress['hub_vm_max']:.1f} MPa, hub_sigma_theta={stress['hub_hoop_inner_max']:.1f} MPa",
+            f"• 轴侧分量 max: 配合面={stress.get('shaft_vm_interface_max', 0.0):.1f} MPa, "
+                f"内孔壁={stress.get('shaft_vm_bore_max', 0.0):.1f} MPa",
             f"• 安全系数: S_torque={safety['torque_sf']:.2f}, S_axial={safety['axial_sf']:.2f}, "
                 f"S_comb={safety['combined_sf']:.2f}, S_shaft={safety['shaft_sf']:.2f}, S_hub={safety['hub_sf']:.2f}",
         ]
@@ -1669,10 +1685,11 @@ class InterferenceFitPage(BaseChapterPage):
             recs.append("[建议] 当前工况满足全部校核，建议至少保留 10% 工程裕量。")
         return recs
 
-    def _build_fit_trace_lines(self) -> list[str]:
+    def _build_fit_trace_lines(self, payload: dict[str, Any] | None = None) -> list[str]:
         fit_selection = {}
-        if isinstance(self._last_payload, dict):
-            fit_selection = self._last_payload.get("fit_selection", {})
+        source_payload = payload if isinstance(payload, dict) else self._last_payload
+        if isinstance(source_payload, dict):
+            fit_selection = source_payload.get("fit_selection", {})
         if not isinstance(fit_selection, dict):
             fit_selection = {}
 
@@ -1715,10 +1732,11 @@ class InterferenceFitPage(BaseChapterPage):
             )
         return lines
 
-    def _build_assembly_trace_lines(self) -> list[str]:
-        if not isinstance(self._last_result, dict):
+    def _build_assembly_trace_lines(self, result: dict[str, Any] | None = None) -> list[str]:
+        source_result = result if isinstance(result, dict) else self._last_result
+        if not isinstance(source_result, dict):
             return []
-        assembly_detail = self._last_result.get("assembly_detail", {})
+        assembly_detail = source_result.get("assembly_detail", {})
         if not isinstance(assembly_detail, dict):
             return []
 
@@ -1752,10 +1770,11 @@ class InterferenceFitPage(BaseChapterPage):
                 )
         return lines
 
-    def _build_fretting_trace_lines(self) -> list[str]:
-        if not isinstance(self._last_result, dict):
+    def _build_fretting_trace_lines(self, result: dict[str, Any] | None = None) -> list[str]:
+        source_result = result if isinstance(result, dict) else self._last_result
+        if not isinstance(source_result, dict):
             return []
-        fretting = self._last_result.get("fretting", {})
+        fretting = source_result.get("fretting", {})
         if not isinstance(fretting, dict):
             return []
 
@@ -1796,7 +1815,11 @@ class InterferenceFitPage(BaseChapterPage):
         return lines
 
     def _capture_input_snapshot(self) -> dict[str, Any]:
-        return build_form_snapshot(self._field_specs.values(), self._read_widget_value)
+        return build_form_snapshot(
+            self._field_specs.values(),
+            self._read_widget_value,
+            module_id=MODULE_ID,
+        )
 
     def _apply_input_data(self, data: dict[str, Any]) -> None:
         inputs_data = data.get("inputs")
@@ -1914,6 +1937,7 @@ class InterferenceFitPage(BaseChapterPage):
         self._sync_roughness_factor()
         self._sync_fit_mode_fields()
         self._sync_assembly_fields()
+        self._mark_results_dirty()
 
     def _load_sample(self, filename: str) -> None:
         sample_path = EXAMPLES_DIR / filename
@@ -1922,12 +1946,18 @@ class InterferenceFitPage(BaseChapterPage):
             return
 
         try:
-            data = read_input_conditions(sample_path)
+            data = validate_snapshot(read_input_conditions(sample_path))
         except json.JSONDecodeError as exc:
             QMessageBox.critical(self, "测试案例损坏", f"测试案例文件不是有效 JSON：{exc}")
             return
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
+        if not confirm_snapshot_module(self, data, MODULE_ID):
+            return
 
         self._apply_input_data(data)
+        self._mark_results_dirty()
         self.set_info(f"已加载测试案例：{filename}。可直接执行校核并查看压入力曲线。")
 
     def _save_input_conditions(self) -> None:
@@ -1947,18 +1977,24 @@ class InterferenceFitPage(BaseChapterPage):
         if in_path is None:
             return
         try:
-            data = read_input_conditions(in_path)
+            data = validate_snapshot(read_input_conditions(in_path))
         except FileNotFoundError:
             QMessageBox.warning(self, "文件不存在", f"未找到输入条件文件：{in_path}")
             return
         except json.JSONDecodeError as exc:
             QMessageBox.critical(self, "文件损坏", f"输入条件文件不是有效 JSON：{exc}")
             return
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
         except OSError as exc:
             QMessageBox.critical(self, "加载失败", f"输入条件加载失败：{exc}")
             return
+        if not confirm_snapshot_module(self, data, MODULE_ID):
+            return
 
         self._apply_input_data(data)
+        self._mark_results_dirty()
         self.set_info(f"已加载输入条件：{in_path}")
 
     def _clear(self) -> None:
@@ -1968,15 +2004,32 @@ class InterferenceFitPage(BaseChapterPage):
         self._sync_friction_from_material()
         self._last_payload = None
         self._last_result = None
+        self._reset_result_display()
+        self.set_info("参数已重置为默认值。")
+        self._mark_results_dirty()
+
+    def _reset_result_display(self) -> None:
         self.result_title.setText("尚未执行计算")
-        self.result_summary.setText("填写参数并点击“执行校核”后，这里显示结论。")
+        self.result_summary.setText("填写参数并点击「执行校核」后，这里显示结论。")
         self.metrics_text.setText("尚无结果。")
         self.message_box.clear()
         for badge in self._check_badges.values():
             self._set_badge(badge, "待计算", "wait")
         self.curve_widget.set_curve([], [], 0.0, 0.0, 0.0)
         self.set_overall_status("等待计算", "wait")
-        self.set_info("参数已重置为默认值。")
+
+    def _mark_results_dirty(self) -> None:
+        self.btn_save.setEnabled(False)
+
+    def _mark_results_fresh(self) -> None:
+        self.btn_save.setEnabled(True)
+
+    def _connect_dirty_signals(self) -> None:
+        for widget in self._field_widgets.values():
+            if isinstance(widget, QLineEdit):
+                widget.textEdited.connect(self._mark_results_dirty)
+            elif isinstance(widget, QComboBox):
+                widget.currentIndexChanged.connect(self._mark_results_dirty)
 
     def _save_report(self) -> None:
         if self._last_result is None or self._last_payload is None:
@@ -1991,20 +2044,26 @@ class InterferenceFitPage(BaseChapterPage):
         if not file_path:
             return
         out_path = Path(file_path)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        suffix = out_path.suffix.lower()
-        if suffix == ".pdf":
-            try:
-                mod = importlib.import_module("app.ui.report_pdf_interference")
-                mod.generate_interference_report(out_path, self._last_payload, self._last_result)
-            except Exception:
-                from app.ui.report_export import _export_pdf
-                _export_pdf(out_path, self._build_report_lines())
-        elif suffix == ".docx":
-            from app.ui.report_export import _export_docx
-            _export_docx(out_path, self._build_report_lines())
-        else:
-            out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
+        try:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            suffix = out_path.suffix.lower()
+            if suffix == ".pdf":
+                try:
+                    mod = importlib.import_module("app.ui.report_pdf_interference")
+                    mod.generate_interference_report(out_path, self._last_payload, self._last_result)
+                except Exception:
+                    from app.ui.report_export import _export_pdf
+                    _export_pdf(out_path, self._build_report_lines())
+                    self.set_info(f"校核报告已导出: {out_path}（已使用简化格式）")
+                    return
+            elif suffix == ".docx":
+                from app.ui.report_export import _export_docx
+                _export_docx(out_path, self._build_report_lines())
+            else:
+                out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
+        except (ReportExportError, OSError) as exc:
+            QMessageBox.critical(self, "导出失败", f"导出失败：{exc}")
+            return
         self.set_info(f"校核报告已导出: {out_path}")
 
     def _build_report_lines(self) -> list[str]:
@@ -2058,7 +2117,8 @@ class InterferenceFitPage(BaseChapterPage):
                 f"- F_min / mean / max: {cap['axial_min_n']:.3f} / {cap['axial_mean_n']:.3f} / {cap['axial_max_n']:.3f} N",
                 f"- F_press,min / mean / max: {asm['press_force_min_n']:.3f} / {asm['press_force_mean_n']:.3f} / {asm['press_force_max_n']:.3f} N",
                 f"- delta_required: {req['delta_required_um']:.3f} um",
-                f"- shaft_vm_max / hub_vm_max: {stress['shaft_vm_max']:.3f} / {stress['hub_vm_max']:.3f} MPa",
+                f"- 轴 von Mises（取内孔壁/配合面较大者）/ hub_vm_max: {stress['shaft_vm_max']:.3f} / {stress['hub_vm_max']:.3f} MPa",
+                f"- shaft_vm_interface_max / shaft_vm_bore_max: {stress.get('shaft_vm_interface_max', 0.0):.3f} / {stress.get('shaft_vm_bore_max', 0.0):.3f} MPa",
                 f"- S_torque / S_axial / S_comb: {safety['torque_sf']:.3f} / {safety['axial_sf']:.3f} / {safety['combined_sf']:.3f}",
                 f"- S_shaft / S_hub: {safety['shaft_sf']:.3f} / {safety['hub_sf']:.3f}",
                 "",

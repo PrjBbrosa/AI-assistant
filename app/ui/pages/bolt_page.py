@@ -5,9 +5,10 @@ from __future__ import annotations
 import datetime as dt
 import importlib
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import (
@@ -31,16 +32,20 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.input_condition_store import (
+    InputConditionError,
     build_form_snapshot,
     build_saved_inputs_dir,
     choose_load_input_conditions_path,
     choose_save_input_conditions_path,
+    confirm_snapshot_module,
     read_input_conditions,
+    validate_snapshot,
     write_input_conditions,
 )
 from app.ui.widgets.clamping_diagram import ClampingDiagramWidget, ThreadForceTriangleWidget
 from app.ui.widgets.help_button import HelpButton
-from app.ui.report_export import export_report_lines
+from app.ui.report_export import ReportExportError
+from app.ui.pages import bolt_help_content as bolt_help
 from app.ui.pages.bolt_flowchart import (
     FlowchartNavWidget, RStepDetailPage, R_STEPS,
 )
@@ -49,6 +54,8 @@ from core.bolt.calculator import InputError, calculate_vdi2230_core
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES_DIR = PROJECT_ROOT / "examples"
 SAVED_INPUTS_DIR = build_saved_inputs_dir(PROJECT_ROOT)
+MODULE_ID = "bolt_vdi2230"
+_NUMBER_RE = re.compile(r"^-?\d+(\.\d+)?([eE][+-]?\d+)?$", flags=re.ASCII)
 
 
 def _export_bolt_pdf_report(
@@ -409,7 +416,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "基础实体类型",
                 "-",
                 "用于自动柔度建模。选择几何模型后，勾选自动计算可替代手动输入顺从度。",
-                mapping=("clamped", "basic_solid"),
+                mapping=None,  # spec D12/W-10：payload 由专用翻译代码写入，避免中文双写
                 widget_type="choice",
                 options=("圆柱体", "锥体", "套筒"),
                 default="圆柱体",
@@ -445,7 +452,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "接触面粗糙度",
                 "-",
                 "用于嵌入损失自动估算。选择后当嵌入损失 FZ=0 时自动计算参考值。",
-                mapping=("clamped", "surface_class"),
+                mapping=None,  # spec D12/W-10：payload 由专用翻译代码写入，避免中文双写
                 widget_type="choice",
                 options=("粗糙 (Ra≈6.3μm)", "中等 (Ra≈3.2μm)", "精细 (Ra≈1.6μm)"),
                 default="中等 (Ra≈3.2μm)",
@@ -873,6 +880,12 @@ CHECK_LABELS = {
     "thread_strip_ok": "螺纹脱扣校核",
 }
 
+_OVERALL_STATUS_TEXT = {
+    "pass": "通过",
+    "fail": "不通过",
+    "incomplete": "不完整（存在未校核项，见警告）",
+}
+
 CHECK_LEVELS: tuple[tuple[str, str], ...] = (
     ("常规校核", "basic"),
     ("考虑温度", "thermal"),
@@ -935,20 +948,6 @@ TIGHTENING_METHOD_MAP: dict[str, str] = {
     "热装法": "thermal",
 }
 
-ALPHA_A_HINTS: dict[str, str] = {
-    "扭矩法": "FMmax/FMmin，扭矩法建议范围 1.4~1.8。",
-    "转角法": "FMmax/FMmin，转角法建议范围 1.1~1.3。",
-    "液压拉伸法": "FMmax/FMmin，液压拉伸法建议范围 1.05~1.15。",
-    "热装法": "FMmax/FMmin，热装法建议范围 1.05~1.15。",
-}
-
-N_POSITION_HINTS: dict[str, str] = {
-    "螺栓头端": "修正外载导入比例。头端导入通常取 n ≈ 1.0。",
-    "螺母端": "修正外载导入比例。螺母端导入通常取 n ≈ 0.5~0.7。",
-    "中间": "修正外载导入比例。中间导入通常取 n ≈ 0.3~0.5。",
-    "分布式": "修正外载导入比例。均匀分布近似取 n ≈ 0.5。",
-}
-
 BASIC_SOLID_MAP: dict[str, str] = {
     "圆柱体": "cylinder",
     "锥体": "cone",
@@ -959,29 +958,6 @@ CALC_MODES: tuple[tuple[str, str], ...] = (
     ("设计模式（反推 FM_min）", "design"),
     ("校核模式（输入已知 FM_min）", "verify"),
 )
-
-BEGINNER_GUIDES: dict[str, str] = {
-    "loads.FA_max": "工作时拉开连接的最大轴向力；未知时可先按名义载荷×1.2~1.5估算。",
-    "loads.FQ_max": "导致滑移趋势的横向力；没有横向载荷时填 0。",
-    "loads.seal_force_required": "密封必须保留的夹紧力下限；无密封要求可填 0。",
-    "loads.friction_interfaces": "参与防滑传力的摩擦界面数量；常见取 1。",
-    "loads.slip_friction_coefficient": "防滑摩擦系数；钢-钢干摩擦常见约 0.12~0.20。",
-    "tightening.alpha_A": "拧紧散差系数 FMmax/FMmin；扭矩法常见 1.4~1.8。",
-    "tightening.utilization": "装配屈服利用比例；新手常用 0.9。",
-    "loads.embed_loss": "表面压平造成的预紧力损失；未知时可先用 500~2000 N。",
-    "loads.thermal_force_loss": "温差导致的预紧力损失；常温稳定工况可先填 0。",
-    "operating.load_cycles": "疲劳循环次数；静载可填 1，重复载荷按全寿命循环数输入。",
-    "fastener.d": "螺纹公称直径；例如 M10 对应 d=10 mm。",
-    "fastener.p": "螺距；粗牙 M10 常见 p=1.5 mm。",
-    "fastener.Rp02": "螺栓材料屈服强度；8.8 级常见约 640 MPa（以材料证书为准）。",
-    "tightening.mu_thread": "螺纹摩擦系数；润滑常见 0.08~0.16。",
-    "tightening.mu_bearing": "支承面摩擦系数；常见 0.10~0.20。",
-    "stiffness.bolt_compliance": "螺栓柔度：1N 拉力下螺栓伸长多少 mm。典型 M10~M16 约 1e-6~5e-6。",
-    "stiffness.clamped_compliance": "被夹件柔度：1N 压力下被夹件压缩多少 mm。典型钢法兰约 1e-7~5e-7。",
-    "stiffness.bolt_stiffness": "螺栓刚度：产生 1mm 伸长所需的拉力。刚度 = 1/柔度。",
-    "stiffness.clamped_stiffness": "被夹件刚度：产生 1mm 压缩所需的压力。与 cs 配套输入。",
-    "stiffness.load_introduction_factor_n": "外载导入比例修正；轴向端部导入通常取 1.0。",
-}
 
 SETUP_CASE_RULES: dict[str, dict[str, Any]] = {
     "轴向载荷": {
@@ -1172,34 +1148,18 @@ class BoltPage(QWidget):
         self.btn_flow_tab.clicked.connect(lambda: self._switch_nav_tab(1))
         self.flowchart_nav.node_clicked.connect(self._on_flow_node_clicked)
 
-        self._apply_defaults()
-        self._load_sample("input_case_01.json")
-        self._apply_check_level_visibility()
-        bearing_mat_widget = self._field_widgets.get("bearing.bearing_material")
-        if bearing_mat_widget and isinstance(bearing_mat_widget, QComboBox):
-            bearing_mat_widget.currentTextChanged.connect(self._on_bearing_material_changed)
+        self._wire_combo("bearing.bearing_material", self._on_bearing_material_changed)
         # 强度等级联动
-        grade_widget = self._field_widgets.get("fastener.grade")
-        if grade_widget and isinstance(grade_widget, QComboBox):
-            grade_widget.currentTextChanged.connect(self._on_grade_changed)
-            self._on_grade_changed(grade_widget.currentText())
+        self._wire_combo("fastener.grade", self._on_grade_changed)
         # 材料热膨胀联动
-        bolt_mat_widget = self._field_widgets.get("operating.bolt_material")
-        if bolt_mat_widget and isinstance(bolt_mat_widget, QComboBox):
-            bolt_mat_widget.currentTextChanged.connect(self._on_bolt_material_changed)
-            self._on_bolt_material_changed(bolt_mat_widget.currentText())
-        clamped_mat_widget = self._field_widgets.get("operating.clamped_material")
-        if clamped_mat_widget and isinstance(clamped_mat_widget, QComboBox):
-            clamped_mat_widget.currentTextChanged.connect(self._on_clamped_material_changed)
-            self._on_clamped_material_changed(clamped_mat_widget.currentText())
+        self._wire_combo("operating.bolt_material", self._on_bolt_material_changed)
+        self._wire_combo("operating.clamped_material", self._on_clamped_material_changed)
         # 被夹件数量联动
-        pc_widget = self._field_widgets.get("clamped.part_count")
-        if pc_widget and isinstance(pc_widget, QComboBox):
-            pc_widget.currentTextChanged.connect(self._on_part_count_changed)
+        self._wire_combo("clamped.part_count", self._on_part_count_changed)
         cc_widget = self._field_widgets.get("clamped.custom_count")
         if cc_widget and isinstance(cc_widget, QLineEdit):
             cc_widget.textChanged.connect(lambda _: self._on_part_count_changed())
-        # 各层材料联动
+        # 各层材料需要捕获层号，保留 lambda 个例。
         for ln in range(1, 6):
             mat_w = self._field_widgets.get(f"clamped.layer_{ln}.material")
             if mat_w and isinstance(mat_w, QComboBox):
@@ -1208,47 +1168,49 @@ class BoltPage(QWidget):
                 )
                 self._on_layer_material_changed(ln, mat_w.currentText())
         # 柔度计算方式联动
-        ac_widget = self._field_widgets.get("stiffness.auto_compliance")
-        if ac_widget and isinstance(ac_widget, QComboBox):
-            ac_widget.currentTextChanged.connect(self._on_compliance_mode_changed)
+        self._wire_combo("stiffness.auto_compliance", self._on_compliance_mode_changed)
         # 初始化可见性
-        self._on_part_count_changed()
-        self._on_compliance_mode_changed()
-        setup_case_widget = self._field_widgets.get("operating.setup_case")
-        if setup_case_widget and isinstance(setup_case_widget, QComboBox):
-            setup_case_widget.currentTextChanged.connect(self._on_setup_case_changed)
-            self._on_setup_case_changed(setup_case_widget.currentText())
-        slip_mu_mode_widget = self._field_widgets.get("loads.slip_mu_mode")
-        if slip_mu_mode_widget and isinstance(slip_mu_mode_widget, QComboBox):
-            slip_mu_mode_widget.currentTextChanged.connect(self._on_slip_mu_mode_changed)
-            self._on_slip_mu_mode_changed(slip_mu_mode_widget.currentText())
+        self._wire_combo("operating.setup_case", self._on_setup_case_changed)
+        self._wire_combo("loads.slip_mu_mode", self._on_slip_mu_mode_changed)
         # 拧紧方式联动 αA hint
-        tmethod_w = self._field_widgets.get("assembly.tightening_method")
-        if tmethod_w and isinstance(tmethod_w, QComboBox):
-            tmethod_w.currentTextChanged.connect(self._on_tightening_method_changed)
-            self._on_tightening_method_changed(tmethod_w.currentText())
+        self._wire_combo("assembly.tightening_method", self._on_tightening_method_changed)
         # 载荷导入位置联动 n hint
-        pos_w = self._field_widgets.get("introduction.position")
-        if pos_w and isinstance(pos_w, QComboBox):
-            pos_w.currentTextChanged.connect(self._on_position_changed)
-            self._on_position_changed(pos_w.currentText())
+        self._wire_combo("introduction.position", self._on_position_changed)
         # 螺纹规格联动
-        d_widget = self._field_widgets.get("fastener.d")
-        if d_widget and isinstance(d_widget, QComboBox):
-            d_widget.currentTextChanged.connect(self._on_thread_d_changed)
-            self._on_thread_d_changed(d_widget.currentText())
-        p_widget = self._field_widgets.get("fastener.p")
-        if p_widget and isinstance(p_widget, QComboBox):
-            p_widget.currentTextChanged.connect(self._on_thread_p_changed)
-        jt_widget = self._field_widgets.get("elements.joint_type")
-        if jt_widget and isinstance(jt_widget, QComboBox):
-            jt_widget.currentTextChanged.connect(self._sync_joint_diagram_from_ui)
-            self._sync_joint_diagram_from_ui()
+        self._wire_combo("fastener.d", self._on_thread_d_changed)
+        self._wire_combo("fastener.p", self._on_thread_p_changed)
+        self._wire_combo("elements.joint_type", self._sync_joint_diagram_from_ui)
+
+        self._apply_defaults()
+        self._load_sample("input_case_01.json")
+        self._apply_check_level_visibility()
+        self._connect_dirty_signals()
+        self._mark_results_dirty()
 
     def eventFilter(self, watched, event):  # noqa: N802
         if watched in self._widget_hints and event.type() in (QEvent.Type.FocusIn, QEvent.Type.Enter):
             self.info_label.setText(self._widget_hints[watched])
         return super().eventFilter(watched, event)
+
+    def _wire_combo(
+        self,
+        field_id: str,
+        handler: Callable[[str], None],
+    ) -> QComboBox | None:
+        """Connect a field combo to a text handler and apply the initial state.
+
+        注意：这里在 connect 之后立即 `handler(widget.currentText())` 触发一次，
+        使各联动字段（材料自动填充、锁定态等）在页面构建阶段即进入正确初值。
+        该初值随后会被 __init__ 末尾的 `_load_sample` 最终覆盖为样例数据；
+        若调整 __init__ 中 _wire_combo 与 _load_sample 的先后顺序，须复核这一
+        "构建期初值 -> 样例覆盖" 的依赖，避免联动字段停留在未覆盖的中间态。
+        """
+        widget = self._field_widgets.get(field_id)
+        if not isinstance(widget, QComboBox):
+            return None
+        widget.currentTextChanged.connect(handler)
+        handler(widget.currentText())
+        return widget
 
     def _build_chapter_pages(self) -> None:
         self._add_step_item("校核层级设置")
@@ -1461,7 +1423,7 @@ class BoltPage(QWidget):
         guide_layout.setContentsMargins(12, 10, 12, 10)
         guide_layout.setSpacing(6)
 
-        toggle_btn = QPushButton("  新手指南：装配参数到底在说什么？  ", guide_card)
+        toggle_btn = QPushButton(bolt_help.ASSEMBLY_GUIDE_COLLAPSED_TITLE, guide_card)
         toggle_btn.setObjectName("LinkButton")
         toggle_btn.setFlat(True)
         toggle_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1470,44 +1432,7 @@ class BoltPage(QWidget):
         guide_text = QLabel(guide_card)
         guide_text.setObjectName("SectionHint")
         guide_text.setWordWrap(True)
-        guide_text.setText(
-            "--- 拧紧方式 ---\n"
-            "实际装配中，我们拧螺栓只做两件事：拧到某个扭矩、或者拧到某个扭矩再转一个角度。\n"
-            "不同方式的控制精度不同，直接影响预紧力的散差范围：\n"
-            "  扭矩法：用扭矩扳手拧到目标扭矩值。最常见，但摩擦波动导致预紧力散差大（约 +/-25%）\n"
-            "  转角法：先拧到一个较小的贴合扭矩，再转过固定角度。散差更小（约 +/-10%）\n"
-            "  液压拉伸法：用液压工具直接拉伸螺栓再拧紧螺母。散差最小（约 +/-5%），但需专用设备\n"
-            "  热装法：加热螺栓使其伸长后旋入，冷却收缩产生预紧力。精度高，用于大型设备\n"
-            "\n"
-            "--- 拧紧系数 αA ---\n"
-            "αA = FMmax / FMmin，描述同一批螺栓拧紧后预紧力的最大值和最小值之比。\n"
-            "它不是你设置的值，而是装配工艺能力决定的：\n"
-            "  扭矩法：αA 通常 1.4~1.8（散差大）\n"
-            "  转角法：αA 通常 1.1~1.3（散差小）\n"
-            "  液压法：αA 通常 1.05~1.15（散差很小）\n"
-            "αA 越大意味着需要更多裕量来保证最差情况也安全，螺栓利用率越低。\n"
-            "\n"
-            "--- 装配利用系数 v ---\n"
-            "拧紧时允许螺栓承受多大比例的屈服强度。0.9 表示允许达到 90% 屈服极限。\n"
-            "设得越高，预紧力越大，但离永久变形越近。一般取 0.85~0.95。\n"
-            "\n"
-            "--- 摩擦系数 (螺纹/支承面) ---\n"
-            "你拧扭矩扳手时，扭矩并不全部变成预紧力。大约：\n"
-            "  50% 消耗在螺栓头底面与零件表面的摩擦（支承面摩擦 muK）\n"
-            "  40% 消耗在螺纹牙面之间的摩擦（螺纹摩擦 muG）\n"
-            "  只有约 10% 真正转化为螺栓的轴向预紧力\n"
-            "所以摩擦系数对预紧力影响极大。表面润滑剂、镀层都会显著改变摩擦。\n"
-            "常见范围：干燥钢面 0.12~0.18；润滑 0.08~0.12；MoS2 涂层 0.06~0.10\n"
-            "\n"
-            "--- 嵌入损失 FZ ---\n"
-            "零件表面微观凸起在预紧力作用下会逐渐压平，导致螺栓实际预紧力下降。\n"
-            "表面越粗糙、接触面越多，损失越大。工具可根据粗糙度等级自动估算。\n"
-            "\n"
-            "--- 总结：扭矩 vs 预紧力 ---\n"
-            "你设定的是扭矩，但螺栓真正需要的是预紧力。\n"
-            "两者之间的转换取决于摩擦，摩擦的不确定性由 αA 来描述。\n"
-            "所以：控制好摩擦 → 减小 αA → 提高螺栓利用率 → 用更小的螺栓满足需求。"
-        )
+        guide_text.setText(bolt_help.ASSEMBLY_GUIDE_TEXT)
         guide_layout.addWidget(guide_text)
         guide_text.setVisible(False)
 
@@ -1515,7 +1440,9 @@ class BoltPage(QWidget):
             visible = not guide_text.isVisible()
             guide_text.setVisible(visible)
             toggle_btn.setText(
-                "  收起新手指南  " if visible else "  新手指南：装配参数到底在说什么？  "
+                bolt_help.ASSEMBLY_GUIDE_EXPANDED_TITLE
+                if visible
+                else bolt_help.ASSEMBLY_GUIDE_COLLAPSED_TITLE
             )
             guide_layout.invalidate()
             guide_card.adjustSize()
@@ -1549,15 +1476,12 @@ class BoltPage(QWidget):
         layout.setSpacing(16)
 
         # ---------- 标题 ----------
-        title = QLabel("VDI 2230 螺栓校核 — 你需要知道的一切", container)
+        title = QLabel(bolt_help.LOGIC_GUIDE_TITLE, container)
         title.setObjectName("SectionTitle")
         title.setStyleSheet("font-size: 18px;")
         layout.addWidget(title)
 
-        intro = QLabel(
-            "这份指南帮你快速理解：你需要准备什么、工具帮你算什么、最终怎么判定通过或不通过。",
-            container,
-        )
+        intro = QLabel(bolt_help.LOGIC_GUIDE_INTRO, container)
         intro.setObjectName("SectionHint")
         intro.setWordWrap(True)
         layout.addWidget(intro)
@@ -1584,94 +1508,10 @@ class BoltPage(QWidget):
             arrow.setStyleSheet("color: #D97757; font-size: 18px; font-weight: bold;")
             return arrow
 
-        # ---------- 第一步：你需要准备什么 ----------
-        layout.addWidget(_section(
-            "第一步：你需要准备什么（输入）",
-            "校核一个螺栓连接，你至少需要以下信息：\n\n"
-            "1. 螺栓规格 — 选一个标准螺纹（如 M10×1.5），工具自动查出 d2、d3、As\n"
-            "2. 螺栓强度等级 — 选一个等级（如 8.8 级），工具自动填入 Rp0.2\n"
-            "3. 外部载荷 — 工作中拉开连接的最大轴向力 FA 和横向力 FQ\n"
-            "4. 连接形式 — 螺纹孔（拧入基体）还是通孔（穿过被夹件+螺母）\n"
-            "5. 摩擦系数 — 螺纹面和支承面的摩擦（不确定就先用默认值 0.12）\n"
-            "6. 装配方式 — 你打算怎么拧（扭矩扳手、转角法、液压拉伸...）\n\n"
-            "可选项（进阶）：\n"
-            "- 密封力、防滑要求 — 如果连接有密封或传递横向力\n"
-            "- 柔度/刚度 — 有 FEM 数据时可直接输入，否则用自动计算\n"
-            "- 温度和材料 — 如果螺栓和被夹件材料不同且有温差\n"
-            "- 疲劳参数 — 如果是反复加载工况",
-        ))
-
-        layout.addWidget(_flow_arrow())
-
-        # ---------- 第二步：工具怎么算 ----------
-        layout.addWidget(_section(
-            "第二步：工具帮你算什么（计算链路）",
-            "你点击「执行校核」后，工具按照 VDI 2230 标准的链路一步步算：\n\n"
-            "R0. 输入汇总\n"
-            "    整理你的输入，计算力比系数 φ = δp/(δs+δp)\n"
-            "    φ 决定了外载在螺栓和被夹件之间如何分配\n\n"
-            "R1. 预紧力\n"
-            "    从「工作时至少需要多大夹紧力」反推「装配时至少拧多紧」\n"
-            "    FM,min = FK,req + (1-φn)×FA + FZ + Fth\n"
-            "    FK,req = 密封力和防滑力中较大者\n"
-            "    FZ = 嵌入损失，Fth = 热损失\n\n"
-            "R2. 拧紧扭矩\n"
-            "    把预紧力转换成你扳手上该读到的扭矩值\n"
-            "    MA = FM × (d2/2 × tan(λ+ρ') + DKm/2 × μK)",
-        ))
-
-        layout.addWidget(_flow_arrow())
-
-        # ---------- 第三步：怎么判定 ----------
-        layout.addWidget(_section(
-            "第三步：校核判据 — 逐项检查螺栓是否安全",
-            "R3. 残余夹紧力 — 最差情况下，连接还夹得住吗？\n"
-            "    FK,res = FM,min - FZ - Fth - (1-φn)×FA ≥ FK,req\n"
-            "    如果夹不住 → 加大预紧力或换更大螺栓\n\n"
-            "R4. 装配应力 — 拧紧时螺栓会不会拧坏？\n"
-            "    拧紧产生拉力+扭转，合成 von Mises 应力 ≤ ν × Rp0.2\n"
-            "    如果超了 → 降低利用系数、换更高等级螺栓、或减小摩擦\n\n"
-            "R5. 服役应力 — 工作载荷下螺栓会不会被拉断？\n"
-            "    螺栓最大轴向力 = FM,max + φn×FA ≤ Rp0.2/SF\n"
-            "    如果超了 → 换更大螺栓或降低外载\n\n"
-            "R6. 疲劳（可选）— 反复加载会不会疲劳断裂？\n"
-            "    应力幅 σ_a = φn×FA/(2×As) ≤ 许用疲劳强度\n"
-            "    如果超了 → 增大螺栓规格、减小 φn、或使用轧制螺纹\n\n"
-            "R7. 支承面压强 — 螺栓头底面会不会压坏零件？\n"
-            "    p_B = FM,max / A_bearing ≤ p_G,allow\n"
-            "    铝件或塑料件尤其要注意\n\n"
-            "R8. 螺纹脱扣（可选）— 螺纹会不会被拉滑丝？\n"
-            "    比较内/外螺纹的剪切承载力，取弱侧计算安全系数\n"
-            "    铝壳体螺纹孔连接必须检查",
-        ))
-
-        layout.addWidget(_flow_arrow())
-
-        # ---------- 第四步：结果怎么看 ----------
-        layout.addWidget(_section(
-            "第四步：结果怎么看",
-            "所有 R3~R8 校核项都通过 → 螺栓连接安全\n"
-            "任一项不通过 → 需要调整设计，常见思路：\n\n"
-            "  换更大规格螺栓 — 增大 As，降低应力\n"
-            "  换更高等级螺栓 — 提高 Rp0.2，增大许用应力\n"
-            "  改善拧紧精度 — 降低 αA，减小散差裕量\n"
-            "  控制摩擦 — 加润滑可降低摩擦波动\n"
-            "  减小外载 — 重新审视载荷估算是否偏保守\n\n"
-            "左侧「校核链路」标签页可逐步查看每个 R 步骤的详细公式和中间值。",
-        ))
-
-        # ---------- 快速参考表 ----------
-        layout.addWidget(_section(
-            "快速参考：关键输入和它影响什么",
-            "螺栓规格 (d, p)   → 承载面积 As → 直接决定能承受多大力\n"
-            "强度等级 (Rp0.2)  → 许用应力上限 → 越高越耐力，但也更脆\n"
-            "摩擦系数 (μG, μK) → 扭矩↔预紧力转换 → 摩擦不确定是最大风险源\n"
-            "拧紧系数 (αA)     → 预紧力散差 → 影响最大/最小预紧力差距\n"
-            "利用系数 (ν)      → 装配利用度 → 越高预紧力越大但安全裕量越小\n"
-            "柔度 (δs, δp)     → 力比 φ → 决定外载在螺栓与被夹件间的分配\n"
-            "载荷导入系数 (n)   → 修正 φ → 载荷导入位置离螺栓头越远 n 越小\n"
-            "外载 (FA, FQ)     → 工作载荷 → 校核的核心输入",
-        ))
+        for index, (section_title, section_body) in enumerate(bolt_help.LOGIC_GUIDE_SECTIONS):
+            if index > 0 and index < len(bolt_help.LOGIC_GUIDE_SECTIONS) - 1:
+                layout.addWidget(_flow_arrow())
+            layout.addWidget(_section(section_title, section_body))
 
         layout.addStretch(1)
         scroll.setWidget(container)
@@ -1714,7 +1554,7 @@ class BoltPage(QWidget):
 
     def _build_field_help(self, spec: FieldSpec) -> str:
         unit_part = f"（单位：{spec.unit}）" if spec.unit and spec.unit != "-" else ""
-        newbie = BEGINNER_GUIDES.get(spec.field_id, "可先加载测试案例 1 运行，再按实际工况逐项替换。")
+        newbie = bolt_help.BEGINNER_GUIDES.get(spec.field_id, bolt_help.DEFAULT_BEGINNER_GUIDE)
         return f"{spec.label}{unit_part}\n参数说明：{spec.hint}\n新手提示：{newbie}"
 
     def _set_dynamic_field_help(self, field_id: str, extra_hint: str = "") -> None:
@@ -2037,7 +1877,7 @@ class BoltPage(QWidget):
         recommended = TIGHTENING_ALPHA_A_RECOMMENDATIONS.get(text)
         if recommended is not None:
             self._apply_recommended_line_value("tightening.alpha_A", recommended)
-        self._set_dynamic_field_help("tightening.alpha_A", ALPHA_A_HINTS.get(text, ""))
+        self._set_dynamic_field_help("tightening.alpha_A", bolt_help.ALPHA_A_HINTS.get(text, ""))
 
     def _on_position_changed(self, text: str) -> None:
         """载荷导入位置变更时更新 n 字段的 hint/tooltip。"""
@@ -2046,7 +1886,7 @@ class BoltPage(QWidget):
             self._apply_recommended_line_value("stiffness.load_introduction_factor_n", recommended)
         self._set_dynamic_field_help(
             "stiffness.load_introduction_factor_n",
-            N_POSITION_HINTS.get(text, ""),
+            bolt_help.N_POSITION_HINTS.get(text, ""),
         )
 
     def _on_thread_d_changed(self, text: str) -> None:
@@ -2187,21 +2027,11 @@ class BoltPage(QWidget):
         self.chapter_stack.addWidget(page)
 
     def _build_diagram_help_text(self, joint_type: str) -> str:
-        joint_note = (
-            "当前为螺纹孔连接：自动柔度会把螺纹啮合区按等效附加长度计入螺栓柔度。"
-            if joint_type == "tapped"
-            else "当前为通孔连接：自动柔度会把螺母侧附加变形按等效附加长度计入螺栓柔度。"
+        joint_note = bolt_help.DIAGRAM_HELP_JOINT_NOTES.get(
+            joint_type,
+            bolt_help.DIAGRAM_HELP_JOINT_NOTES["tapped"],
         )
-        return (
-            "FM=装配预紧力，FA=工作外载，FK=残余夹紧力。\n"
-            "柔度 δ 表示单位载荷引起的弹性变形，定义为 δ = Δl / F，单位 mm/N；"
-            "它和刚度 k 互为倒数，即 k = 1 / δ。δ 越大，连接越软；δ 越小，连接越硬。\n"
-            "本页中螺栓柔度 δs 主要由有效长度 l_eff、材料弹性模量 E_bolt 和应力面积 As 决定；"
-            "被夹件柔度 δp 主要由夹紧长度 lK、材料弹性模量 E_clamped、支承内径/等效外径 DA 决定。"
-            "自动计算会按几何和材料估算 δs/δp，手动输入则直接采用工程经验值。\n"
-            "后续载荷分配按 phi = δp / (δs + δp) 进入计算。"
-            f"{joint_note}"
-        )
+        return f"{bolt_help.DIAGRAM_HELP_BASE}{joint_note}"
 
     def _sync_joint_diagram_from_ui(self, *_args) -> None:
         jt_widget = self._field_widgets.get("elements.joint_type")
@@ -2354,6 +2184,7 @@ class BoltPage(QWidget):
                 "check_level": self._current_check_level(),
                 "calculation_mode": self.calc_mode_combo.currentData() or "design",
             },
+            module_id=MODULE_ID,
         )
         fastener = snapshot.setdefault("inputs", {}).setdefault("fastener", {})
         d_raw = self._resolve_thread_d()
@@ -2371,6 +2202,14 @@ class BoltPage(QWidget):
         ui_state = ui_state_data if isinstance(ui_state_data, dict) else {}
         options_data = inputs.get("options")
         options = options_data if isinstance(options_data, dict) else {}
+        fastener_data = inputs.get("fastener")
+        fastener = fastener_data if isinstance(fastener_data, dict) else {}
+        operating_data = inputs.get("operating")
+        operating = operating_data if isinstance(operating_data, dict) else {}
+        stiffness_data = inputs.get("stiffness")
+        stiffness = stiffness_data if isinstance(stiffness_data, dict) else {}
+        bearing_data = inputs.get("bearing")
+        bearing = bearing_data if isinstance(bearing_data, dict) else {}
         clamped_data = inputs.get("clamped")
         clamped = clamped_data if isinstance(clamped_data, dict) else {}
 
@@ -2411,6 +2250,30 @@ class BoltPage(QWidget):
             if restore_map is None:
                 return raw_text
             return restore_map.get(raw_text, raw_text)
+
+        def _float_or_none(raw: Any) -> float | None:
+            try:
+                return float(str(raw).strip())
+            except (TypeError, ValueError):
+                return None
+
+        def _numbers_match(raw: Any, preset: Any, *, tolerance: float = 1e-9) -> bool:
+            raw_num = _float_or_none(raw)
+            preset_num = _float_or_none(preset)
+            if raw_num is None or preset_num is None:
+                return False
+            relative_tol = abs(preset_num) * 1e-6
+            return abs(raw_num - preset_num) <= max(tolerance, relative_tol)
+
+        def _set_combo_text(field_id: str, text: str) -> bool:
+            widget = self._field_widgets.get(field_id)
+            if not isinstance(widget, QComboBox):
+                return False
+            idx = widget.findText(text)
+            if idx < 0:
+                return False
+            widget.setCurrentIndex(idx)
+            return True
 
         self._clear()
         for spec in self._field_specs.values():
@@ -2500,6 +2363,113 @@ class BoltPage(QWidget):
             idx = widget.findText(restored_text)
             if idx >= 0:
                 widget.setCurrentIndex(idx)
+
+        if "fastener.grade" not in ui_state and fastener.get("Rp02") not in (None, ""):
+            rp02_raw = fastener.get("Rp02")
+            rp02_value = _float_or_none(rp02_raw)
+            grade_widget = self._field_widgets.get("fastener.grade")
+            rp02_widget = self._field_widgets.get("fastener.Rp02")
+            if isinstance(grade_widget, QComboBox) and isinstance(rp02_widget, QLineEdit):
+                matched_grade = None
+                if rp02_value is not None:
+                    for grade_name, preset in BOLT_GRADE_TABLE.items():
+                        if abs(float(preset) - rp02_value) <= 0.5:
+                            matched_grade = grade_name
+                            break
+                if matched_grade is not None:
+                    if _set_combo_text("fastener.grade", matched_grade):
+                        self._on_grade_changed(matched_grade)
+                else:
+                    _set_combo_text("fastener.grade", "自定义")
+                    rp02_widget.setText(str(rp02_raw))
+                    rp02_widget.setReadOnly(False)
+
+        def _restore_thermal_material(
+            material_field_id: str,
+            alpha_field_id: str,
+            e_field_id: str,
+            alpha_raw: Any,
+            e_raw: Any,
+        ) -> None:
+            if material_field_id in ui_state:
+                return
+            has_alpha = alpha_raw not in (None, "")
+            has_e = e_raw not in (None, "")
+            if not has_alpha and not has_e:
+                return
+
+            material_widget = self._field_widgets.get(material_field_id)
+            alpha_widget = self._field_widgets.get(alpha_field_id)
+            e_widget = self._field_widgets.get(e_field_id)
+            if not isinstance(material_widget, QComboBox):
+                return
+
+            matched_material = None
+            for index in range(material_widget.count()):
+                material_name = material_widget.itemText(index)
+                if material_name == "自定义":
+                    continue
+                alpha_preset = THERMAL_EXPANSION_PRESETS.get(material_name)
+                e_preset = ELASTIC_MODULUS_PRESETS.get(material_name)
+                alpha_ok = not has_alpha or (
+                    alpha_preset is not None and _numbers_match(alpha_raw, alpha_preset)
+                )
+                e_ok = not has_e or (
+                    e_preset is not None and _numbers_match(e_raw, e_preset)
+                )
+                if alpha_ok and e_ok:
+                    matched_material = material_name
+                    break
+
+            if matched_material is not None:
+                material_widget.setCurrentText(matched_material)
+                if isinstance(alpha_widget, QLineEdit):
+                    alpha_widget.setText(
+                        str(alpha_raw) if has_alpha else THERMAL_EXPANSION_PRESETS[matched_material]
+                    )
+                    alpha_widget.setReadOnly(True)
+                if isinstance(e_widget, QLineEdit):
+                    e_widget.setText(str(e_raw) if has_e else ELASTIC_MODULUS_PRESETS[matched_material])
+                return
+
+            material_widget.setCurrentText("自定义")
+            if isinstance(alpha_widget, QLineEdit):
+                alpha_widget.setText(str(alpha_raw) if has_alpha else "")
+                alpha_widget.setReadOnly(False)
+            if isinstance(e_widget, QLineEdit) and has_e:
+                e_widget.setText(str(e_raw))
+
+        _restore_thermal_material(
+            "operating.bolt_material",
+            "operating.alpha_bolt",
+            "stiffness.E_bolt",
+            operating.get("alpha_bolt"),
+            stiffness.get("E_bolt"),
+        )
+        _restore_thermal_material(
+            "operating.clamped_material",
+            "operating.alpha_parts",
+            "stiffness.E_clamped",
+            operating.get("alpha_parts"),
+            stiffness.get("E_clamped"),
+        )
+
+        if "bearing.bearing_material" not in ui_state and bearing.get("p_G_allow") not in (None, ""):
+            bearing_material_widget = self._field_widgets.get("bearing.bearing_material")
+            bearing_allow_widget = self._field_widgets.get("bearing.p_G_allow")
+            if isinstance(bearing_material_widget, QComboBox):
+                matched_bearing = None
+                for material_name, preset in BEARING_MATERIAL_PRESETS.items():
+                    if _numbers_match(bearing["p_G_allow"], preset, tolerance=0.5):
+                        matched_bearing = material_name
+                        break
+                if matched_bearing is not None:
+                    bearing_material_widget.setCurrentText(matched_bearing)
+                else:
+                    bearing_material_widget.setCurrentText("自定义")
+                    if isinstance(bearing_allow_widget, QLineEdit):
+                        bearing_allow_widget.setText(str(bearing["p_G_allow"]))
+                        bearing_allow_widget.setReadOnly(False)
 
         # ---------- 多层被夹件 fallback 恢复（用于加载原始 payload JSON）----------
         # 正常 save/load 流程中，通用循环已通过 ui_state 恢复所有层字段。
@@ -2601,6 +2571,7 @@ class BoltPage(QWidget):
         case_widget = self._field_widgets.get("operating.setup_case")
         if isinstance(case_widget, QComboBox):
             self._on_setup_case_changed(case_widget.currentText())
+        self._mark_results_dirty()
 
     def _load_sample(self, filename: str) -> None:
         sample_path = EXAMPLES_DIR / filename
@@ -2608,13 +2579,19 @@ class BoltPage(QWidget):
             QMessageBox.warning(self, "测试案例不存在", f"未找到测试案例文件: {sample_path}")
             return
         try:
-            data = read_input_conditions(sample_path)
+            data = validate_snapshot(read_input_conditions(sample_path))
         except json.JSONDecodeError as exc:
             QMessageBox.critical(self, "测试案例损坏", f"测试案例文件不是有效 JSON：{exc}")
+            return
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
+        if not confirm_snapshot_module(self, data, MODULE_ID):
             return
 
         self._apply_input_data(data)
         self.info_label.setText(f"已加载测试案例：{filename}。可直接切换章节核对参数。")
+        self._mark_results_dirty()
 
     def _save_input_conditions(self) -> None:
         default_path = SAVED_INPUTS_DIR / "bolt_input_conditions.json"
@@ -2633,15 +2610,20 @@ class BoltPage(QWidget):
         if in_path is None:
             return
         try:
-            data = read_input_conditions(in_path)
+            data = validate_snapshot(read_input_conditions(in_path))
         except FileNotFoundError:
             QMessageBox.warning(self, "文件不存在", f"未找到输入条件文件：{in_path}")
             return
         except json.JSONDecodeError as exc:
             QMessageBox.critical(self, "文件损坏", f"输入条件文件不是有效 JSON：{exc}")
             return
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
         except OSError as exc:
             QMessageBox.critical(self, "加载失败", f"输入条件加载失败：{exc}")
+            return
+        if not confirm_snapshot_module(self, data, MODULE_ID):
             return
 
         self._apply_input_data(data)
@@ -2665,6 +2647,23 @@ class BoltPage(QWidget):
         self.thread_triangle_widget.set_thread_forces(0.0, 0.0, 0.0)
         self._apply_check_level_visibility()
         self.info_label.setText("参数已重置为默认值。")
+        self._mark_results_dirty()
+
+    def _mark_results_dirty(self) -> None:
+        """输入变更后禁用导出，防止报告与当前屏幕输入不一致。"""
+        self.btn_save.setEnabled(False)
+
+    def _mark_results_fresh(self) -> None:
+        """计算和渲染完整成功后允许导出。"""
+        self.btn_save.setEnabled(True)
+
+    def _connect_dirty_signals(self) -> None:
+        """将用户输入变更连接到导出失效。"""
+        for widget in self._field_widgets.values():
+            if isinstance(widget, QLineEdit):
+                widget.textEdited.connect(self._mark_results_dirty)
+            elif isinstance(widget, QComboBox):
+                widget.currentIndexChanged.connect(self._mark_results_dirty)
 
     def _read_widget_value(self, spec: FieldSpec) -> str:
         widget = self._field_widgets[spec.field_id]
@@ -2680,6 +2679,8 @@ class BoltPage(QWidget):
             raw = widget.text().strip() if isinstance(widget, QLineEdit) else ""
             if not raw:
                 raise InputError(f"字段 [{label}] 不能为空，请输入数字。")
+            if _NUMBER_RE.fullmatch(raw) is None:
+                raise InputError(f"字段 [{label}] 请输入数字，当前值: {raw}")
             try:
                 return float(raw)
             except ValueError as exc:
@@ -2856,34 +2857,56 @@ class BoltPage(QWidget):
             QMessageBox.critical(self, "计算异常", str(exc))
             return
 
+        try:
+            self._render_result(payload, result)
+            self.flowchart_nav.update_from_result(result)
+            for r_page in self._r_pages:
+                r_page.build_input_echo(self._field_specs, self._field_widgets, result)
+                r_page.update_from_result(result, self._field_widgets)
+        except Exception as exc:  # noqa: BLE001
+            self._last_payload = None
+            self._last_result = None
+            self._mark_results_dirty()
+            QMessageBox.critical(self, "渲染异常", f"结果展示失败：{exc}")
+            self.info_label.setText(f"结果渲染失败：{exc}")
+            return
+
         self._last_payload = payload
         self._last_result = result
-        self._render_result(payload, result)
-
-        # Update flowchart navigation nodes
-        self.flowchart_nav.update_from_result(result)
-        # Update R detail pages
-        for r_page in self._r_pages:
-            r_page.build_input_echo(self._field_specs, self._field_widgets, result)
-            r_page.update_from_result(result, self._field_widgets)
+        self._mark_results_fresh()
 
         # Jump to result chapter after run.
         self.chapter_list.setCurrentRow(self.chapter_list.count() - 1)
 
     def _render_result(self, payload: dict[str, Any], result: dict[str, Any]) -> None:
-        overall = bool(result.get("overall_pass"))
+        overall_status = str(
+            result.get("overall_status", "pass" if result.get("overall_pass") else "fail")
+        )
         checks = result.get("checks", {})
         level = str(result.get("check_level", self._current_check_level()))
 
-        title = "校核通过" if overall else "校核不通过"
-        summary = (
-            "该工况满足当前模型下全部分项要求。"
-            if overall
-            else "该工况存在未满足项，请查看下方分项状态与调整建议。"
-        )
+        if overall_status == "pass":
+            title = "校核通过"
+            summary = "该工况满足当前模型下全部分项要求。"
+        elif overall_status == "incomplete":
+            title = "校核结论不完整"
+            summary = "无分项不通过，但存在未校核项（见'已跳过'徽章与警告），请补充输入后重新校核。"
+        else:
+            title = "校核不通过"
+            summary = "该工况存在未满足项，请查看下方分项状态与调整建议。"
         self.result_title.setText(title)
         self.result_summary.setText(summary)
-        self._set_badge(self.overall_badge, "总体通过" if overall else "总体不通过", overall)
+        if overall_status == "incomplete":
+            self.overall_badge.setText("结论不完整")
+            self.overall_badge.setObjectName("WaitBadge")
+            self.overall_badge.style().unpolish(self.overall_badge)
+            self.overall_badge.style().polish(self.overall_badge)
+        else:
+            self._set_badge(
+                self.overall_badge,
+                "总体通过" if overall_status == "pass" else "总体不通过",
+                overall_status == "pass",
+            )
 
         for key, badge in self._check_badges.items():
             if key == "residual_clamp_ok" and result.get("calculation_mode") == "design":
@@ -3008,6 +3031,9 @@ class BoltPage(QWidget):
                 recs.append("[建议] 螺纹脱扣不通过（壳体侧）：可加深旋合深度、换用更高强度壳体材料、或加大螺栓规格。")
             else:
                 recs.append("[建议] 螺纹脱扣不通过（螺栓侧）：可加深旋合深度或提高螺栓强度等级。")
+        not_checked = result.get("not_checked", [])
+        if not recs and not_checked:
+            recs.append("[建议] 当前结论不完整：请补充 " + "、".join(not_checked) + " 后重新校核。")
         if not recs:
             recs.append("[建议] 当前工况满足全部校核。建议保留 10% 以上工程裕量。")
         return recs
@@ -3025,26 +3051,30 @@ class BoltPage(QWidget):
         if not file_path:
             return
         out_path = Path(file_path)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        suffix = out_path.suffix.lower()
-        if suffix == ".pdf":
-            report_lines = self._build_report_lines()
-            used_rich_pdf = _export_bolt_pdf_report(
-                out_path,
-                self._last_payload,
-                self._last_result,
-                report_lines,
-            )
-            if not used_rich_pdf:
-                self.info_label.setText(
-                    f"校核报告已导出: {out_path}（当前环境未安装 reportlab，已使用基础 PDF 导出）"
+        try:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            suffix = out_path.suffix.lower()
+            if suffix == ".pdf":
+                report_lines = self._build_report_lines()
+                used_rich_pdf = _export_bolt_pdf_report(
+                    out_path,
+                    self._last_payload,
+                    self._last_result,
+                    report_lines,
                 )
-                return
-        elif suffix == ".docx":
-            from app.ui.report_export import _export_docx
-            _export_docx(out_path, self._build_report_lines())
-        else:
-            out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
+                if not used_rich_pdf:
+                    self.info_label.setText(
+                        f"校核报告已导出: {out_path}（当前环境未安装 reportlab，已使用基础 PDF 导出）"
+                    )
+                    return
+            elif suffix == ".docx":
+                from app.ui.report_export import _export_docx
+                _export_docx(out_path, self._build_report_lines())
+            else:
+                out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
+        except (ReportExportError, OSError) as exc:
+            QMessageBox.critical(self, "导出失败", f"导出失败：{exc}")
+            return
         self.info_label.setText(f"校核报告已导出: {out_path}")
 
     def _build_report_lines(self) -> list[str]:
@@ -3063,7 +3093,10 @@ class BoltPage(QWidget):
             f"生成时间: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             f"校核层级: {result.get('check_level', self._current_check_level())}",
             "",
-            f"总体结论: {'通过' if result['overall_pass'] else '不通过'}",
+            "总体结论: " + _OVERALL_STATUS_TEXT.get(
+                str(result.get("overall_status", "pass" if result.get("overall_pass") else "fail")),
+                "不通过",
+            ),
             "",
             "分项结果:",
         ]

@@ -486,6 +486,51 @@ class WormCalculatorTests(unittest.TestCase):
         # F_r = F_t2·tan(α_n)/cos(γ)，α_n=20° 下典型比值 0.36~0.40
         self.assertLess(forces["radial_force_wheel_n"] / f_t2, 0.6)
 
+    def test_operating_temp_above_plastic_surface_limit_warns_in_load_capacity(self):
+        data = self._base_payload()
+        data["advanced"]["operating_temp_c"] = 120.0
+
+        result = calculate_worm_geometry(data)
+
+        warnings = result["load_capacity"]["warnings"]
+        self.assertTrue(
+            any("允许表面温度" in warning for warning in warnings),
+            f"load_capacity warnings should mention 允许表面温度, got {warnings!r}",
+        )
+
+    def test_negative_worm_root_diameter_raises_input_error(self):
+        data = self._base_payload()
+        data["geometry"].update(
+            {
+                "z1": 1.0,
+                "diameter_factor_q": 1.0,
+                "lead_angle_deg": 45.0,
+                "center_distance_mm": 80.0,
+                "x1": -0.5,
+                "x2": 0.0,
+            }
+        )
+
+        with self.assertRaisesRegex(InputError, "q/m/x.*几何不可行"):
+            calculate_worm_geometry(data)
+
+    def test_negative_wheel_root_diameter_raises_input_error(self):
+        data = self._base_payload()
+        data["geometry"].update(
+            {
+                "z1": 1.0,
+                "z2": 1.0,
+                "diameter_factor_q": 10.0,
+                "lead_angle_deg": 5.71,
+                "center_distance_mm": 40.0,
+                "x1": 0.0,
+                "x2": -0.5,
+            }
+        )
+
+        with self.assertRaisesRegex(InputError, "q/m/x.*几何不可行"):
+            calculate_worm_geometry(data)
+
     # ---- Regression tests: efficiency boundary and warnings ----
 
     def test_low_lead_angle_high_friction_efficiency_not_clamped(self) -> None:
@@ -577,6 +622,34 @@ class WormCalculatorTests(unittest.TestCase):
         sc = result["load_capacity"]["stress_curve"]
         self.assertGreaterEqual(sc["sigma_h_peak_mpa"], sc["sigma_h_nominal_mpa"])
         self.assertGreaterEqual(sc["sigma_f_peak_mpa"], sc["sigma_f_nominal_mpa"])
+
+    def test_contact_nominal_matches_stress_curve_nominal(self) -> None:
+        """判定链与曲线链在分度圆同点的名义接触应力必须一致。
+
+        review CALC-5：旧判定链按双外凸取 rho_eq，低估应力约 2.5 倍。
+        Ref: spec 2026-07-02 §D5。
+        """
+        result = calculate_worm_geometry(self._base_payload())
+        lc = result["load_capacity"]
+        judged = lc["contact"]["sigma_hm_nominal_mpa"]
+        curve = lc["stress_curve"]["sigma_h_nominal_mpa"]
+        self.assertAlmostEqual(judged / curve, 1.0, places=9)
+
+    def test_equivalent_radius_uses_concave_lead_angle_model(self) -> None:
+        """rho_eq = rho1*rho2/(rho2-rho1)，rho1=r1*sin(gamma)，rho2=a-r1。Ref: spec §D5。"""
+        payload = self._base_payload()
+        result = calculate_worm_geometry(payload)
+        lc = result["load_capacity"]
+        geometry = result["geometry"]
+        r1 = geometry["pitch_diameter_worm_mm"] / 2.0
+        gamma = math.radians(geometry["lead_angle_deg"])
+        a = payload["geometry"]["center_distance_mm"]
+        rho1 = max(r1 * math.sin(gamma), 0.1)
+        rho2 = max(a - r1, 0.1)
+        expected = (rho1 * rho2) / (rho2 - rho1)
+        self.assertAlmostEqual(
+            lc["contact"]["equivalent_radius_mm"] / expected, 1.0, places=6
+        )
 
     def test_stress_curve_not_present_when_lc_disabled(self) -> None:
         payload = self._base_payload()

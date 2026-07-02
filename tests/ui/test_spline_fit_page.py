@@ -166,6 +166,7 @@ class TestSplineFitPage:
         page = SplineFitPage()
 
         page._widgets["loads.torque_required_nm"].setText("100000")
+        page._recalc_timer.timeout.emit()
         app.processEvents()
 
         assert page._result_labels["a_badge"].text() == "FAIL"

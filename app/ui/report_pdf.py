@@ -61,6 +61,14 @@ def build_bolt_recommendations(result: Dict[str, Any]) -> list[str]:
             recs.append("\u87ba\u7eb9\u8131\u6263\u4e0d\u901a\u8fc7\uff08\u58f3\u4f53\u4fa7\uff09\uff1a\u53ef\u52a0\u6df1\u65cb\u5408\u6df1\u5ea6\u3001\u6362\u66f4\u9ad8\u5f3a\u5ea6\u58f3\u4f53\u6750\u6599\u3002")
         else:
             recs.append("\u87ba\u7eb9\u8131\u6263\u4e0d\u901a\u8fc7\uff08\u87ba\u6813\u4fa7\uff09\uff1a\u53ef\u52a0\u6df1\u65cb\u5408\u6df1\u5ea6\u6216\u63d0\u9ad8\u87ba\u6813\u5f3a\u5ea6\u7b49\u7ea7\u3002")
+    not_checked = result.get("not_checked", [])
+    if not recs and not_checked:
+        # incomplete\uff1a\u5b58\u5728\u672a\u6821\u6838\u9879\uff08\u5982 R7/R8\uff09\uff0c\u4e0d\u5f97\u7ed9\u51fa"\u6ee1\u8db3\u5168\u90e8\u6821\u6838"\u7684\u7eff\u706f\u7ed3\u8bba
+        recs.append(
+            "\u5f53\u524d\u7ed3\u8bba\u4e0d\u5b8c\u6574\uff1a\u5b58\u5728\u672a\u6821\u6838\u9879\uff08"
+            + "\u3001".join(str(x) for x in not_checked)
+            + "\uff09\uff0c\u8bf7\u8865\u5145\u8f93\u5165\u540e\u91cd\u65b0\u6821\u6838\u3002"
+        )
     if not recs:
         recs.append("\u5f53\u524d\u5de5\u51b5\u6ee1\u8db3\u5168\u90e8\u6821\u6838\u3002\u5efa\u8bae\u4fdd\u7559 10% \u4ee5\u4e0a\u5de5\u7a0b\u88d5\u91cf\u3002")
     return recs
@@ -127,7 +135,9 @@ def generate_bolt_report(
     elements.append(Spacer(1, 8))
 
     # -- Overall verdict --
-    overall = result.get("overall_pass", False)
+    # 读取三态结论（pass/fail/incomplete），与 UI 徽章、文本报告口径一致；
+    # 缺 overall_status 时回退到旧的 overall_pass 布尔语义。
+    overall = result.get("overall_status", "pass" if result.get("overall_pass") else "fail")
     joint_type = result.get("joint_type", "tapped")
     check_level = result.get("check_level", "basic")
     method = result.get("tightening_method", "torque")

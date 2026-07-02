@@ -26,6 +26,27 @@ def _base_input() -> dict:
     }
 
 
+def _full_r7_r8_inputs() -> dict:
+    """带 R7/R8 完整输入的基准 payload（spec D3 完整绿灯路径）。"""
+    return {
+        "fastener": {"d": 12, "p": 1.75, "Rp02": 900},
+        "tightening": {
+            "alpha_A": 1.4,
+            "mu_thread": 0.12,
+            "mu_bearing": 0.12,
+            "utilization": 0.9,
+        },
+        "loads": {"FA_max": 5000, "seal_force_required": 1000},
+        "stiffness": {"bolt_stiffness": 300000, "clamped_stiffness": 900000},
+        "bearing": {
+            "bearing_d_inner": 13,
+            "bearing_d_outer": 20,
+            "p_G_allow": 600,
+        },
+        "thread_strip": {"m_eff": 10, "tau_BM": 500},
+    }
+
+
 class TestPhiNHardBlock:
     def test_phi_n_ge_1_raises_input_error(self):
         data = _base_input()
@@ -45,6 +66,30 @@ class TestPhiNHardBlock:
         result = calculate_vdi2230_core(data)
         for w in result.get("warnings", []):
             assert "phi_n" not in w.lower()
+
+
+class TestD13Validation:
+    def test_fastener_nominal_diameter_non_numeric_raises_chinese_input_error(self):
+        data = _base_input()
+        data["fastener"]["d"] = "M12"
+
+        with pytest.raises(InputError, match="必须为数字"):
+            calculate_vdi2230_core(data)
+
+    def test_yield_safety_operating_below_one_is_rejected(self):
+        data = _base_input()
+        data["checks"]["yield_safety_operating"] = 0.3
+
+        with pytest.raises(InputError, match="必须 >= 1"):
+            calculate_vdi2230_core(data)
+
+    def test_slip_friction_coefficient_above_one_is_rejected_when_slip_required(self):
+        data = _base_input()
+        data["loads"]["FQ_max"] = 1000.0
+        data["loads"]["slip_friction_coefficient"] = 1.5
+
+        with pytest.raises(InputError, match="摩擦系数"):
+            calculate_vdi2230_core(data)
 
 
 class TestBearingPressureR7:
@@ -437,6 +482,9 @@ class TestAdditionalLoadReference:
     def test_overall_pass_ignores_additional_load(self):
         """overall_pass 不受附加载荷估算影响 — 正式校核全过即 overall_pass=True。"""
         data = _base_input()
+        # 2026-07-02 spec D3：overall_pass=True 必须代表 R7/R8 也已执行并通过。
+        data["bearing"]["p_G_allow"] = 700.0
+        data["thread_strip"] = {"m_eff": 12.0, "tau_BM": 350.0}
         result = calculate_vdi2230_core(data)
         assert result["overall_pass"] is True
         assert "additional_load_ok" not in result["checks"]
@@ -592,6 +640,57 @@ class TestR5TorsionResidual:
 
 
 class TestFatigueModelImproved:
+    def test_goodman_no_artificial_floor_high_mean_stress_fails_fatigue(self):
+        """sigma_m >= 0.9*Rp0.2 时 Goodman 因子必须为 0，疲劳直接不通过。
+
+        Ref: spec 2026-07-02 §D1 / review CALC-1。
+        """
+        data = {
+            "fastener": {"d": 20, "p": 1.0, "Rp02": 900},
+            "tightening": {
+                "alpha_A": 1.0,
+                "mu_thread": 0.03,
+                "mu_bearing": 0.03,
+                "utilization": 0.999,
+            },
+            "loads": {"FA_max": 5, "seal_force_required": 242565},
+            "stiffness": {"bolt_stiffness": 800000, "clamped_stiffness": 8000000},
+            "bearing": {"bearing_d_inner": 21, "bearing_d_outer": 22},
+            "checks": {"yield_safety_operating": 1.0},
+            "options": {"check_level": "fatigue"},
+        }
+        result = calculate_vdi2230_core(data)
+        fatigue = result["fatigue"]
+        assert fatigue["sigma_m"] >= 0.9 * 900
+        assert fatigue["goodman_factor"] == 0.0
+        assert fatigue["goodman_factor_raw"] <= 0.0
+        assert fatigue["sigma_a_allow"] == 0.0
+        assert result["checks"]["fatigue_ok"] is False
+        assert result["overall_pass"] is False
+        assert any("Goodman" in w or "平均应力" in w for w in result["warnings"])
+
+    def test_goodman_low_but_positive_factor_warns(self):
+        """0 < raw < 0.1 时不再托底到 0.1，且给出裕度极小警告。Ref: spec §D1。"""
+        data = {
+            "fastener": {"d": 20, "p": 1.0, "Rp02": 900},
+            "tightening": {
+                "alpha_A": 1.0,
+                "mu_thread": 0.03,
+                "mu_bearing": 0.03,
+                "utilization": 0.93,
+            },
+            "loads": {"FA_max": 5, "seal_force_required": 225000},
+            "stiffness": {"bolt_stiffness": 800000, "clamped_stiffness": 8000000},
+            "bearing": {"bearing_d_inner": 21, "bearing_d_outer": 22},
+            "checks": {"yield_safety_operating": 1.0},
+            "options": {"check_level": "fatigue"},
+        }
+        result = calculate_vdi2230_core(data)
+        raw = result["fatigue"]["goodman_factor_raw"]
+        assert 0.0 < raw < 0.1
+        assert result["fatigue"]["goodman_factor"] == raw
+        assert any("Goodman 因子偏低" in w for w in result["warnings"])
+
     def test_fatigue_uses_asv_table_not_018_rp02(self):
         """M10 螺栓疲劳极限应使用 σ_ASV 查表值，而非 0.18×Rp02。"""
         data = _base_input()
@@ -644,6 +743,96 @@ class TestFatigueModelImproved:
         fatigue = result["fatigue"]
         # M14: 39, M16: 38 → M15 应介于之间
         assert 37.5 < fatigue["sigma_ASV"] < 39.5
+
+
+class TestThreadSectionConsistency:
+    def test_stale_thread_section_rejected(self):
+        """d/p 为 M8 但 As/d2/d3 残留 M20 值时必须抛 InputError。
+
+        Ref: spec 2026-07-02 §D2 / review CALC-2。
+        """
+        data = {
+            "fastener": {
+                "d": 8,
+                "p": 1.25,
+                "Rp02": 900,
+                "As": 244.8,
+                "d2": 18.38,
+                "d3": 16.93,
+            },
+            "tightening": {
+                "alpha_A": 1.6,
+                "mu_thread": 0.12,
+                "mu_bearing": 0.12,
+                "utilization": 0.9,
+            },
+            "loads": {"FA_max": 8000, "seal_force_required": 14000},
+            "stiffness": {"bolt_stiffness": 150000, "clamped_stiffness": 700000},
+            "bearing": {"bearing_d_inner": 9, "bearing_d_outer": 14},
+        }
+        with pytest.raises(InputError, match="不一致"):
+            calculate_vdi2230_core(data)
+
+    def test_consistent_thread_section_accepted(self):
+        """用户提供与 d/p 一致（<1% 偏差）的截面值时正常计算。Ref: spec §D2。"""
+        d, p = 12.0, 1.75
+        data = {
+            "fastener": {
+                "d": d,
+                "p": p,
+                "Rp02": 900,
+                "As": math.pi / 4.0 * (d - 0.9382 * p) ** 2,
+                "d2": d - 0.64952 * p,
+                "d3": d - 1.22687 * p,
+            },
+            "tightening": {
+                "alpha_A": 1.4,
+                "mu_thread": 0.12,
+                "mu_bearing": 0.12,
+                "utilization": 0.9,
+            },
+            "loads": {"FA_max": 5000, "seal_force_required": 1000},
+            "stiffness": {"bolt_stiffness": 300000, "clamped_stiffness": 900000},
+            "bearing": {"bearing_d_inner": 13, "bearing_d_outer": 20},
+        }
+        result = calculate_vdi2230_core(data)
+        assert result["derived_geometry_mm"]["As"] > 0
+
+
+class TestOverallStatus:
+    def test_missing_r7_r8_marks_incomplete_not_pass(self):
+        """缺 R7/R8 输入时 overall_status=incomplete，不给绿灯。
+
+        Ref: spec 2026-07-02 §D3 / review CALC-3。
+        """
+        data = _full_r7_r8_inputs()
+        data["bearing"].pop("p_G_allow")
+        data.pop("thread_strip")
+        result = calculate_vdi2230_core(data)
+        assert "bearing_pressure_ok" not in result["checks"]
+        assert "thread_strip_ok" not in result["checks"]
+        assert result["overall_status"] == "incomplete"
+        assert result["overall_pass"] is False
+        assert "R7 支承面压强" in result["not_checked"]
+        assert "R8 螺纹脱扣" in result["not_checked"]
+        assert any("未执行" in w for w in result["warnings"])
+
+    def test_full_r7_r8_inputs_can_reach_pass(self):
+        """提供 R7/R8 完整输入且全部通过时 overall_status=pass。Ref: spec §D3。"""
+        result = calculate_vdi2230_core(_full_r7_r8_inputs())
+        assert result["overall_status"] == "pass"
+        assert result["overall_pass"] is True
+        assert result["not_checked"] == []
+
+    def test_active_fail_beats_incomplete(self):
+        """已执行项失败时 overall_status=fail（优先级高于 incomplete）。Ref: spec §D3。"""
+        data = _full_r7_r8_inputs()
+        data["bearing"].pop("p_G_allow")
+        data.pop("thread_strip")
+        data["loads"]["FA_max"] = 10_000_000
+        result = calculate_vdi2230_core(data)
+        assert result["overall_status"] == "fail"
+        assert result["overall_pass"] is False
 
 
 class TestAutoCompliance:

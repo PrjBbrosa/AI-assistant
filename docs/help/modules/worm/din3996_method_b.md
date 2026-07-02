@@ -34,7 +34,7 @@
 > **重要口径声明**：本模块不是完整的 DIN 3996:2019 Method B 实现，而是"Method B 风格的工程简化估算器"。以下描述均指本模块内部实现，**未与原始标准逐条比对**。正式设计评审请以 DIN 3996 原文为准。
 
 **已实现（简化子集）**：
-- **齿面应力**：线接触 Hertz 近似计算 σH（`core/worm/calculator.py:_mean_hertz_stress`），而非 Method B 的 ZH/ZE/Zβ 系数链条
+- **齿面应力**：线接触 Hertz 最大压力 p0 近似计算 σH（`core/worm/calculator.py:_hertz_contact_stress`），等效曲率采用凸-凹接触与蜗杆导程角投影修正（2026-07-02 D5 与啮合应力曲线统一），而非 Method B 的 ZH/ZE/Zβ 系数链条
 - **齿根应力**：等效悬臂梁近似 σF = M·6/(b·s²)（`_root_stress`），而非 Method B 的 YF/YS/Yβ 链条
 - **载荷修正**：KA / Kv / KHα / KHβ 四个系数支持手工输入（无内置查表）
 - **许用应力库**：**仅**钢-塑料副（PA66、PA66+GF30）内置默认值；钢-青铜副需用户手工填入

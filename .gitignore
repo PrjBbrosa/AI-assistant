@@ -21,3 +21,8 @@ dist/
 
 # Logs
 *.log
+
+# Runtime report/input artifacts
+/worm_report.pdf
+*_report.pdf
+saved_inputs/

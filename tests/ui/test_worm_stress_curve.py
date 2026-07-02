@@ -1,5 +1,6 @@
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -27,6 +28,12 @@ class WormStressCurveWidgetTests(unittest.TestCase):
         self.app.processEvents()
         pixmap = widget.grab()
         self.assertGreater(pixmap.size().width(), 0)
+
+    def test_stress_curve_widget_configures_matplotlib_fonts_on_construct(self) -> None:
+        with patch("app.ui.widgets.worm_stress_curve.configure_matplotlib_fonts") as mock_config:
+            WormStressCurveWidget()
+
+        mock_config.assert_called_once()
 
     def test_stress_curve_widget_clears_on_empty(self) -> None:
         widget = WormStressCurveWidget()

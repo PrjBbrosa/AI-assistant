@@ -1,6 +1,9 @@
 import math
 import os
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -49,6 +52,23 @@ class BoltTappedAxialPageTests(unittest.TestCase):
         self.assertEqual(payload["assembly"]["tightening_method"], "torque")
         self.assertEqual(payload["fatigue"]["surface_treatment"], "rolled")
         self.assertEqual(payload["options"]["report_mode"], "full")
+
+    def test_numeric_fields_reject_fullwidth_and_underscore_literals(self) -> None:
+        page = BoltTappedAxialPage()
+
+        for raw in ("1_000", "１２", "+1000", ".5", "1."):
+            with self.subTest(raw=raw):
+                page._field_widgets["service.FA_max"].setText(raw)  # type: ignore[attr-defined]
+                with self.assertRaisesRegex(ValueError, "有效数字"):
+                    page._build_payload()
+
+    def test_numeric_fields_accept_scientific_notation(self) -> None:
+        page = BoltTappedAxialPage()
+        page._field_widgets["service.FA_max"].setText("1.5e3")  # type: ignore[attr-defined]
+
+        payload = page._build_payload()
+
+        self.assertEqual(payload["service"]["FA_max"], 1500.0)
 
     def test_snapshot_round_trip_preserves_service_range_and_surface_treatment(self) -> None:
         page = BoltTappedAxialPage()
@@ -172,9 +192,11 @@ class BoltTappedAxialPageTests(unittest.TestCase):
     def test_export_buttons_disabled_until_calculate(self) -> None:
         page = BoltTappedAxialPage()
         self.assertFalse(page.btn_export_pdf.isEnabled())
+        self.assertFalse(page.btn_export_text.isEnabled())
         page._field_widgets["service.FA_max"].setText("2000")  # type: ignore[attr-defined]
         page._run_calculation()
         self.assertTrue(page.btn_export_pdf.isEnabled())
+        self.assertTrue(page.btn_export_text.isEnabled())
 
     def test_input_change_invalidates_cache_and_exports(self) -> None:
         page = BoltTappedAxialPage()
@@ -186,6 +208,7 @@ class BoltTappedAxialPageTests(unittest.TestCase):
         self.assertIsNone(page._last_result)
         self.assertIsNone(page._last_payload)
         self.assertFalse(page.btn_export_pdf.isEnabled())
+        self.assertFalse(page.btn_export_text.isEnabled())
 
     def test_clear_invalidates_cache_and_exports(self) -> None:
         page = BoltTappedAxialPage()
@@ -196,6 +219,7 @@ class BoltTappedAxialPageTests(unittest.TestCase):
         self.assertIsNone(page._last_result)
         self.assertIsNone(page._last_payload)
         self.assertFalse(page.btn_export_pdf.isEnabled())
+        self.assertFalse(page.btn_export_text.isEnabled())
 
     def test_apply_input_data_invalidates_cache(self) -> None:
         page = BoltTappedAxialPage()
@@ -206,6 +230,27 @@ class BoltTappedAxialPageTests(unittest.TestCase):
         page._apply_input_data(snapshot)
         self.assertIsNone(page._last_result)
         self.assertFalse(page.btn_export_pdf.isEnabled())
+        self.assertFalse(page.btn_export_text.isEnabled())
+
+    def test_text_report_button_exports_report_lines(self) -> None:
+        page = BoltTappedAxialPage()
+        page._field_widgets["service.FA_max"].setText("2000")  # type: ignore[attr-defined]
+        page._run_calculation()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "tapped_axial_report.txt"
+            with patch(
+                "app.ui.pages.bolt_tapped_axial_page.export_report_lines",
+                return_value=out,
+            ) as export:
+                page._export_text_report()
+
+        export.assert_called_once()
+        parent, title, default_path, lines = export.call_args.args
+        self.assertIs(parent, page)
+        self.assertEqual(title, "导出文本报告")
+        self.assertEqual(default_path.name, "tapped_axial_report.txt")
+        self.assertIn("轴向受力螺纹连接校核报告", "\n".join(lines))
 
 
 if __name__ == "__main__":

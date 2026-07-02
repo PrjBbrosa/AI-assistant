@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -27,14 +27,18 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.input_condition_store import (
+    InputConditionError,
     build_form_snapshot,
     build_saved_inputs_dir,
     choose_load_input_conditions_path,
     choose_save_input_conditions_path,
+    confirm_snapshot_module,
     read_input_conditions,
+    validate_snapshot,
     write_input_conditions,
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
+from app.ui.report_export import ReportExportError
 from app.ui.widgets.help_button import HelpButton
 from app.ui.widgets.press_force_curve import PressForceCurveWidget
 from core.spline.calculator import InputError, calculate_spline_fit
@@ -43,6 +47,7 @@ from core.spline.din5480_table import all_designations, lookup_by_designation
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES_DIR = PROJECT_ROOT / "examples"
 SAVED_INPUTS_DIR = build_saved_inputs_dir(PROJECT_ROOT)
+MODULE_ID = "spline_fit"
 
 
 @dataclass(frozen=True)
@@ -438,6 +443,10 @@ class SplineFitPage(BaseChapterPage):
         self._last_payload: dict | None = None
         self.curve_widget: PressForceCurveWidget | None = None
         self.message_box: QPlainTextEdit | None = None
+        self._recalc_timer = QTimer(self)
+        self._recalc_timer.setSingleShot(True)
+        self._recalc_timer.setInterval(300)
+        self._recalc_timer.timeout.connect(lambda: self._run_calculation(strict=False))
 
         self.btn_save_inputs = self.add_action_button("保存输入条件")
         self.btn_load_inputs = self.add_action_button("加载输入条件")
@@ -653,7 +662,7 @@ class SplineFitPage(BaseChapterPage):
         self._update_mode_chapter_title(text)
         self._suspend_live_feedback = was_suspended
         if not self._suspend_live_feedback:
-            self._run_calculation(strict=False)
+            self._recalc_timer.start()
 
     def _on_standard_designation_changed(self, text: str) -> None:
         was_suspended = self._suspend_live_feedback
@@ -687,7 +696,7 @@ class SplineFitPage(BaseChapterPage):
         self._set_card_disabled("spline.geometry_mode", is_standard)
         self._suspend_live_feedback = was_suspended
         if not self._suspend_live_feedback:
-            self._run_calculation(strict=False)
+            self._recalc_timer.start()
 
     def _on_load_condition_changed(self, text: str) -> None:
         was_suspended = self._suspend_live_feedback
@@ -702,7 +711,7 @@ class SplineFitPage(BaseChapterPage):
             self._set_card_disabled("spline.p_allowable_mpa", False)
         self._suspend_live_feedback = was_suspended
         if not self._suspend_live_feedback:
-            self._run_calculation(strict=False)
+            self._recalc_timer.start()
 
     def _on_material_changed(self, field_prefix: str, material_name: str) -> None:
         was_suspended = self._suspend_live_feedback
@@ -721,7 +730,7 @@ class SplineFitPage(BaseChapterPage):
                 self._set_card_disabled(fid, not is_combined)
             self._suspend_live_feedback = was_suspended
             if not self._suspend_live_feedback:
-                self._run_calculation(strict=False)
+                self._recalc_timer.start()
             return
         for fid, key in ((e_fid, "e_mpa"), (nu_fid, "nu"), (yield_fid, "yield_mpa")):
             widget = self._widgets.get(fid)
@@ -730,12 +739,12 @@ class SplineFitPage(BaseChapterPage):
             self._set_card_disabled(fid, True)
         self._suspend_live_feedback = was_suspended
         if not self._suspend_live_feedback:
-            self._run_calculation(strict=False)
+            self._recalc_timer.start()
 
     def _on_inputs_changed(self) -> None:
         if self._suspend_live_feedback:
             return
-        self._run_calculation(strict=False)
+        self._recalc_timer.start()
 
     def _set_chapter_title(self, chapter_key: str, title: str) -> None:
         index = self._chapter_indices.get(chapter_key)
@@ -773,7 +782,11 @@ class SplineFitPage(BaseChapterPage):
         return self._get_value(spec.field_id)
 
     def _capture_input_snapshot(self) -> dict[str, Any]:
-        return build_form_snapshot(self._field_specs.values(), self._read_snapshot_value)
+        return build_form_snapshot(
+            self._field_specs.values(),
+            self._read_snapshot_value,
+            module_id=MODULE_ID,
+        )
 
     def _apply_defaults(self) -> None:
         for spec in self._field_specs.values():
@@ -836,15 +849,20 @@ class SplineFitPage(BaseChapterPage):
         if in_path is None:
             return
         try:
-            data = read_input_conditions(in_path)
+            data = validate_snapshot(read_input_conditions(in_path))
         except FileNotFoundError:
             QMessageBox.warning(self, "文件不存在", f"未找到输入条件文件：{in_path}")
             return
         except json.JSONDecodeError as exc:
             QMessageBox.critical(self, "文件损坏", f"输入条件文件不是有效 JSON：{exc}")
             return
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
         except OSError as exc:
             QMessageBox.critical(self, "加载失败", f"输入条件加载失败：{exc}")
+            return
+        if not confirm_snapshot_module(self, data, MODULE_ID):
             return
         self._apply_input_data(data)
         self.set_info(f"已加载输入条件：{in_path}")
@@ -857,26 +875,55 @@ class SplineFitPage(BaseChapterPage):
             return w.text().strip()
         return ""
 
+    def _reset_scenario_cards(self) -> None:
+        # 仅花键模式下场景 B 不参与计算，复位文案须与 _display_result 一致地
+        # 显示"未启用" + 跳过说明，避免用户误以为该项会被校核（mode-aware 复位）。
+        is_combined = MODE_MAP.get(self._get_value("mode")) == "combined"
+        for key in ("a_badge", "b_badge"):
+            badge = self._result_labels.get(key)
+            if badge is None:
+                continue
+            if key == "b_badge" and not is_combined:
+                badge.setText("未启用")
+            else:
+                badge.setText("待计算")
+            badge.setObjectName("WaitBadge")
+            badge.style().unpolish(badge)
+            badge.style().polish(badge)
+        for key in ("a_detail", "b_detail"):
+            detail = self._result_labels.get(key)
+            if detail is not None:
+                if key == "b_detail" and not is_combined:
+                    detail.setText("仅花键模式，光滑段过盈校核已跳过。")
+                else:
+                    detail.setText("")
+        if self.curve_widget is not None:
+            self.curve_widget.setVisible(False)
+        if self.message_box is not None:
+            self.message_box.clear()
+
     def _run_calculation(self, *, strict: bool) -> None:
         try:
             payload = self._build_payload()
             result = calculate_spline_fit(payload)
+            self._display_result(result)
         except InputError as exc:
             self._last_payload = None
             self._last_result = None
+            self._reset_scenario_cards()
             self.set_overall_status(f"输入错误: {exc}", "fail" if strict else "wait")
             self.set_info(str(exc))
             return
         except Exception as exc:
             self._last_payload = None
             self._last_result = None
+            self._reset_scenario_cards()
             self.set_overall_status(f"内部错误: {exc}", "fail")
             self.set_info(f"计算过程中出现意外错误，请检查输入或联系开发者。\n{exc}")
             return
 
         self._last_payload = payload
         self._last_result = result
-        self._display_result(result)
 
     def _build_payload(self) -> dict:
         mode_text = self._get_value("mode")
@@ -912,6 +959,7 @@ class SplineFitPage(BaseChapterPage):
         return payload
 
     def _on_calculate(self) -> None:
+        self._recalc_timer.stop()
         self._run_calculation(strict=True)
 
     def _display_result(self, result: dict) -> None:
@@ -986,25 +1034,29 @@ class SplineFitPage(BaseChapterPage):
             QMessageBox.information(self, "无结果", "请先执行计算。")
             return
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "导出校核报告", "spline_report.pdf",
+            self, "导出校核报告", str(EXAMPLES_DIR / "spline_report.pdf"),
             "PDF Files (*.pdf);;Text Files (*.txt);;All Files (*)",
         )
         if not file_path:
             return
         out_path = Path(file_path)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        suffix = out_path.suffix.lower()
-        if suffix == ".pdf":
-            try:
-                mod = importlib.import_module("app.ui.report_pdf_spline")
-                mod.generate_spline_report(out_path, self._last_payload, self._last_result)
-            except Exception as pdf_exc:
-                out_path = out_path.with_suffix(".txt")
+        try:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            suffix = out_path.suffix.lower()
+            if suffix == ".pdf":
+                try:
+                    mod = importlib.import_module("app.ui.report_pdf_spline")
+                    mod.generate_spline_report(out_path, self._last_payload, self._last_result)
+                except Exception as pdf_exc:
+                    out_path = out_path.with_suffix(".txt")
+                    out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
+                    self.set_info(f"PDF 生成失败（{pdf_exc}），已回退为文本格式: {out_path}")
+                    return
+            else:
                 out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
-                self.set_info(f"PDF 生成失败（{pdf_exc}），已回退为文本格式: {out_path}")
-                return
-        else:
-            out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
+        except (ReportExportError, OSError) as exc:
+            QMessageBox.critical(self, "导出失败", f"导出失败：{exc}")
+            return
         self.set_info(f"报告已导出: {out_path}")
 
     def _build_report_lines(self) -> list[str]:
@@ -1054,9 +1106,14 @@ class SplineFitPage(BaseChapterPage):
             QMessageBox.warning(self, "测试案例不存在", f"未找到测试案例文件: {sample_path}")
             return
         try:
-            data = read_input_conditions(sample_path)
+            data = validate_snapshot(read_input_conditions(sample_path))
         except json.JSONDecodeError as exc:
             QMessageBox.critical(self, "测试案例损坏", f"测试案例文件不是有效 JSON：{exc}")
+            return
+        except InputConditionError as exc:
+            QMessageBox.critical(self, "文件格式错误", str(exc))
+            return
+        if not confirm_snapshot_module(self, data, MODULE_ID):
             return
         self._apply_input_data(data)
         self.set_info(f"已加载测试案例：{filename}。可直接执行校核并查看压入力曲线。")
@@ -1065,26 +1122,7 @@ class SplineFitPage(BaseChapterPage):
         self._apply_defaults()
         self._last_payload = None
         self._last_result = None
-        for key in ("a_badge", "b_badge"):
-            badge = self._result_labels.get(key)
-            if badge is None:
-                continue
-            badge.setText("等待计算" if key == "a_badge" else "未启用")
-            badge.setObjectName("WaitBadge")
-            badge.style().unpolish(badge)
-            badge.style().polish(badge)
-        details = {
-            "a_detail": "",
-            "b_detail": "仅花键模式，光滑段过盈校核已跳过。",
-        }
-        for key, text in details.items():
-            label = self._result_labels.get(key)
-            if label is not None:
-                label.setText(text)
-        if self.curve_widget is not None:
-            self.curve_widget.setVisible(False)
-        if self.message_box is not None:
-            self.message_box.clear()
+        self._reset_scenario_cards()
         self.set_overall_status("等待计算", "wait")
         self.set_info("参数已重置为默认值。")
         self._sync_state_from_ui(refresh=True)

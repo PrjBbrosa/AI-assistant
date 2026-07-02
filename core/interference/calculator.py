@@ -231,9 +231,16 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
 
     hub_vm_coeff = math.sqrt(1.0 + geometry_factor + geometry_factor * geometry_factor)
     shaft_geometry_factor = 1.0
+    shaft_bore_vm_coeff = 0.0
     if hollow_shaft:
         shaft_geometry_factor = (d * d + d_inner * d_inner) / (d * d - d_inner * d_inner)
-    shaft_vm_coeff = math.sqrt(1.0 + shaft_geometry_factor * shaft_geometry_factor - shaft_geometry_factor)
+        # Lamé 外压解：内孔自由面 sigma_r=0，|sigma_t| = 2p/(1-q^2) = p*(K+1)。
+        # Ref: spec 2026-07-02 D4 / CALC-4；内孔壁通常比配合面更危险。
+        shaft_bore_vm_coeff = shaft_geometry_factor + 1.0
+    shaft_interface_vm_coeff = math.sqrt(
+        1.0 + shaft_geometry_factor * shaft_geometry_factor - shaft_geometry_factor
+    )
+    shaft_vm_coeff = max(shaft_interface_vm_coeff, shaft_bore_vm_coeff)
 
     def build_state(delta_input_um: float) -> Dict[str, float]:
         delta_eff_um = max(0.0, delta_input_um - subsidence_um)
@@ -242,6 +249,8 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
         axial_cap_n = axial_capacity_n(pressure_mpa)
         press_force_val_n = press_force_n(pressure_mpa)
         shaft_vm_mpa = pressure_mpa * shaft_vm_coeff
+        shaft_vm_interface_mpa = pressure_mpa * shaft_interface_vm_coeff
+        shaft_vm_bore_mpa = pressure_mpa * shaft_bore_vm_coeff
         hub_vm_mpa = pressure_mpa * hub_vm_coeff
         hub_hoop_inner_mpa = pressure_mpa * geometry_factor
         shaft_sf = math.inf if shaft_vm_mpa == 0 else yield_shaft / shaft_vm_mpa
@@ -254,6 +263,8 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
             "axial_cap_n": axial_cap_n,
             "press_force_n": press_force_val_n,
             "shaft_vm_mpa": shaft_vm_mpa,
+            "shaft_vm_interface_mpa": shaft_vm_interface_mpa,
+            "shaft_vm_bore_mpa": shaft_vm_bore_mpa,
             "hub_vm_mpa": hub_vm_mpa,
             "hub_hoop_inner_mpa": hub_hoop_inner_mpa,
             "shaft_sf": shaft_sf,
@@ -282,6 +293,12 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     shaft_vm_min = min_state["shaft_vm_mpa"]
     shaft_vm_mean = mean_state["shaft_vm_mpa"]
     shaft_vm_max = max_state["shaft_vm_mpa"]
+    shaft_vm_interface_min = min_state["shaft_vm_interface_mpa"]
+    shaft_vm_interface_mean = mean_state["shaft_vm_interface_mpa"]
+    shaft_vm_interface_max = max_state["shaft_vm_interface_mpa"]
+    shaft_vm_bore_min = min_state["shaft_vm_bore_mpa"]
+    shaft_vm_bore_mean = mean_state["shaft_vm_bore_mpa"]
+    shaft_vm_bore_max = max_state["shaft_vm_bore_mpa"]
     hub_vm_min = min_state["hub_vm_mpa"]
     hub_vm_mean = mean_state["hub_vm_mpa"]
     hub_vm_max = max_state["hub_vm_mpa"]
@@ -302,7 +319,8 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     p_req_axial = slip_safety_min * p_req_axial_service
     p_req_combined = slip_safety_min * math.hypot(p_req_torque_service, p_req_axial_service)
     p_radial = radial_design_n / (d * l_fit) if radial_design_n > 0 else 0.0
-    # Conservative simplification of the handbook expression by taking QW = 0.
+    # 经验系数 2.25: 手册张口缝表达式取 QW = 0 的保守简化；原始出处不可追溯。
+    # 数值由 spec 2026-07-02 D14 回归测试锁定，正式校核建议 FEA 或试验复核。
     p_bending = 2.25 * bending_design_nm * 1000.0 / (d * l_fit * l_fit) if bending_design_nm > 0 else 0.0
     p_gap = p_radial + p_bending
     p_required = max(p_req_torque, p_req_axial, p_req_combined, p_gap)
@@ -384,6 +402,8 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
             repeated_notes.append("not applicable: rotating bending is excluded from the simplified estimate.")
         else:
             repeated_applicable = True
+            # 经验因子 l_fit/(4d): 重复载荷传递能力的保守估算；原始出处不可追溯。
+            # 数值由 spec 2026-07-02 D14 回归测试锁定，正式校核建议 FEA 或试验复核。
             repeated_max_torque_nm = torque_min_nm * l_fit / (4.0 * d)
             fretting_risk = torque_design_nm > repeated_max_torque_nm
             repeated_notes.append(
@@ -407,6 +427,10 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
         )
     if hub_sf_min < shaft_sf_min:
         warnings.append("轮毂为薄弱侧，建议优先提高轮毂屈服强度或增大外径。")
+    if hollow_shaft:
+        warnings.append(
+            "空心轴应力判定已取内孔壁与配合面 von Mises 较大者（内孔壁通常更危险）。"
+        )
     if press_force_max_n > 250_000:
         warnings.append("压入力较高，建议评估热装或液压装配工艺。")
     warnings.extend(str(msg) for msg in assembly_detail.get("warnings", []))
@@ -480,6 +504,8 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
         "derived": {
             "geometry_factor": geometry_factor,
             "shaft_geometry_factor": shaft_geometry_factor,
+            "shaft_interface_vm_coeff": shaft_interface_vm_coeff,
+            "shaft_bore_vm_coeff": shaft_bore_vm_coeff,
             "shaft_inner_d_mm": d_inner,
             "shaft_bore_ratio": bore_ratio,
             "shaft_compliance_factor": shaft_compliance_factor,
@@ -518,6 +544,12 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
             "shaft_vm_min": shaft_vm_min,
             "shaft_vm_mean": shaft_vm_mean,
             "shaft_vm_max": shaft_vm_max,
+            "shaft_vm_interface_min": shaft_vm_interface_min,
+            "shaft_vm_interface_mean": shaft_vm_interface_mean,
+            "shaft_vm_interface_max": shaft_vm_interface_max,
+            "shaft_vm_bore_min": shaft_vm_bore_min,
+            "shaft_vm_bore_mean": shaft_vm_bore_mean,
+            "shaft_vm_bore_max": shaft_vm_bore_max,
             "hub_vm_min": hub_vm_min,
             "hub_vm_mean": hub_vm_mean,
             "hub_vm_max": hub_vm_max,
@@ -581,5 +613,8 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
         "fretting": fretting_result,
         "checks": checks_out,
         "overall_pass": overall_pass,
+        # "warnings" 与 "messages" 恒等（同一 list 对象）：messages 为既有 UI/PDF 消费键，
+        # warnings 为与 bolt/worm 模块 API 命名对齐的别名。二者不得独立演化。
         "messages": warnings,
+        "warnings": warnings,
     }

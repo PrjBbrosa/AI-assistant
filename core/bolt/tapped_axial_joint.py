@@ -5,7 +5,13 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from .calculator import InputError
+from ._common import (
+    InputError,
+    THREAD_SECTION_TOLERANCE as _THREAD_SECTION_TOLERANCE,
+    check_thread_section_consistency,
+    derive_thread_section as _derive_thread_section,
+    to_float as _to_float,
+)
 
 _ALPHA_A_RANGES: dict[str, tuple[float, float]] = {
     "torque": (1.4, 1.8),
@@ -44,18 +50,6 @@ def _require(section: dict[str, Any], key: str, section_name: str) -> Any:
     return section[key]
 
 
-def _to_float(value: Any, name: str) -> float:
-    if isinstance(value, bool):
-        raise InputError(f"{name} 必须为有限数字，当前值: {value}")
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError) as exc:
-        raise InputError(f"{name} 必须为数字，当前值: {value}") from exc
-    if not math.isfinite(parsed):
-        raise InputError(f"{name} 必须为有限数字，当前值: {value}")
-    return parsed
-
-
 def _positive(value: Any, name: str, allow_zero: bool = False) -> float:
     parsed = _to_float(value, name)
     if allow_zero and parsed == 0:
@@ -71,23 +65,6 @@ def _float_or_none(value: Any, name: str) -> float | None:
     return _to_float(value, name)
 
 
-_THREAD_SECTION_TOLERANCE = 0.01  # 1% relative; protects against stale As/d2/d3
-
-
-def _derive_thread_section(d: float, p: float) -> dict[str, float]:
-    """Pure formula: ISO metric thread section from nominal d and pitch p.
-
-    References:
-        DIN 13-1 (ISO 724): ISO metric thread dimensions.
-        ISO 898-1:2013, Sec 9.1.6: stress cross-section formula.
-    """
-    return {
-        "As": math.pi / 4.0 * (d - 0.9382 * p) ** 2,
-        "d2": d - 0.64952 * p,
-        "d3": d - 1.22687 * p,
-    }
-
-
 def _derive_thread_geometry(fastener: dict[str, Any]) -> dict[str, float]:
     """Derive ISO metric thread geometry from nominal d and pitch p.
 
@@ -99,27 +76,7 @@ def _derive_thread_geometry(fastener: dict[str, Any]) -> dict[str, float]:
     """
     d = _positive(_require(fastener, "d", "fastener"), "fastener.d")
     p = _positive(_require(fastener, "p", "fastener"), "fastener.p")
-    derived = _derive_thread_section(d, p)
-
-    for key in ("As", "d2", "d3"):
-        raw = fastener.get(key)
-        if raw in (None, ""):
-            continue
-        user_value = _to_float(raw, f"fastener.{key}")
-        derived_value = derived[key]
-        if derived_value <= 0:
-            raise InputError(
-                f"fastener.{key} 由 d={d}, p={p} 派生的值 {derived_value} 非正，"
-                "请复核 d 与 p。"
-            )
-        rel_dev = abs(user_value - derived_value) / derived_value
-        if rel_dev > _THREAD_SECTION_TOLERANCE:
-            raise InputError(
-                f"fastener.{key}={user_value} 与由 d={d}, p={p} 派生的 "
-                f"{derived_value:.4f} 不一致（相对偏差 {rel_dev * 100:.1f}% > "
-                f"{_THREAD_SECTION_TOLERANCE * 100:.0f}%）；请清空该字段让系统"
-                "自动计算，或修正 d/p 与截面数据的对应关系。"
-            )
+    derived = check_thread_section_consistency(d, p, fastener)
 
     return {
         "d": d,

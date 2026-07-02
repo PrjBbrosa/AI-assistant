@@ -7,37 +7,28 @@ import math
 from pathlib import Path
 from typing import Any, Dict
 
-
-class InputError(ValueError):
-    """Raised when input data is incomplete or physically invalid."""
+from ._common import InputError, check_thread_section_consistency, to_float
 
 
 def _require(section: Dict[str, Any], key: str, section_name: str) -> Any:
     if key not in section:
-        raise InputError(f"Missing required field: {section_name}.{key}")
+        raise InputError(f"缺少必填字段: {section_name}.{key}")
     return section[key]
 
 
-def _positive(value: float, name: str, allow_zero: bool = False) -> float:
-    if allow_zero and value == 0:
-        return value
-    if value <= 0:
-        raise InputError(f"{name} must be > 0, got {value}")
-    return value
+def _positive(value: Any, name: str, allow_zero: bool = False) -> float:
+    numeric = to_float(value, name)
+    if allow_zero and numeric == 0:
+        return numeric
+    if numeric <= 0:
+        raise InputError(f"{name} 必须 > 0，当前值 {numeric}")
+    return numeric
 
 
 def _float_or_none(value: Any, name: str) -> float | None:
     if value in (None, ""):
         return None
-    if isinstance(value, bool):
-        raise InputError(f"{name} 必须为有限数字，当前值: {value}")
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError) as exc:
-        raise InputError(f"{name} 必须为数字，当前值: {value}") from exc
-    if not math.isfinite(parsed):
-        raise InputError(f"{name} 必须为有限数字，当前值: {value}")
-    return parsed
+    return to_float(value, name)
 
 
 def load_input_json(path: Path) -> Dict[str, Any]:
@@ -52,13 +43,12 @@ def load_input_json(path: Path) -> Dict[str, Any]:
 
 
 def _derive_thread_geometry(d: float, p: float, fastener: Dict[str, Any]) -> Dict[str, float]:
-    as_val = float(fastener.get("As", math.pi / 4.0 * (d - 0.9382 * p) ** 2))
-    d2 = float(fastener.get("d2", d - 0.64952 * p))
-    d3 = float(fastener.get("d3", d - 1.22687 * p))
+    # 始终采用 d/p 派生值；用户提供的 As/d2/d3 仅做一致性校验（spec D2）。
+    derived = check_thread_section_consistency(d, p, fastener)
     return {
-        "As": _positive(as_val, "fastener.As"),
-        "d2": _positive(d2, "fastener.d2"),
-        "d3": _positive(d3, "fastener.d3"),
+        "As": _positive(derived["As"], "fastener.As"),
+        "d2": _positive(derived["d2"], "fastener.d2"),
+        "d3": _positive(derived["d3"], "fastener.d3"),
     }
 
 
@@ -74,18 +64,18 @@ def _resolve_compliance(
     auto_modeled = False
 
     if has_compliance:
-        delta_s = _positive(float(stiffness["bolt_compliance"]), "stiffness.bolt_compliance")
-        delta_p = _positive(float(stiffness["clamped_compliance"]), "stiffness.clamped_compliance")
+        delta_s = _positive(stiffness["bolt_compliance"], "stiffness.bolt_compliance")
+        delta_p = _positive(stiffness["clamped_compliance"], "stiffness.clamped_compliance")
     elif has_stiffness:
-        k_s = _positive(float(stiffness["bolt_stiffness"]), "stiffness.bolt_stiffness")
-        k_p = _positive(float(stiffness["clamped_stiffness"]), "stiffness.clamped_stiffness")
+        k_s = _positive(stiffness["bolt_stiffness"], "stiffness.bolt_stiffness")
+        k_p = _positive(stiffness["clamped_stiffness"], "stiffness.clamped_stiffness")
         delta_s = 1.0 / k_s
         delta_p = 1.0 / k_p
     elif stiffness.get("auto_compliance"):
         from core.bolt.compliance_model import (
             calculate_bolt_compliance, calculate_clamped_compliance,
         )
-        E_bolt = _positive(float(stiffness.get("E_bolt", 210_000)), "stiffness.E_bolt")
+        E_bolt = _positive(stiffness.get("E_bolt", 210_000), "stiffness.E_bolt")
         cl = clamped or {}
 
         if "layers" in cl:
@@ -93,7 +83,13 @@ def _resolve_compliance(
             layers = cl["layers"]
             if not isinstance(layers, list) or not (1 <= len(layers) <= 10):
                 raise InputError("被夹件层数须在 1~10 之间")
-            l_K = sum(float(layer["l_K"]) for layer in layers)
+            l_K = sum(
+                _positive(
+                    _require(layer, "l_K", f"clamped.layers[{idx}]"),
+                    f"clamped.layers[{idx}].l_K",
+                )
+                for idx, layer in enumerate(layers)
+            )
             _positive(l_K, "clamped.total_thickness (各层求和)")
             bolt_r = calculate_bolt_compliance(d, p, l_K, E_bolt, joint_type=joint_type)
             delta_s = bolt_r["delta_s"]
@@ -104,12 +100,12 @@ def _resolve_compliance(
             delta_p = clamp_r["delta_p"]
         else:
             # ---------- 单层模式（保持不变）----------
-            E_clamped = _positive(float(stiffness.get("E_clamped", 210_000)), "stiffness.E_clamped")
-            l_K = _positive(float(cl.get("total_thickness", 0)), "clamped.total_thickness")
+            E_clamped = _positive(stiffness.get("E_clamped", 210_000), "stiffness.E_clamped")
+            l_K = _positive(cl.get("total_thickness", 0), "clamped.total_thickness")
             bolt_r = calculate_bolt_compliance(d, p, l_K, E_bolt, joint_type=joint_type)
             delta_s = bolt_r["delta_s"]
             solid_type = str(cl.get("basic_solid", "cylinder"))
-            D_A = float(cl.get("D_A", bearing_d_outer))
+            D_A = to_float(cl.get("D_A", bearing_d_outer), "clamped.D_A")
             d_h = bearing_d_inner
             D_w = (bearing_d_inner + bearing_d_outer) / 2.0
             if solid_type == "sleeve":
@@ -134,8 +130,7 @@ def _resolve_compliance(
             "or set stiffness.auto_compliance=true with geometry parameters"
         )
 
-    n = float(stiffness.get("load_introduction_factor_n", 1.0))
-    _positive(n, "stiffness.load_introduction_factor_n")
+    n = _positive(stiffness.get("load_introduction_factor_n", 1.0), "stiffness.load_introduction_factor_n")
     return {"delta_s": delta_s, "delta_p": delta_p, "n": n, "auto_modeled": auto_modeled}
 
 
@@ -147,7 +142,7 @@ _ALPHA_A_RANGES: dict[str, tuple[float, float]] = {
     "thermal": (1.05, 1.15),
 }
 
-# VDI 2230 表 A1：轧制螺纹疲劳极限 σ_ASV (MPa)
+# VDI 2230 Table A4：轧制螺纹疲劳极限 σ_ASV (MPa)，与 tapped 模块一致；纸质标准复核为准。
 _ASV_TABLE_ROLLED: list[tuple[float, float]] = [
     (6, 50), (8, 47), (10, 44), (12, 41), (14, 39),
     (16, 38), (20, 36), (24, 34), (30, 32), (36, 30),
@@ -239,54 +234,55 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
 
     tightening_method = str(options.get("tightening_method", "torque"))
 
-    d = _positive(float(_require(fastener, "d", "fastener")), "fastener.d")
-    p = _positive(float(_require(fastener, "p", "fastener")), "fastener.p")
-    rp02 = _positive(float(_require(fastener, "Rp02", "fastener")), "fastener.Rp02")
-    alpha_a = _positive(float(_require(tightening, "alpha_A", "tightening")), "tightening.alpha_A")
+    d = _positive(_require(fastener, "d", "fastener"), "fastener.d")
+    p = _positive(_require(fastener, "p", "fastener"), "fastener.p")
+    rp02 = _positive(_require(fastener, "Rp02", "fastener"), "fastener.Rp02")
+    alpha_a = _positive(_require(tightening, "alpha_A", "tightening"), "tightening.alpha_A")
     if alpha_a < 1.0:
         raise InputError(f"tightening.alpha_A 必须 >= 1（当前值 {alpha_a}），散差系数不能使 FMmax < FMmin。")
-    mu_thread = _positive(float(_require(tightening, "mu_thread", "tightening")), "tightening.mu_thread")
+    mu_thread = _positive(_require(tightening, "mu_thread", "tightening"), "tightening.mu_thread")
     if mu_thread > 1.0:
         raise InputError(f"tightening.mu_thread 超出合理范围（{mu_thread} > 1），请确认单位。")
-    mu_bearing = _positive(float(_require(tightening, "mu_bearing", "tightening")), "tightening.mu_bearing")
+    mu_bearing = _positive(_require(tightening, "mu_bearing", "tightening"), "tightening.mu_bearing")
     if mu_bearing > 1.0:
         raise InputError(f"tightening.mu_bearing 超出合理范围（{mu_bearing} > 1），请确认单位。")
-    utilization = _positive(float(tightening.get("utilization", 0.9)), "tightening.utilization")
+    utilization = _positive(tightening.get("utilization", 0.9), "tightening.utilization")
     if utilization > 1.0:
         raise InputError(f"tightening.utilization 不能超过 1（当前值 {utilization}）。")
-    prevailing_torque = float(tightening.get("prevailing_torque", 0.0))
-    flank_angle_deg = float(tightening.get("thread_flank_angle_deg", 60.0))
+    prevailing_torque = to_float(tightening.get("prevailing_torque", 0.0), "tightening.prevailing_torque")
+    flank_angle_deg = to_float(tightening.get("thread_flank_angle_deg", 60.0), "tightening.thread_flank_angle_deg")
 
-    fa_max = _positive(float(_require(loads, "FA_max", "loads")), "loads.FA_max", allow_zero=True)
-    fq_max = _positive(float(loads.get("FQ_max", 0.0)), "loads.FQ_max", allow_zero=True)
+    fa_max = _positive(_require(loads, "FA_max", "loads"), "loads.FA_max", allow_zero=True)
+    fq_max = _positive(loads.get("FQ_max", 0.0), "loads.FQ_max", allow_zero=True)
     seal_force_required = _positive(
-        float(loads.get("seal_force_required", 0.0)),
+        loads.get("seal_force_required", 0.0),
         "loads.seal_force_required",
         allow_zero=True,
     )
-    embed_loss = _positive(float(loads.get("embed_loss", 0.0)), "loads.embed_loss", allow_zero=True)
+    embed_loss = _positive(loads.get("embed_loss", 0.0), "loads.embed_loss", allow_zero=True)
     thermal_force_loss = _positive(
-        float(loads.get("thermal_force_loss", 0.0)),
+        loads.get("thermal_force_loss", 0.0),
         "loads.thermal_force_loss",
         allow_zero=True,
     )
-    load_cycles = _positive(float(operating.get("load_cycles", 2_000_000.0)), "operating.load_cycles")
-    slip_mu = float(loads.get("slip_friction_coefficient", mu_bearing))
+    load_cycles = _positive(operating.get("load_cycles", 2_000_000.0), "operating.load_cycles")
+    slip_mu = to_float(loads.get("slip_friction_coefficient", mu_bearing), "loads.slip_friction_coefficient")
+    if slip_mu > 1.0:
+        raise InputError(f"loads.slip_friction_coefficient 摩擦系数必须 <= 1，当前值 {slip_mu}")
     if fq_max > 0 and slip_mu <= 0:
-        raise InputError("loads.slip_friction_coefficient must be > 0 when loads.FQ_max > 0")
-    interfaces = float(loads.get("friction_interfaces", 1.0))
-    _positive(interfaces, "loads.friction_interfaces")
+        raise InputError("loads.slip_friction_coefficient 摩擦系数必须 > 0（loads.FQ_max > 0 时需要防滑校核）。")
+    interfaces = _positive(loads.get("friction_interfaces", 1.0), "loads.friction_interfaces")
 
     bearing_d_inner = _positive(
-        float(_require(bearing, "bearing_d_inner", "bearing")),
+        _require(bearing, "bearing_d_inner", "bearing"),
         "bearing.bearing_d_inner",
     )
     bearing_d_outer = _positive(
-        float(_require(bearing, "bearing_d_outer", "bearing")),
+        _require(bearing, "bearing_d_outer", "bearing"),
         "bearing.bearing_d_outer",
     )
     if bearing_d_outer <= bearing_d_inner:
-        raise InputError("bearing.bearing_d_outer must be greater than bearing.bearing_d_inner")
+        raise InputError("bearing.bearing_d_outer 必须大于 bearing.bearing_d_inner")
 
     geometry = _derive_thread_geometry(d, p, fastener)
     compliance = _resolve_compliance(
@@ -401,7 +397,10 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     # ------------------------------------------------------------------
     # 嵌入损失自动估算 (VDI 2230 §5.4.2)
     # ------------------------------------------------------------------
-    part_count = int(clamped.get("part_count", 1))
+    part_count_value = to_float(clamped.get("part_count", 1), "clamped.part_count")
+    if not part_count_value.is_integer() or part_count_value <= 0:
+        raise InputError(f"clamped.part_count 必须为正整数，当前值 {part_count_value}")
+    part_count = int(part_count_value)
     surface_class = clamped.get("surface_class")
     embed_estimation: Dict[str, Any]
     if embed_loss == 0.0 and surface_class is not None:
@@ -424,7 +423,7 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     thermal_effective = thermal_force_loss if check_level in {"thermal", "fatigue"} else 0.0
     if calculation_mode == "verify":
         fm_min_input = _positive(
-            float(_require(loads, "FM_min_input", "loads")),
+            _require(loads, "FM_min_input", "loads"),
             "loads.FM_min_input",
         )
         fm_min = fm_min_input
@@ -462,9 +461,13 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     k_tau = 0.5 if tightening_method == "torque" else 0.0
     sigma_vm_work = math.sqrt(sigma_ax_work**2 + 3.0 * (k_tau * tau_assembly)**2)
     yield_safety_operating = _positive(
-        float(checks.get("yield_safety_operating", 1.1)),
+        checks.get("yield_safety_operating", 1.1),
         "checks.yield_safety_operating",
     )
+    if yield_safety_operating < 1.0:
+        raise InputError(
+            f"checks.yield_safety_operating 必须 >= 1，当前值 {yield_safety_operating}"
+        )
     sigma_allow_work = rp02 / yield_safety_operating
     pass_work = sigma_vm_work <= sigma_allow_work
 
@@ -483,9 +486,11 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     sigma_m = (fm_max + 0.5 * phi_n * fa_max) / geometry["As"]
     cycle_factor = (2_000_000.0 / load_cycles) ** 0.08 if load_cycles < 2_000_000.0 else 1.0
     sigma_asv = _fatigue_limit_asv(d, surface_treatment) * cycle_factor
-    goodman_factor = max(0.1, 1.0 - sigma_m / (0.9 * rp02))
+    # Ref: 2026-07-02 review CALC-1；不对 Goodman 因子设人为下限。
+    goodman_factor_raw = 1.0 - sigma_m / (0.9 * rp02)
+    goodman_factor = goodman_factor_raw if goodman_factor_raw > 0.0 else 0.0
     sigma_a_allow = sigma_asv * goodman_factor
-    pass_fatigue = sigma_a <= sigma_a_allow
+    pass_fatigue = (goodman_factor > 0.0) and (sigma_a <= sigma_a_allow)
 
     # 附加载荷能力参考估算（非 VDI 2230 正式校核项）：
     # 基于 10% 屈服强度裕量估算允许附加轴向载荷上限，供参考。
@@ -516,8 +521,7 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     if r8_active:
         _positive(m_eff, "thread_strip.m_eff")
         # 螺栓侧（外螺纹）剪切强度：默认取 Rp0.2 × 0.6
-        tau_BS = float(thread_strip.get("tau_BS", rp02 * 0.6))
-        _positive(tau_BS, "thread_strip.tau_BS")
+        tau_BS = _positive(thread_strip.get("tau_BS", rp02 * 0.6), "thread_strip.tau_BS")
         # 内螺纹侧剪切强度（螺母/壳体材料）
         if tau_BM is None or tau_BM <= 0:
             raise InputError(
@@ -526,8 +530,8 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
             )
         _positive(tau_BM, "thread_strip.tau_BM")
 
-        C1 = float(thread_strip.get("C1", 0.75))
-        C3 = float(thread_strip.get("C3", 0.58))
+        C1 = _positive(thread_strip.get("C1", 0.75), "thread_strip.C1")
+        C3 = _positive(thread_strip.get("C3", 0.58), "thread_strip.C3")
 
         # 外螺纹（螺栓侧）剪切面积和承载力
         A_SB = math.pi * geometry["d3"] * m_eff * C1
@@ -549,7 +553,10 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
             F_strip_min = F_strip_nut
 
         strip_safety = F_strip_min / F_bolt_max if F_bolt_max > 0 else math.inf
-        strip_safety_required = float(thread_strip.get("safety_required", 1.25))
+        strip_safety_required = _positive(
+            thread_strip.get("safety_required", 1.25),
+            "thread_strip.safety_required",
+        )
         pass_strip = strip_safety >= strip_safety_required
 
         side_cn = "螺栓侧（外螺纹）" if critical_side == "bolt" else "螺母/壳体侧（内螺纹）"
@@ -575,7 +582,7 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     p_g_allow_raw = bearing.get("p_G_allow")
     p_g_allow = 0.0
     if p_g_allow_raw not in (None, ""):
-        p_g_allow = float(p_g_allow_raw)
+        p_g_allow = to_float(p_g_allow_raw, "bearing.p_G_allow")
         if p_g_allow < 0:
             raise InputError("bearing.p_G_allow 不能 < 0；若不做 R7 校核，请留空或填 0。")
     r7_active = p_g_allow > 0
@@ -605,6 +612,17 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
                 f"αA = {alpha_a:.2f} 超出{method_cn}建议范围 [{lo}–{hi}]，"
                 "请确认装配工艺能力。"
             )
+    if check_level == "fatigue":
+        if goodman_factor_raw <= 0.0:
+            warnings.append(
+                "平均应力已超出 Goodman 折减范围（σ_m >= 0.9·Rp0.2），"
+                "疲劳许用幅为 0，疲劳不通过。"
+            )
+        elif goodman_factor_raw < 0.1:
+            warnings.append(
+                f"Goodman 因子偏低（{goodman_factor_raw:.3f} < 0.1），"
+                "疲劳裕度极小，建议降低平均应力或增大规格。"
+            )
 
     checks_out = {
         "assembly_von_mises_ok": pass_assembly,
@@ -619,6 +637,29 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
         checks_out["bearing_pressure_ok"] = pass_bearing
     if r8_active:
         checks_out["thread_strip_ok"] = pass_strip
+
+    # ---- 总体三态判定（spec 2026-07-02 D3；对齐 tapped_axial_joint 契约）----
+    # check_level 主动关闭 thermal/fatigue 不计 incomplete；R7/R8 因缺输入
+    # 被动跳过必须显式标记，禁止伪绿灯。
+    not_checked: list[str] = []
+    if not r7_active:
+        not_checked.append("R7 支承面压强")
+    if not r8_active:
+        not_checked.append("R8 螺纹脱扣")
+
+    any_active_fail = any(value is False for value in checks_out.values())
+    if any_active_fail:
+        overall_status = "fail"
+    elif not_checked:
+        overall_status = "incomplete"
+    else:
+        overall_status = "pass"
+
+    if overall_status == "incomplete":
+        warnings.append(
+            "以下校核项因缺少输入未执行：" + "、".join(not_checked)
+            + "。总体结论标记为'不完整'；请补充输入后重新校核。"
+        )
 
     stresses_out = {
         "sigma_ax_assembly": sigma_ax_assembly,
@@ -698,9 +739,12 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
             "load_cycles": load_cycles,
             "cycle_factor": cycle_factor,
             "goodman_factor": goodman_factor,
+            "goodman_factor_raw": goodman_factor_raw,
             "surface_treatment": surface_treatment,
         },
-        "overall_pass": all(checks_out.values()),
+        "overall_pass": overall_status == "pass",
+        "overall_status": overall_status,
+        "not_checked": not_checked,
         "warnings": warnings,
         "scope_note": (
             f"连接形式：{'通孔螺栓连接' if joint_type == 'through' else '螺纹孔连接'}。"
