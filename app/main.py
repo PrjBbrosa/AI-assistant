@@ -34,12 +34,10 @@ def main() -> int:
     # Apply theme before the main window, but after splash is visible.
     apply_theme(app)
 
-    # configure_matplotlib_fonts and MainWindow are deferred until here so
-    # that matplotlib is not imported before the splash screen appears.
-    from app.ui.fonts import configure_matplotlib_fonts, make_ui_font  # noqa: PLC0415
+    # MainWindow and font helpers are deferred until here so the splash appears
+    # before heavier UI modules are imported.
+    from app.ui.fonts import make_ui_font  # noqa: PLC0415
     from app.ui.main_window import MainWindow  # noqa: PLC0415
-
-    configure_matplotlib_fonts()
 
     icon = load_app_icon()
     if not icon.isNull():
@@ -59,4 +57,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
