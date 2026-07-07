@@ -875,6 +875,49 @@ def test_lubrication_dry_increases_friction():
 # ============================================================
 
 
+def _r2_base_payload() -> dict:
+    return WormCalculatorTests._base_payload()
+
+
+def test_normal_pressure_angle_above_35_rejected():
+    data = _r2_base_payload()
+    data["advanced"]["normal_pressure_angle_deg"] = 89.5
+
+    with pytest.raises(InputError, match="normal_pressure_angle_deg"):
+        calculate_worm_geometry(data)
+
+
+def test_normal_pressure_angle_below_5_rejected():
+    data = _r2_base_payload()
+    data["advanced"]["normal_pressure_angle_deg"] = 2.0
+
+    with pytest.raises(InputError, match="normal_pressure_angle_deg"):
+        calculate_worm_geometry(data)
+
+
+def test_z1_above_6_rejected():
+    data = _r2_base_payload()
+    data["geometry"]["z1"] = 20.0
+
+    with pytest.raises(InputError, match="z1"):
+        calculate_worm_geometry(data)
+
+
+def test_gamma_plus_phi_prime_near_90_rejected_not_math_domain_error():
+    data = _r2_base_payload()
+    data["geometry"]["z1"] = 6.0
+    data["geometry"]["z2"] = 60.0
+    data["geometry"]["diameter_factor_q"] = 1.5
+    data["geometry"]["lead_angle_deg"] = 44.0
+    data["geometry"]["center_distance_mm"] = 127.0
+    data["geometry"]["x1"] = 1.0
+    data["advanced"]["friction_override"] = 0.30
+    data["advanced"]["normal_pressure_angle_deg"] = 35.0
+
+    with pytest.raises(InputError, match="导程角"):
+        calculate_worm_geometry(data)
+
+
 def test_life_and_wear_outputs_present_method_b():
     """Method B 下 load_capacity['life'] 应含 fatigue_life_hours、
     wear_depth_mm_per_hour、wear_life_hours_until_0p3mm，且均 > 0。
