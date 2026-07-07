@@ -68,6 +68,40 @@ class TestPhiNHardBlock:
             assert "phi_n" not in w.lower()
 
 
+class TestLoadIntroductionFactorBound:
+    """R-1: VDI 2230 载荷导入系数 n 物理定义域 (0, 1]。"""
+
+    def test_n_above_one_rejected(self):
+        data = _base_input()
+        data["stiffness"]["load_introduction_factor_n"] = 2.0
+
+        with pytest.raises(InputError, match="load_introduction_factor_n"):
+            calculate_vdi2230_core(data)
+
+    def test_n_slightly_above_one_rejected(self):
+        data = _base_input()
+        data["stiffness"]["load_introduction_factor_n"] = 1.01
+
+        with pytest.raises(InputError, match="载荷导入系数"):
+            calculate_vdi2230_core(data)
+
+    def test_n_equal_one_unchanged(self):
+        data = _base_input()
+        data["stiffness"]["load_introduction_factor_n"] = 1.0
+
+        result = calculate_vdi2230_core(data)
+
+        assert result["overall_status"] in ("pass", "fail", "incomplete")
+
+    def test_n_half_accepted(self):
+        data = _base_input()
+        data["stiffness"]["load_introduction_factor_n"] = 0.5
+
+        result = calculate_vdi2230_core(data)
+
+        assert result["overall_status"] in ("pass", "fail", "incomplete")
+
+
 class TestD13Validation:
     def test_fastener_nominal_diameter_non_numeric_raises_chinese_input_error(self):
         data = _base_input()

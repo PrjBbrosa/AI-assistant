@@ -131,6 +131,11 @@ def _resolve_compliance(
         )
 
     n = _positive(stiffness.get("load_introduction_factor_n", 1.0), "stiffness.load_introduction_factor_n")
+    if n > 1.0:
+        raise InputError(
+            "载荷导入系数 stiffness.load_introduction_factor_n 必须在 (0, 1] 区间，"
+            f"当前值 {n}。n > 1 会使 phi_n 进入非物理范围并低估螺栓载荷。"
+        )
     return {"delta_s": delta_s, "delta_p": delta_p, "n": n, "auto_modeled": auto_modeled}
 
 
