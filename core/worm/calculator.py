@@ -397,6 +397,15 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
 
     # ---- Load capacity: enabled flag guard ----
     lc_enabled = bool(load_capacity.get("enabled", False))
+    center_distance_tolerance_mm = max(0.05 * theoretical_center_distance_mm, 2.0)
+    if lc_enabled and abs(center_distance_delta_mm) > center_distance_tolerance_mm:
+        raise InputError(
+            f"中心距与理论中心距偏差过大：a={center_distance_mm:.3f} mm，"
+            f"a_th={theoretical_center_distance_mm:.3f} mm，"
+            f"偏差 {center_distance_delta_mm:+.3f} mm 超出容差 "
+            f"±{center_distance_tolerance_mm:.3f} mm。"
+            "负载能力校核的接触应力模型在此偏差下失效，请修正中心距或关闭负载能力校核。"
+        )
 
     if not lc_enabled:
         return {
@@ -600,6 +609,10 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     root_safety_factor_peak = allowable_root_stress_mpa / max(sigma_f_peak_mpa, 1e-6)
     contact_ok = contact_safety_factor_peak >= required_contact_safety
     root_ok = root_safety_factor_peak >= required_root_safety
+    geometry_consistent = (
+        abs(lead_angle_delta_deg) <= 0.5
+        and abs(center_distance_delta_mm) <= max(0.25 * module_mm, 0.5)
+    )
 
     # ---- Mesh stress curve: contact geometry variation over one worm revolution ----
     curve_n_points = 360
@@ -742,13 +755,11 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
                 "safety_factor_nominal": root_safety_factor_nominal,
                 "safety_factor_peak": root_safety_factor_peak,
             },
+            "overall_pass": geometry_consistent and contact_ok and root_ok,
             "checks": {
                 # geometry_consistent 仅判断导程角和中心距是否自洽，
                 # q 不在推荐序列仅为提示性警告，不影响几何自洽判断
-                "geometry_consistent": (
-                    abs(lead_angle_delta_deg) <= 0.5
-                    and abs(center_distance_delta_mm) <= max(0.25 * module_mm, 0.5)
-                ),
+                "geometry_consistent": geometry_consistent,
                 "contact_ok": contact_ok,
                 "root_ok": root_ok,
             },

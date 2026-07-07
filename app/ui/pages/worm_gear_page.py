@@ -1013,6 +1013,7 @@ class WormGearPage(BaseChapterPage):
         self._preview_call_count += 1
         try:
             payload = self._build_payload()
+            payload.setdefault("load_capacity", {})["enabled"] = False
             geometry = calculate_worm_geometry(payload)["geometry"]
         except Exception:
             self._reset_dimension_preview_labels()
@@ -1223,9 +1224,8 @@ class WormGearPage(BaseChapterPage):
             for key, (_, badge) in self._check_badges.items():
                 ok = checks.get(key, False)
                 self._set_badge(badge, "通过" if ok else "不通过", "pass" if ok else "fail")
-            # W-02: 总体判定纳入 geometry_consistent
-            geometry_ok = checks.get("geometry_consistent", False)
-            overall_lc_ok = geometry_ok and checks.get("contact_ok", False) and checks.get("root_ok", False)
+            # R-3: 总体判定消费 core 权威字段，不在 UI 重新聚合。
+            overall_lc_ok = load_capacity.get("overall_pass", False)
             self._set_badge(
                 self._overall_lc_badge,
                 "总体通过" if overall_lc_ok else "总体不通过",
