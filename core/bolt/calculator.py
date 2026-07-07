@@ -489,6 +489,8 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     surface_treatment = str(options.get("surface_treatment", "rolled"))
     sigma_a = phi_n * fa_max / (2.0 * geometry["As"])
     sigma_m = (fm_max + 0.5 * phi_n * fa_max) / geometry["As"]
+    # Fatigue knee at 2e6 cycles with a conservative 0.08 finite-life exponent;
+    # this is the module's simplified engineering curve, not a full FKN spectrum.
     cycle_factor = (2_000_000.0 / load_cycles) ** 0.08 if load_cycles < 2_000_000.0 else 1.0
     sigma_asv = _fatigue_limit_asv(d, surface_treatment) * cycle_factor
     # Ref: 2026-07-02 review CALC-1；不对 Goodman 因子设人为下限。
