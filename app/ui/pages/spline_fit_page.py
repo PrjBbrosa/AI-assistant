@@ -1133,11 +1133,17 @@ class SplineFitPage(BaseChapterPage):
         self.set_info(f"已加载测试案例：{filename}。可直接执行校核并查看压入力曲线。")
 
     def _clear(self) -> None:
-        self._apply_defaults()
+        was_suspended = self._suspend_live_feedback
+        self._suspend_live_feedback = True
+        try:
+            self._apply_defaults()
+            self._sync_state_from_ui(refresh=False)
+        finally:
+            self._suspend_live_feedback = was_suspended
+        self._recalc_timer.stop()
         self._last_payload = None
         self._last_result = None
         self.btn_save.setEnabled(False)
         self._reset_scenario_cards()
         self.set_overall_status("等待计算", "wait")
         self.set_info("参数已重置为默认值。")
-        self._sync_state_from_ui(refresh=True)

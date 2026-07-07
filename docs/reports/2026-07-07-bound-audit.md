@@ -59,7 +59,7 @@ rg -n "_positive\(|_positive_int\(|_in_closed_interval\(" core --glob "*.py" | r
 | `core/worm/calculator.py:441-448` | `dynamic_factor_kv/kha/khb` | 载荷放大系数 | 需要 `>= 1` | 仅正值 | 建议加上界(P-next) |
 | `core/worm/calculator.py:450-456` | `allowable_contact/root_stress_mpa` | 许用应力 | 不需要通用上界 | 正值 | 无上界(物理开放量) |
 | `core/worm/calculator.py:458-464` | `required_contact/root_safety` | 最小安全系数要求 | 需要 `>= 1` | 仅正值 | 建议加上界(P-next) |
-| `core/worm/calculator.py:494-501` | `lead_angle_calc_rad + phi_prime_force_rad` | 力分解定义域 | 需要 `< 90 deg` 防线 | P0 Task 2 已补 `>= 89 deg` 拒绝 | 已拦截 |
+| `core/worm/calculator.py:235-241` | `lead_angle_calc_rad + phi_prime_rad` | 效率公式与力分解共同定义域 | 需要 `< 90 deg` 防线 | P0 二审：守卫前移到效率计算前，LC 启用/关闭均 `>= 89 deg` 拒绝；力分解复用 `gamma_plus_phi_rad` | 已拦截 |
 | `core/spline/calculator.py:59-63` | `module_mm/tooth_count/engagement_length_mm` | 花键模数、齿数、啮合长度 | 齿数需整数；其余开放 | `_positive_int` 校验正整数；尺寸正值 | 已拦截/无上界 |
 | `core/spline/calculator.py:67-72` | `spline.k_alpha/p_allowable_mpa` | 载荷分布系数、许用承压 | 系数建议 `>= 1` | `k_alpha` 仅正值 | `k_alpha` 建议加上界(P-next)；许用承压无上界 |
 | `core/spline/calculator.py:160-163` | `smooth_fit.fit_length_mm` | 光滑段配合长度 | 不需要通用上界 | 正值；退刀槽后有效长度 >0 | 无上界(物理开放量) |

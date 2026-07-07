@@ -109,3 +109,17 @@ def test_spline_export_disabled_immediately_on_edit() -> None:
     field.setText("100000")
 
     assert not page.btn_save.isEnabled()
+
+
+def test_spline_export_stays_disabled_after_clear() -> None:
+    page = _spline_page()
+
+    page._on_calculate()
+    assert page.btn_save.isEnabled()
+
+    page._clear()
+    _app().processEvents()
+
+    assert page._last_payload is None
+    assert page._last_result is None
+    assert not page.btn_save.isEnabled()

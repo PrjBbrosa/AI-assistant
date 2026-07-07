@@ -232,8 +232,15 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     # 效率公式（含当量摩擦角 phi' = atan(mu / cos(alpha_n))）
     # DIN 3975 / Niemann §24：eta = tan(gamma) / tan(gamma + phi')
     phi_prime_rad = math.atan(friction_mu / max(math.cos(normal_pressure_angle_rad), 1e-6))
+    gamma_plus_phi_rad = lead_angle_calc_rad + phi_prime_rad
+    if gamma_plus_phi_rad >= math.radians(89.0):
+        raise InputError(
+            f"导程角与当量摩擦角之和过大：gamma={math.degrees(lead_angle_calc_rad):.2f} deg "
+            f"+ phi'={math.degrees(phi_prime_rad):.2f} deg >= 89 deg，"
+            "蜗杆副无法有效传递功率，请检查 geometry.z1、geometry.diameter_factor_q 或摩擦系数。"
+        )
     phi_prime_deg = math.degrees(phi_prime_rad)
-    efficiency_estimate = math.tan(lead_angle_calc_rad) / math.tan(lead_angle_calc_rad + phi_prime_rad)
+    efficiency_estimate = math.tan(lead_angle_calc_rad) / math.tan(gamma_plus_phi_rad)
     # Apply only physical upper limit (lossless is impossible); no lower clamp — caller sees true value.
     efficiency_estimate = min(0.98, efficiency_estimate)
 
@@ -493,14 +500,8 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     tan_gamma = math.tan(lead_angle_calc_rad)
 
     # 当量摩擦角（法向摩擦角投影到轴向）phi' = atan(mu / cos(alpha_n))
-    phi_prime_force_rad = math.atan(friction_mu / max(cos_alpha_n, 1e-6))
-    if lead_angle_calc_rad + phi_prime_force_rad >= math.radians(89.0):
-        raise InputError(
-            f"导程角与当量摩擦角之和过大：gamma={math.degrees(lead_angle_calc_rad):.2f} deg "
-            f"+ phi'={math.degrees(phi_prime_force_rad):.2f} deg >= 89 deg，"
-            "蜗杆副无法有效传递功率，请检查 geometry.z1、geometry.diameter_factor_q 或摩擦系数。"
-        )
-    tan_gamma_plus_phi = math.tan(lead_angle_calc_rad + phi_prime_force_rad)
+    phi_prime_force_rad = phi_prime_rad
+    tan_gamma_plus_phi = math.tan(gamma_plus_phi_rad)
 
     # F_a2（蜗轮轴向力）= F_t1（蜗杆切向力）= F_t2·tan(gamma+phi')
     axial_force_wheel_n = tangential_force_wheel_n * tan_gamma_plus_phi

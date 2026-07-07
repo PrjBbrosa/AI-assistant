@@ -918,6 +918,20 @@ def test_gamma_plus_phi_prime_near_90_rejected_not_math_domain_error():
         calculate_worm_geometry(data)
 
 
+def test_gamma_plus_phi_prime_rejected_when_load_capacity_disabled():
+    data = _r2_base_payload()
+    data["geometry"]["z1"] = 6.0
+    data["geometry"]["diameter_factor_q"] = 0.41
+    data["geometry"]["lead_angle_deg"] = 45.0
+    data["geometry"]["x1"] = 1.0
+    data["advanced"]["normal_pressure_angle_deg"] = 35.0
+    data["advanced"]["friction_override"] = 0.30
+    data["load_capacity"]["enabled"] = False
+
+    with pytest.raises(InputError, match="导程角"):
+        calculate_worm_geometry(data)
+
+
 def test_center_distance_far_off_rejected_when_lc_enabled():
     data = WormCalculatorTests._base_payload()
     data["geometry"]["center_distance_mm"] = 22.0
