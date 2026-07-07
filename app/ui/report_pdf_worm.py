@@ -71,7 +71,7 @@ def generate_worm_report(
 
     # Determine overall pass/fail
     if lc_enabled and checks:
-        overall = all(checks.values())
+        overall = bool(lc.get("overall_pass", False))
     else:
         overall = None
 

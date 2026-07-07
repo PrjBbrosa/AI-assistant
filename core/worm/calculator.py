@@ -77,6 +77,8 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     z2 = _positive(float(_require(geometry, "z2", "geometry")), "geometry.z2")
     if z1 != int(z1):
         raise InputError(f"z1 必须为正整数，当前值 {z1}")
+    if z1 > 6:
+        raise InputError(f"蜗杆头数 geometry.z1 必须 <= 6，当前值 {int(z1)}")
     if z2 != int(z2):
         raise InputError(f"z2 必须为正整数，当前值 {z2}")
     module_mm = _positive(float(_require(geometry, "module_mm", "geometry")), "geometry.module_mm")
@@ -220,13 +222,25 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
         float(advanced.get("normal_pressure_angle_deg", 20.0)),
         "advanced.normal_pressure_angle_deg",
     )
+    if not (5.0 <= normal_pressure_angle_deg <= 35.0):
+        raise InputError(
+            "法向压力角 advanced.normal_pressure_angle_deg 必须在 [5, 35] deg 区间，"
+            f"当前值 {normal_pressure_angle_deg}"
+        )
     normal_pressure_angle_rad = math.radians(normal_pressure_angle_deg)
 
     # 效率公式（含当量摩擦角 phi' = atan(mu / cos(alpha_n))）
     # DIN 3975 / Niemann §24：eta = tan(gamma) / tan(gamma + phi')
     phi_prime_rad = math.atan(friction_mu / max(math.cos(normal_pressure_angle_rad), 1e-6))
+    gamma_plus_phi_rad = lead_angle_calc_rad + phi_prime_rad
+    if gamma_plus_phi_rad >= math.radians(89.0):
+        raise InputError(
+            f"导程角与当量摩擦角之和过大：gamma={math.degrees(lead_angle_calc_rad):.2f} deg "
+            f"+ phi'={math.degrees(phi_prime_rad):.2f} deg >= 89 deg，"
+            "蜗杆副无法有效传递功率，请检查 geometry.z1、geometry.diameter_factor_q 或摩擦系数。"
+        )
     phi_prime_deg = math.degrees(phi_prime_rad)
-    efficiency_estimate = math.tan(lead_angle_calc_rad) / math.tan(lead_angle_calc_rad + phi_prime_rad)
+    efficiency_estimate = math.tan(lead_angle_calc_rad) / math.tan(gamma_plus_phi_rad)
     # Apply only physical upper limit (lossless is impossible); no lower clamp — caller sees true value.
     efficiency_estimate = min(0.98, efficiency_estimate)
 
@@ -390,6 +404,15 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
 
     # ---- Load capacity: enabled flag guard ----
     lc_enabled = bool(load_capacity.get("enabled", False))
+    center_distance_tolerance_mm = max(0.05 * theoretical_center_distance_mm, 2.0)
+    if lc_enabled and abs(center_distance_delta_mm) > center_distance_tolerance_mm:
+        raise InputError(
+            f"中心距与理论中心距偏差过大：a={center_distance_mm:.3f} mm，"
+            f"a_th={theoretical_center_distance_mm:.3f} mm，"
+            f"偏差 {center_distance_delta_mm:+.3f} mm 超出容差 "
+            f"±{center_distance_tolerance_mm:.3f} mm。"
+            "负载能力校核的接触应力模型在此偏差下失效，请修正中心距或关闭负载能力校核。"
+        )
 
     if not lc_enabled:
         return {
@@ -477,8 +500,8 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     tan_gamma = math.tan(lead_angle_calc_rad)
 
     # 当量摩擦角（法向摩擦角投影到轴向）phi' = atan(mu / cos(alpha_n))
-    phi_prime_force_rad = math.atan(friction_mu / max(cos_alpha_n, 1e-6))
-    tan_gamma_plus_phi = math.tan(lead_angle_calc_rad + phi_prime_force_rad)
+    phi_prime_force_rad = phi_prime_rad
+    tan_gamma_plus_phi = math.tan(gamma_plus_phi_rad)
 
     # F_a2（蜗轮轴向力）= F_t1（蜗杆切向力）= F_t2·tan(gamma+phi')
     axial_force_wheel_n = tangential_force_wheel_n * tan_gamma_plus_phi
@@ -587,6 +610,10 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     root_safety_factor_peak = allowable_root_stress_mpa / max(sigma_f_peak_mpa, 1e-6)
     contact_ok = contact_safety_factor_peak >= required_contact_safety
     root_ok = root_safety_factor_peak >= required_root_safety
+    geometry_consistent = (
+        abs(lead_angle_delta_deg) <= 0.5
+        and abs(center_distance_delta_mm) <= max(0.25 * module_mm, 0.5)
+    )
 
     # ---- Mesh stress curve: contact geometry variation over one worm revolution ----
     curve_n_points = 360
@@ -729,13 +756,11 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
                 "safety_factor_nominal": root_safety_factor_nominal,
                 "safety_factor_peak": root_safety_factor_peak,
             },
+            "overall_pass": geometry_consistent and contact_ok and root_ok,
             "checks": {
                 # geometry_consistent 仅判断导程角和中心距是否自洽，
                 # q 不在推荐序列仅为提示性警告，不影响几何自洽判断
-                "geometry_consistent": (
-                    abs(lead_angle_delta_deg) <= 0.5
-                    and abs(center_distance_delta_mm) <= max(0.25 * module_mm, 0.5)
-                ),
+                "geometry_consistent": geometry_consistent,
                 "contact_ok": contact_ok,
                 "root_ok": root_ok,
             },

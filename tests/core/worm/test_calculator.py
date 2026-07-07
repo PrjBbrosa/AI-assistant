@@ -288,8 +288,10 @@ class WormCalculatorTests(unittest.TestCase):
         """d2 = z2 * m = 40 * 4 = 160 regardless of center_distance_mm."""
         payload = self._base_payload()
         # center_distance_mm = 100, but d2 should be 160 (not 2*100 - 40 = 160 by old formula)
-        # Use a different center_distance to prove independence
+        # Use a different center_distance to prove independence; this is a pure geometry
+        # assertion, so load capacity is disabled to avoid the R-3 center-distance guard.
         payload["geometry"]["center_distance_mm"] = 120.0
+        payload["load_capacity"]["enabled"] = False
 
         result = calculate_worm_geometry(payload)
 
@@ -392,6 +394,7 @@ class WormCalculatorTests(unittest.TestCase):
     def test_non_standard_q_produces_warning(self):
         payload = self._base_payload()
         payload["geometry"]["diameter_factor_q"] = 13.0
+        payload["geometry"]["center_distance_mm"] = (13.0 + 40.0) / 2.0 * 4.0
         result = calculate_worm_geometry(payload)
         warnings = result["geometry"]["consistency"]["warnings"]
         self.assertTrue(any("q" in w or "直径系数" in w for w in warnings))
@@ -545,6 +548,7 @@ class WormCalculatorTests(unittest.TestCase):
         payload["geometry"]["z1"] = 1.0
         payload["geometry"]["z2"] = 20.0
         payload["geometry"]["diameter_factor_q"] = 20.0
+        payload["geometry"]["center_distance_mm"] = (20.0 + 20.0) / 2.0 * 4.0
         # Recalculate consistent lead angle: atan(1/20) deg
         import math as _math
         payload["geometry"]["lead_angle_deg"] = round(_math.degrees(_math.atan(1.0 / 20.0)), 4)
@@ -570,6 +574,7 @@ class WormCalculatorTests(unittest.TestCase):
         payload["geometry"]["z1"] = 1.0
         payload["geometry"]["z2"] = 20.0
         payload["geometry"]["diameter_factor_q"] = 20.0
+        payload["geometry"]["center_distance_mm"] = (20.0 + 20.0) / 2.0 * 4.0
         import math as _math
         payload["geometry"]["lead_angle_deg"] = round(_math.degrees(_math.atan(1.0 / 20.0)), 4)
         payload["materials"]["wheel_material"] = "PA66+GF30"
@@ -868,6 +873,94 @@ def test_lubrication_dry_increases_friction():
     mu_oil = result_oil["performance"]["friction_mu"]
     mu_dry = result_dry["performance"]["friction_mu"]
     assert mu_dry > mu_oil, f"干摩擦 mu={mu_dry:.4f} 应大于油浴摩擦 mu={mu_oil:.4f}"
+
+
+def _r2_base_payload() -> dict:
+    return WormCalculatorTests._base_payload()
+
+
+def test_normal_pressure_angle_above_35_rejected():
+    data = _r2_base_payload()
+    data["advanced"]["normal_pressure_angle_deg"] = 89.5
+
+    with pytest.raises(InputError, match="normal_pressure_angle_deg"):
+        calculate_worm_geometry(data)
+
+
+def test_normal_pressure_angle_below_5_rejected():
+    data = _r2_base_payload()
+    data["advanced"]["normal_pressure_angle_deg"] = 2.0
+
+    with pytest.raises(InputError, match="normal_pressure_angle_deg"):
+        calculate_worm_geometry(data)
+
+
+def test_z1_above_6_rejected():
+    data = _r2_base_payload()
+    data["geometry"]["z1"] = 20.0
+
+    with pytest.raises(InputError, match="z1"):
+        calculate_worm_geometry(data)
+
+
+def test_gamma_plus_phi_prime_near_90_rejected_not_math_domain_error():
+    data = _r2_base_payload()
+    data["geometry"]["z1"] = 6.0
+    data["geometry"]["z2"] = 60.0
+    data["geometry"]["diameter_factor_q"] = 1.5
+    data["geometry"]["lead_angle_deg"] = 44.0
+    data["geometry"]["center_distance_mm"] = 127.0
+    data["geometry"]["x1"] = 1.0
+    data["advanced"]["friction_override"] = 0.30
+    data["advanced"]["normal_pressure_angle_deg"] = 35.0
+
+    with pytest.raises(InputError, match="导程角"):
+        calculate_worm_geometry(data)
+
+
+def test_gamma_plus_phi_prime_rejected_when_load_capacity_disabled():
+    data = _r2_base_payload()
+    data["geometry"]["z1"] = 6.0
+    data["geometry"]["diameter_factor_q"] = 0.41
+    data["geometry"]["lead_angle_deg"] = 45.0
+    data["geometry"]["x1"] = 1.0
+    data["advanced"]["normal_pressure_angle_deg"] = 35.0
+    data["advanced"]["friction_override"] = 0.30
+    data["load_capacity"]["enabled"] = False
+
+    with pytest.raises(InputError, match="导程角"):
+        calculate_worm_geometry(data)
+
+
+def test_center_distance_far_off_rejected_when_lc_enabled():
+    data = WormCalculatorTests._base_payload()
+    data["geometry"]["center_distance_mm"] = 22.0
+
+    with pytest.raises(InputError, match="中心距"):
+        calculate_worm_geometry(data)
+
+
+def test_center_distance_far_off_allowed_when_lc_disabled():
+    data = WormCalculatorTests._base_payload()
+    data["geometry"]["center_distance_mm"] = 22.0
+    data["load_capacity"]["enabled"] = False
+
+    result = calculate_worm_geometry(data)
+
+    assert result["load_capacity"]["enabled"] is False
+
+
+def test_load_capacity_exposes_authoritative_overall_pass():
+    data = WormCalculatorTests._base_payload()
+
+    result = calculate_worm_geometry(data)
+
+    lc = result["load_capacity"]
+    checks = lc["checks"]
+    assert "overall_pass" in lc
+    assert lc["overall_pass"] == (
+        checks["geometry_consistent"] and checks["contact_ok"] and checks["root_ok"]
+    )
 
 
 # ============================================================

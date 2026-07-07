@@ -51,7 +51,7 @@ tests/                 # pytest 测试
 2. **每模块一个 calculator**: `core/<module>/calculator.py` 包含 `InputError` 异常类、`_require`/`_positive` 验证辅助函数、主计算函数。
 3. **UI 页面模式**: 每个模块页面在 `app/ui/pages/` 下，使用 `FieldSpec` 数据类描述字段元信息（id、label、unit、hint、mapping、widget_type、default）。`mapping` 为 `(section, key)` 元组时，该字段参与计算 payload 构建；为 `None` 时仅用于 UI 记录或占位。
 4. **暖色调主题**: 全局 QSS 在 `theme.py`，使用 `#F7F5F2` 背景 / `#D97757` 主色 / `#EED9CF` 选中色。ObjectName 驱动样式（Card、SubCard、PassBadge、FailBadge 等）。
-5. **自动填充字段暖灰标识**: 凡由下拉联动、查表、材料选择等逻辑自动填充的输入字段，必须使用 `AutoCalcCard` 样式（暖灰背景 `#ECE8DF`，warm ink `#4A4135`，辅助 `#6B5D4A`，边框 `#C9BFB0`），与手动输入的 `SubCard` 区分。所有模块（螺栓、过盈、花键等）保持一致。通过 `card.setObjectName("AutoCalcCard")` + `style().unpolish/polish` 切换样式，`QLineEdit` 设为 `setReadOnly(True)`，`QComboBox` 设为 `setEnabled(False)`。
+5. **自动填充字段控件标识**: 凡由下拉联动、查表、材料选择等逻辑自动填充的输入字段，字段行卡片背景保持透明，与普通字段行统一；视觉区分下沉到输入控件本身。`QLineEdit` 设为 `setReadOnly(True)`，使用只读灰底、warm ink `#4A4135` 和辅助色 `#6B5D4A` 表达不可手填但可读取的状态；`QComboBox` 设为 `setEnabled(False)`。非输入行的 `AutoCalcCard` 容器仍可保留暖灰背景、边框或说明性样式，用于材料说明、查表结果摘要等展示区。所有模块（螺栓、过盈、花键等）保持一致，通过 objectName 与 `style().unpolish/polish` 刷新样式。
 6. **输入条件持久化**: 通过 `input_condition_store.py` 统一保存/加载 JSON 文件到 `saved_inputs/` 目录。
 
 ## Claude 工作流程

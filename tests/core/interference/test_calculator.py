@@ -1,6 +1,13 @@
+import json
 import unittest
+from pathlib import Path
 
 from core.interference.calculator import InputError, calculate_interference_fit
+
+
+def make_example_case() -> dict:
+    example_path = Path(__file__).resolve().parents[3] / "examples" / "interference_case_01.json"
+    return json.loads(example_path.read_text(encoding="utf-8"))["inputs"]
 
 
 def make_case() -> dict:
@@ -72,6 +79,30 @@ class InterferenceFitCalculatorTests(unittest.TestCase):
         # 契约锁定：messages 与 warnings 恒等（同一 list 对象），二者不得独立演化。
         result = calculate_interference_fit(make_case())
         self.assertIs(result["messages"], result["warnings"])
+
+    def test_safety_requirement_rejects_slip_safety_below_one(self) -> None:
+        data = make_example_case()
+        data["checks"]["slip_safety_min"] = "0.5"
+
+        with self.assertRaisesRegex(InputError, r"checks\.slip_safety_min.*必须.*1\.0"):
+            calculate_interference_fit(data)
+
+    def test_safety_requirement_rejects_stress_safety_below_one(self) -> None:
+        data = make_example_case()
+        data["checks"]["stress_safety_min"] = "0.5"
+
+        with self.assertRaisesRegex(InputError, r"checks\.stress_safety_min.*必须.*1\.0"):
+            calculate_interference_fit(data)
+
+    def test_safety_requirement_accepts_one_as_minimum(self) -> None:
+        data = make_example_case()
+        data["checks"]["slip_safety_min"] = "1.0"
+        data["checks"]["stress_safety_min"] = "1.0"
+
+        result = calculate_interference_fit(data)
+
+        self.assertEqual(result["safety"]["slip_safety_min"], 1.0)
+        self.assertEqual(result["safety"]["stress_safety_min"], 1.0)
 
     def test_invalid_geometry_is_rejected(self) -> None:
         with self.assertRaises(InputError):

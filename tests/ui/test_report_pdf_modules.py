@@ -475,6 +475,50 @@ class TestWormPdfReport:
         generate_worm_report(out, payload, result)
         assert out.exists() and out.stat().st_size > 1000
 
+    def test_missing_overall_pass_does_not_fallback_to_checks_pass(self, tmp_path, monkeypatch):
+        from reportlab.platypus import Spacer
+
+        from app.ui import report_pdf_worm
+
+        verdict_values = []
+
+        def fake_verdict_block(styles, passed, subtitle):
+            verdict_values.append(passed)
+            return Spacer(1, 1)
+
+        monkeypatch.setattr(report_pdf_worm, "_verdict_block", fake_verdict_block)
+        monkeypatch.setattr(report_pdf_worm, "build_pdf", lambda path, elems, title: path.write_bytes(b"%PDF"))
+
+        payload = {"geometry": {}, "operating": {}}
+        result = {
+            "geometry": {
+                "ratio": 20.0,
+                "center_distance_mm": 100.0,
+                "worm_dimensions": {},
+                "wheel_dimensions": {},
+                "consistency": {},
+            },
+            "performance": {
+                "efficiency_estimate": 0.80,
+                "output_torque_nm": 100.0,
+            },
+            "load_capacity": {
+                "enabled": True,
+                "status": "legacy result without authoritative overall_pass",
+                "checks": {
+                    "geometry_consistent": True,
+                    "contact_ok": True,
+                    "root_ok": True,
+                },
+                "warnings": [],
+                "assumptions": [],
+            },
+        }
+
+        report_pdf_worm.generate_worm_report(tmp_path / "worm_missing_overall.pdf", payload, result)
+
+        assert verdict_values == [False]
+
 
 # ---------------------------------------------------------------------------
 # Bolt rich PDF tri-state (CRIT-1 regression)

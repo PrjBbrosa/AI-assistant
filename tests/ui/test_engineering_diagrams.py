@@ -10,12 +10,16 @@ from app.ui.widgets.clamping_diagram import ClampingDiagramWidget, ThreadForceTr
 from app.ui.widgets.hertz_input_diagram import HertzInputDiagramWidget
 from app.ui.widgets.worm_geometry_overview import WormGeometryOverviewWidget
 
+_THEME_APPLIED_PROPERTY = "_ai_assistant_test_theme_applied_once"
+
 
 def _app() -> QApplication:
     instance = QApplication.instance()
     if instance is None:
         instance = QApplication([])
-    apply_theme(instance)
+    if not instance.property(_THEME_APPLIED_PROPERTY) or not instance.styleSheet():
+        apply_theme(instance)
+        instance.setProperty(_THEME_APPLIED_PROPERTY, True)
     return instance
 
 
