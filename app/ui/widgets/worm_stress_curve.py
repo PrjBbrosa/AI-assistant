@@ -85,10 +85,10 @@ class WormStressCurveWidget(QWidget):
 
         ax1 = self._figure.add_subplot(111)
         ax1.set_facecolor("#FBF8F3")
-        ax1.set_xlabel(r"蜗杆转角 $\theta$ (deg)", fontsize=10, color="#2E2A25")
-        ax1.set_ylabel(r"齿面接触应力 $\sigma_H$ (MPa)", color="#D97757", fontsize=10)
+        ax1.set_xlabel("蜗杆转角 θ (deg)", fontsize=10, color="#2E2A25")
+        ax1.set_ylabel("齿面接触应力 σ_H (MPa)", color="#D97757", fontsize=10)
         ax1.plot(self._theta_deg, self._sigma_h_mpa, color="#D97757", linewidth=1.8,
-                 label=r"$\sigma_H$")
+                 label="σ_H")
         if self._sigma_h_nominal > 0:
             ax1.axhline(self._sigma_h_nominal, color="#D97757", linestyle="--",
                         linewidth=0.8, alpha=0.6)
@@ -100,9 +100,9 @@ class WormStressCurveWidget(QWidget):
 
         ax2 = ax1.twinx()
         ax2.set_facecolor("#FBF8F3")
-        ax2.set_ylabel(r"齿根弯曲应力 $\sigma_F$ (MPa)", color="#5A7D9E", fontsize=10)
+        ax2.set_ylabel("齿根弯曲应力 σ_F (MPa)", color="#5A7D9E", fontsize=10)
         ax2.plot(self._theta_deg, self._sigma_f_mpa, color="#5A7D9E", linewidth=1.8,
-                 label=r"$\sigma_F$")
+                 label="σ_F")
         if self._sigma_f_nominal > 0:
             ax2.axhline(self._sigma_f_nominal, color="#5A7D9E", linestyle="--",
                         linewidth=0.8, alpha=0.6)
