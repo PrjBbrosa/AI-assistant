@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication, QLineEdit
 from app.ui.pages.bolt_page import BoltPage
 from app.ui.pages.hertz_contact_page import HertzContactPage
 from app.ui.pages.interference_fit_page import InterferenceFitPage
+from app.ui.pages.spline_fit_page import SplineFitPage
 
 _QT_APP: QApplication | None = None
 
@@ -36,6 +37,13 @@ def _hertz_page() -> HertzContactPage:
 def _bolt_page() -> BoltPage:
     app = _app()
     page = BoltPage()
+    app.processEvents()
+    return page
+
+
+def _spline_page() -> SplineFitPage:
+    app = _app()
+    page = SplineFitPage()
     app.processEvents()
     return page
 
@@ -84,5 +92,20 @@ def test_bolt_export_starts_disabled_and_only_reenables_after_calculate() -> Non
     field = page._field_widgets["loads.FA_max"]
     assert isinstance(field, QLineEdit)
     field.textEdited.emit(field.text())
+
+    assert not page.btn_save.isEnabled()
+
+
+def test_spline_export_disabled_immediately_on_edit() -> None:
+    page = _spline_page()
+
+    assert not page.btn_save.isEnabled()
+
+    page._on_calculate()
+    assert page.btn_save.isEnabled()
+
+    field = page._widgets["loads.torque_required_nm"]
+    assert isinstance(field, QLineEdit)
+    field.setText("100000")
 
     assert not page.btn_save.isEnabled()

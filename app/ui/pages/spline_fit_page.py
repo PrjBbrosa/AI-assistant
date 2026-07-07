@@ -454,6 +454,7 @@ class SplineFitPage(BaseChapterPage):
         self.btn_calculate = self.add_action_button("执行校核", primary=True)
         self.btn_clear = self.add_action_button("清空参数")
         self.btn_save = self.add_action_button("导出结果说明")
+        self.btn_save.setEnabled(False)
         self.btn_load_1 = self.add_action_button("测试案例 1", side="right")
         self.btn_load_2 = self.add_action_button("测试案例 2", side="right")
 
@@ -500,6 +501,7 @@ class SplineFitPage(BaseChapterPage):
 
         self.set_info(SPLINE_SCOPE_DISCLAIMER)
         self._sync_state_from_ui(refresh=True)
+        self.btn_save.setEnabled(False)
 
     def _build_chapter_page(self, chapter: dict) -> QWidget:
         scroll = QScrollArea()
@@ -665,7 +667,7 @@ class SplineFitPage(BaseChapterPage):
         self._update_mode_chapter_title(text)
         self._suspend_live_feedback = was_suspended
         if not self._suspend_live_feedback:
-            self._recalc_timer.start()
+            self._mark_dirty()
 
     def _on_standard_designation_changed(self, text: str) -> None:
         was_suspended = self._suspend_live_feedback
@@ -699,7 +701,7 @@ class SplineFitPage(BaseChapterPage):
         self._set_card_disabled("spline.geometry_mode", is_standard)
         self._suspend_live_feedback = was_suspended
         if not self._suspend_live_feedback:
-            self._recalc_timer.start()
+            self._mark_dirty()
 
     def _on_load_condition_changed(self, text: str) -> None:
         was_suspended = self._suspend_live_feedback
@@ -714,7 +716,7 @@ class SplineFitPage(BaseChapterPage):
             self._set_card_disabled("spline.p_allowable_mpa", False)
         self._suspend_live_feedback = was_suspended
         if not self._suspend_live_feedback:
-            self._recalc_timer.start()
+            self._mark_dirty()
 
     def _on_material_changed(self, field_prefix: str, material_name: str) -> None:
         was_suspended = self._suspend_live_feedback
@@ -733,7 +735,7 @@ class SplineFitPage(BaseChapterPage):
                 self._set_card_disabled(fid, not is_combined)
             self._suspend_live_feedback = was_suspended
             if not self._suspend_live_feedback:
-                self._recalc_timer.start()
+                self._mark_dirty()
             return
         for fid, key in ((e_fid, "e_mpa"), (nu_fid, "nu"), (yield_fid, "yield_mpa")):
             widget = self._widgets.get(fid)
@@ -742,11 +744,17 @@ class SplineFitPage(BaseChapterPage):
             self._set_card_disabled(fid, True)
         self._suspend_live_feedback = was_suspended
         if not self._suspend_live_feedback:
-            self._recalc_timer.start()
+            self._mark_dirty()
 
     def _on_inputs_changed(self) -> None:
         if self._suspend_live_feedback:
             return
+        self._mark_dirty()
+
+    def _mark_dirty(self) -> None:
+        self._last_payload = None
+        self._last_result = None
+        self.btn_save.setEnabled(False)
         self._recalc_timer.start()
 
     def _set_chapter_title(self, chapter_key: str, title: str) -> None:
@@ -913,6 +921,7 @@ class SplineFitPage(BaseChapterPage):
         except InputError as exc:
             self._last_payload = None
             self._last_result = None
+            self.btn_save.setEnabled(False)
             self._reset_scenario_cards()
             self.set_overall_status(f"输入错误: {exc}", "fail" if strict else "wait")
             self.set_info(str(exc))
@@ -920,6 +929,7 @@ class SplineFitPage(BaseChapterPage):
         except Exception as exc:
             self._last_payload = None
             self._last_result = None
+            self.btn_save.setEnabled(False)
             self._reset_scenario_cards()
             self.set_overall_status(f"内部错误: {exc}", "fail")
             self.set_info(f"计算过程中出现意外错误，请检查输入或联系开发者。\n{exc}")
@@ -927,6 +937,7 @@ class SplineFitPage(BaseChapterPage):
 
         self._last_payload = payload
         self._last_result = result
+        self.btn_save.setEnabled(True)
 
     def _build_payload(self) -> dict:
         mode_text = self._get_value("mode")
@@ -1125,6 +1136,7 @@ class SplineFitPage(BaseChapterPage):
         self._apply_defaults()
         self._last_payload = None
         self._last_result = None
+        self.btn_save.setEnabled(False)
         self._reset_scenario_cards()
         self.set_overall_status("等待计算", "wait")
         self.set_info("参数已重置为默认值。")
