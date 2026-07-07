@@ -14,6 +14,8 @@ from app.ui.theme import apply_theme
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+_THEME_APPLIED_PROPERTY = "_ai_assistant_test_theme_applied_once"
+
 
 @pytest.fixture(scope="module")
 def app():
@@ -21,6 +23,12 @@ def app():
     if instance is None:
         instance = QApplication([])
     return instance
+
+
+def _ensure_theme(app: QApplication) -> None:
+    if not app.property(_THEME_APPLIED_PROPERTY) or not app.styleSheet():
+        apply_theme(app)
+        app.setProperty(_THEME_APPLIED_PROPERTY, True)
 
 
 @pytest.mark.parametrize(
@@ -42,7 +50,7 @@ def test_input_field_cards_are_marked_for_transparent_surface(app, page_cls):
 
 
 def test_theme_makes_only_input_field_cards_transparent(app):
-    apply_theme(app)
+    _ensure_theme(app)
     stylesheet = app.styleSheet()
 
     assert 'QFrame#SubCard[surfaceRole="inputField"]' in stylesheet
@@ -53,7 +61,7 @@ def test_theme_makes_only_input_field_cards_transparent(app):
 
 
 def test_input_field_label_wrapper_renders_without_extra_background(app):
-    apply_theme(app)
+    _ensure_theme(app)
     page = BoltTappedAxialPage()
     page.resize(1270, 920)
     page.chapter_stack.setCurrentIndex(1)
