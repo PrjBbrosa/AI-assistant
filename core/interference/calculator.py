@@ -188,6 +188,10 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
 
     slip_safety_min = _positive(float(checks.get("slip_safety_min", 1.2)), "checks.slip_safety_min")
     stress_safety_min = _positive(float(checks.get("stress_safety_min", 1.2)), "checks.stress_safety_min")
+    if slip_safety_min < 1.0:
+        raise InputError(f"checks.slip_safety_min 必须 >= 1.0，当前值 {slip_safety_min}")
+    if stress_safety_min < 1.0:
+        raise InputError(f"checks.stress_safety_min 必须 >= 1.0，当前值 {stress_safety_min}")
     curve_points = int(options.get("curve_points", 41))
     curve_points = int(_in_closed_interval(float(curve_points), 11, 201, "options.curve_points"))
     repeated_load_mode = str(advanced.get("repeated_load_mode", "off")).strip() or "off"
