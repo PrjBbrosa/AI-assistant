@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import os
 from unittest.mock import patch
+
+import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
 from app.ui.pages.bolt_page import BoltPage
+from app.ui.pages.bolt_tapped_axial_page import BoltTappedAxialPage
 from app.ui.pages.hertz_contact_page import HertzContactPage
 from app.ui.pages.interference_fit_page import InterferenceFitPage
 from app.ui.pages.spline_fit_page import SplineFitPage
@@ -154,3 +158,37 @@ def test_bolt_render_failure_rolls_back_result_and_disables_export() -> None:
     assert page._last_result is None
     assert not page.btn_save.isEnabled()
     assert "结果渲染失败" in page.info_label.text()
+
+
+def test_bolt_tapped_axial_render_failure_rolls_back_result_and_disables_export() -> None:
+    app = _app()
+    page = BoltTappedAxialPage()
+    app.processEvents()
+
+    page._run_calculation()
+    assert page._last_result is not None
+    assert page.btn_export_text.isEnabled()
+    assert page.btn_export_pdf.isEnabled()
+
+    bad_result = deepcopy(page._last_result)
+    bad_result["assembly"]["F_preload_min_N"] = None
+
+    with patch(
+        "app.ui.pages.bolt_tapped_axial_page.calculate_tapped_axial_joint",
+        return_value=bad_result,
+    ), patch(
+        "app.ui.pages.bolt_tapped_axial_page.QMessageBox.critical",
+        return_value=None,
+    ) as critical:
+        try:
+            page._run_calculation()
+        except Exception as exc:  # pragma: no cover - documents the RED failure mode
+            pytest.fail(f"_run_calculation 应保护渲染异常，实际抛出：{exc!r}")
+
+    critical.assert_called_once()
+    assert critical.call_args.args[1] == "渲染异常"
+    assert "结果展示失败" in critical.call_args.args[2]
+    assert page._last_payload is None
+    assert page._last_result is None
+    assert not page.btn_export_text.isEnabled()
+    assert not page.btn_export_pdf.isEnabled()

@@ -706,11 +706,18 @@ class BoltTappedAxialPage(BaseChapterPage):
             QMessageBox.critical(self, "计算异常", str(exc))
             return
 
+        try:
+            self._render_result(result)
+        except Exception as exc:
+            self._invalidate_cache()
+            self._reset_result_panels()
+            QMessageBox.critical(self, "渲染异常", f"结果展示失败：{exc}")
+            return
+
         self._last_payload = payload
         self._last_result = result
         self.btn_export_text.setEnabled(True)
         self.btn_export_pdf.setEnabled(True)
-        self._render_result(result)
         self.set_current_chapter(self.chapter_list.count() - 1)
 
     def _render_result(self, result: dict[str, Any]) -> None:
