@@ -28,11 +28,32 @@ Windows / PyCharm 下推荐这样启动：
 
 ```powershell
 py -3 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt -c constraints.txt
 .\.venv\Scripts\python.exe app\main.py
 ```
 
 如果 `.venv` 已经存在，可以跳过第一行。
+
+`requirements.txt` 只声明下限；`constraints.txt` 钉死当前已验证可 import 的精确版本（PySide6、PyInstaller、reportlab、matplotlib、openpyxl，以及测试用的 pytest）。更新依赖时先 `pip install -r requirements.txt`，再用环境里实际安装的版本刷新 `constraints.txt` 的 `==` 行。测试额外依赖见 `requirements-dev.txt`：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt -c constraints.txt
+$env:QT_QPA_PLATFORM="offscreen"
+.\.venv\Scripts\python.exe -m pytest tests/ -q
+```
+
+macOS / Linux：
+
+```bash
+python -m pip install -r requirements.txt -r requirements-dev.txt -c constraints.txt
+QT_QPA_PLATFORM=offscreen python -m pytest tests/ -q
+```
+
+## 持续集成
+
+GitHub Actions 工作流在 `.github/workflows/ci.yml`：Ubuntu、`QT_QPA_PLATFORM=offscreen`，按 `requirements.txt` + `requirements-dev.txt` 并受 `constraints.txt` 约束安装，然后跑 `python -m pytest tests/ -q` 和 `git diff --check`。
+
+Windows 打包与桌面手工 smoke **没有** 接入 CI runner。本机验收清单见 `scripts/windows_smoke.md`（构建 exe、启动、切换 7 个计算模块、加载样例、计算、保存输入、导出 PDF/DOCX/TXT）。不要把该清单当成已经跑过的绿测。
 
 ## 桌面端交互方式
 

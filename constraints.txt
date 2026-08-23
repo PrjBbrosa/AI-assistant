@@ -1,0 +1,17 @@
+# Exact versions importable in the project Python 3.12 venv (checked 2026-08-23).
+# Direct production packages plus pytest only — not a full pip freeze.
+#
+# Install (same as CI):
+#   python -m pip install -r requirements.txt -r requirements-dev.txt -c constraints.txt
+#
+# Update:
+#   python -m pip install -r requirements.txt
+#   then refresh the == pins below from the installed versions
+#   (pip show PACKAGE, or: python -c "import importlib.metadata as m; print(m.version('PACKAGE'))").
+
+PySide6==6.11.0
+pyinstaller==6.19.0
+reportlab==4.4.10
+matplotlib==3.10.8
+openpyxl==3.1.5
+pytest==9.0.2
