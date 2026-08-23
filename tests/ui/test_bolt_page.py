@@ -1,12 +1,15 @@
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLineEdit, QMessageBox
 
+from app.ui.model_scope import BOLT_SCOPE, MODEL_LEVEL_FORMAL_SUBSET
 from app.ui.pages.bolt_flowchart import RStepDetailPage, R_STEPS
 from app.ui.pages.bolt_page import BoltPage
+from app.ui.result_contract import from_bolt
 from core.bolt.calculator import InputError, calculate_vdi2230_core
 
 
@@ -108,6 +111,22 @@ class BoltPageStateTests(unittest.TestCase):
         self.assertEqual(page._field_widgets["clamped.surface_class"].currentText(), "精细 (Ra≈1.6μm)")  # type: ignore[attr-defined]
         self.assertEqual(page._field_widgets["assembly.tightening_method"].currentText(), "转角法")  # type: ignore[attr-defined]
         self.assertEqual(page._field_widgets["options.surface_treatment"].currentText(), "切削")  # type: ignore[attr-defined]
+
+    def test_hidden_mode_fields_are_omitted_from_payload(self) -> None:
+        page = BoltPage()
+        self.assertEqual(page._current_check_level(), "basic")
+        payload = page._build_payload()
+        self.assertNotIn("thermal_force_loss", payload.get("loads", {}))
+        self.assertNotIn("alpha_bolt", payload.get("operating", {}))
+        self.assertNotIn("load_cycles", payload.get("operating", {}))
+        self.assertNotIn("FM_min_input", payload.get("loads", {}))
+        self.assertTrue(page._field_specs["introduction.eccentric_clamp"].disabled)
+
+        page._set_check_level("fatigue")
+        page._apply_check_level_visibility()
+        thermal_payload = page._build_payload()
+        self.assertIn("thermal_force_loss", thermal_payload.get("loads", {}))
+        self.assertIn("load_cycles", thermal_payload.get("operating", {}))
 
     def test_setup_case_axial_hides_transverse_fields_and_builds_zero_fq(self) -> None:
         page = BoltPage()
@@ -391,8 +410,8 @@ class BoltPageStateTests(unittest.TestCase):
 
         report_lines = page._build_report_lines()
 
-        self.assertIn("- 支承面压强校核（R7）: 已跳过", report_lines)
-        self.assertIn("- 螺纹脱扣校核: 已跳过", report_lines)
+        self.assertIn("- 支承面压强校核（R7）: 未校核", report_lines)
+        self.assertIn("- 螺纹脱扣校核: 未校核", report_lines)
 
     def test_incomplete_status_shows_result_title_and_report_headline(self) -> None:
         """缺 R8 时 UI 不显示绿色总体通过。Ref: spec 2026-07-02 §D3。"""
@@ -402,13 +421,69 @@ class BoltPageStateTests(unittest.TestCase):
         page._last_payload = payload
         page._last_result = result
         page._render_result(payload, result)
+        view = from_bolt(result, payload)
 
         self.assertEqual(page._last_result["overall_status"], "incomplete")  # type: ignore[index]
-        self.assertEqual(page.result_title.text(), "校核结论不完整")
+        self.assertEqual(view.overall_status, "incomplete")
+        self.assertEqual(page.result_title.text(), view.title_zh)
+        self.assertIn("校核不完整", page.result_title.text())
+        self.assertIn(MODEL_LEVEL_FORMAL_SUBSET, page.result_title.text())
         self.assertNotIn("总体通过", page.info_label.text())
         headline = [line for line in page._build_report_lines() if line.startswith("总体结论")]
         self.assertTrue(headline)
         self.assertIn("不完整", headline[0])
+        self.assertIn(view.title_zh, headline[0])
+
+    def test_pass_and_incomplete_titles_come_from_view_model(self) -> None:
+        page = BoltPage()
+        page._calculate()
+        self.assertIsNotNone(page._last_result)
+        view = from_bolt(page._last_result, page._last_payload)
+        self.assertEqual(page.result_title.text(), view.title_zh)
+        self.assertIn(BOLT_SCOPE.model_level, view.title_zh)
+        if view.overall_status == "pass":
+            self.assertIn("校核通过", view.title_zh)
+        elif view.overall_status == "incomplete":
+            self.assertIn("校核不完整", view.title_zh)
+        else:
+            self.assertIn("校核不通过", view.title_zh)
+
+    def test_safety_required_live_error_for_value_below_one(self) -> None:
+        page = BoltPage()
+        widget = page._field_widgets["thread_strip.safety_required"]
+        error = page._field_error_labels["thread_strip.safety_required"]
+        self.assertIsInstance(widget, QLineEdit)
+        self.assertTrue(error.isHidden())
+
+        widget.setText("0.5")
+
+        self.assertFalse(error.isHidden())
+        self.assertIn(">= 1.0", error.text())
+        self.assertIn(widget.property("fieldError"), (True, "true"))
+        self.assertTrue(page.btn_calculate.isEnabled())
+
+        widget.setText("1.25")
+
+        self.assertTrue(error.isHidden())
+        self.assertIn(widget.property("fieldError"), (False, "false", None))
+
+    def test_calculate_with_invalid_safety_shows_errors_and_skips_result(self) -> None:
+        page = BoltPage()
+        page._field_widgets["thread_strip.safety_required"].setText("0.5")
+
+        with patch.object(QMessageBox, "critical", side_effect=AssertionError("no dialog")):
+            page._calculate()
+
+        self.assertIsNone(page._last_result)
+        self.assertFalse(page.btn_save.isEnabled())
+        self.assertTrue(page.btn_calculate.isEnabled())
+        safety_error = page._field_error_labels["thread_strip.safety_required"]
+        self.assertFalse(safety_error.isHidden())
+        self.assertIn("字段需要修正", page.info_label.text())
+        self.assertEqual(
+            page.chapter_list.currentRow(),
+            page._field_chapter_index["thread_strip.safety_required"],
+        )
 
     def test_text_report_includes_provenance_metadata(self) -> None:
         page = BoltPage()

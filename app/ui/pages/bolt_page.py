@@ -5,7 +5,6 @@ from __future__ import annotations
 import importlib
 import json
 import re
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
@@ -30,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.field_schema import FieldSchema, FieldSpec, validate_text
 from app.ui.input_condition_store import (
     InputConditionError,
     build_form_snapshot,
@@ -44,9 +44,22 @@ from app.ui.input_condition_store import (
 from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.clamping_diagram import ClampingDiagramWidget, ThreadForceTriangleWidget
 from app.ui.widgets.help_button import HelpButton
+from app.ui.model_scope import BOLT_SCOPE, make_scope_banner, scope_report_lines
 from app.ui.report_export import ReportExportError, write_text_report
 from app.ui.report_trace import build_report_trace, trace_report_lines
+from app.ui.result_contract import (
+    BOLT_CHECK_LABELS,
+    from_bolt,
+    status_label_zh,
+)
 from app.ui.pages import bolt_help_content as bolt_help
+from app.ui.pages.bolt_fields import (
+    CHAPTERS,
+    LAYER_FIELD_IDS,
+    METRIC_THREAD_TABLE,
+    SLIP_MU_MODE_CUSTOM,
+    SLIP_MU_MODE_FOLLOW,
+)
 from app.ui.pages.bolt_flowchart import (
     FlowchartNavWidget, RStepDetailPage, R_STEPS,
 )
@@ -84,111 +97,6 @@ def _export_bolt_pdf_report(
     report_pdf.generate_bolt_report(out_path, payload, result)
     return True
 
-
-@dataclass(frozen=True)
-class FieldSpec:
-    field_id: str
-    label: str
-    unit: str
-    hint: str
-    mapping: tuple[str, str] | None = None
-    widget_type: str = "number"
-    options: tuple[str, ...] = ()
-    default: str = ""
-    disabled: bool = False
-    help_ref: str = ""
-
-
-
-# GB/T 196 标准公制螺纹参数表
-# (d, [(p_coarse, d2, d3, As), (p_fine1, d2, d3, As), ...])
-# 粗牙排第一位，细牙在后。d2/d3/As 按 GB/T 196 / ISO 724 标准值。
-METRIC_THREAD_TABLE: dict[str, list[tuple[float, float, float, float]]] = {
-    "M3":   [(0.5,  2.675, 2.387, 5.03)],
-    "M4":   [(0.7,  3.545, 3.141, 8.78)],
-    "M5":   [(0.8,  4.480, 4.019, 14.2)],
-    "M6":   [(1.0,  5.350, 4.773, 20.1)],
-    "M8":   [(1.25, 7.188, 6.466, 36.6),  (1.0,  7.350, 6.773, 39.2)],
-    "M10":  [(1.5,  9.026, 8.160, 58.0),  (1.25, 9.188, 8.466, 61.2),
-             (1.0,  9.350, 8.773, 64.5)],
-    "M12":  [(1.75, 10.863, 9.853, 84.3), (1.5,  11.026, 10.160, 88.1),
-             (1.25, 11.188, 10.466, 92.1)],
-    "M14":  [(2.0,  12.701, 11.546, 115),  (1.5,  13.026, 12.160, 125)],
-    "M16":  [(2.0,  14.701, 13.546, 157),  (1.5,  15.026, 14.160, 167)],
-    "M18":  [(2.5,  16.376, 14.933, 192),  (1.5,  17.026, 16.160, 216)],
-    "M20":  [(2.5,  18.376, 16.933, 245),  (1.5,  19.026, 18.160, 272)],
-    "M22":  [(2.5,  20.376, 18.933, 303),  (1.5,  21.026, 20.160, 333)],
-    "M24":  [(3.0,  22.051, 20.319, 353),  (2.0,  22.701, 21.546, 384)],
-    "M27":  [(3.0,  25.051, 23.319, 459),  (2.0,  25.701, 24.546, 496)],
-    "M30":  [(3.5,  27.727, 25.706, 561),  (2.0,  28.701, 27.546, 621)],
-    "M33":  [(3.5,  30.727, 28.706, 694),  (2.0,  31.701, 30.546, 761)],
-    "M36":  [(4.0,  33.402, 31.093, 817),  (3.0,  34.051, 32.319, 865)],
-    "M39":  [(4.0,  36.402, 34.093, 976),  (3.0,  37.051, 35.319, 1030)],
-    "M42":  [(4.5,  39.077, 36.479, 1120), (3.0,  40.051, 38.319, 1210)],
-    "M48":  [(5.0,  44.752, 41.866, 1470), (3.0,  46.051, 44.319, 1600)],
-}
-
-
-def _make_layer_fields(n: int) -> list[FieldSpec]:
-    """生成第 n 层被夹件的 FieldSpec 列表。"""
-    return [
-        FieldSpec(
-            f"clamped.layer_{n}.thickness",
-            f"第{n}层厚度",
-            "mm",
-            f"第{n}层被夹件厚度。",
-            mapping=None,
-            default="15",
-            help_ref="terms/bolt_layer_thickness",
-        ),
-        FieldSpec(
-            f"clamped.layer_{n}.D_A",
-            f"第{n}层外径 DA",
-            "mm",
-            f"第{n}层被夹件外径。",
-            mapping=None,
-            default="24",
-            help_ref="terms/bolt_layer_outer_da",
-        ),
-        FieldSpec(
-            f"clamped.layer_{n}.E",
-            f"第{n}层弹性模量",
-            "MPa",
-            f"第{n}层被夹件弹性模量。钢 210000 / 铝 70000。",
-            mapping=None,
-            default="210000",
-            help_ref="terms/elastic_modulus",
-        ),
-        FieldSpec(
-            f"clamped.layer_{n}.material",
-            f"第{n}层材料",
-            "-",
-            f"第{n}层材料选择，用于自动填入热膨胀系数。",
-            mapping=None,
-            widget_type="choice",
-            options=("钢", "铝合金", "铸铁", "不锈钢", "自定义"),
-            default="钢",
-            help_ref="terms/bolt_layer_material",
-        ),
-        FieldSpec(
-            f"clamped.layer_{n}.alpha",
-            f"第{n}层热膨胀系数",
-            "1/K",
-            f"第{n}层热膨胀系数。由材料选择自动填入。",
-            mapping=None,
-            default="11.5e-6",
-            help_ref="terms/bolt_thermal_loss",
-        ),
-    ]
-
-
-LAYER_FIELD_IDS: list[list[str]] = [
-    [f"clamped.layer_{n}.{f}" for f in ("thickness", "D_A", "E", "material", "alpha")]
-    for n in range(1, 6)
-]
-
-SLIP_MU_MODE_FOLLOW = "跟随支承面摩擦 μK"
-SLIP_MU_MODE_CUSTOM = "单独输入 μT"
 
 ELASTIC_MODULUS_PRESETS: dict[str, str] = {
     "钢": "210000",
@@ -235,641 +143,8 @@ BEARING_GEOMETRY_PRESETS: dict[str, tuple[str, str]] = {
 }
 
 
-CHAPTERS: list[dict[str, Any]] = [
-    {
-        "id": "elements",
-        "title": "连接件参数",
-        "subtitle": "确定这颗螺栓的规格、强度与摩擦：填这些后，所有应力校核都有了几何与材料基础。",
-        "help_ref": "modules/bolt_vdi/_section_elements",
-        "fields": [
-            FieldSpec(
-                "elements.joint_type",
-                "连接形式",
-                "-",
-                "螺纹孔连接：螺栓拧入基体，仅螺栓头端有支承面。"
-                "通孔连接：螺栓穿过被夹件，头端+螺母端均有支承面。",
-                widget_type="choice",
-                options=("螺纹孔连接", "通孔螺栓连接"),
-                default="螺纹孔连接",
-                help_ref="terms/bolt_joint_type",
-            ),
-            FieldSpec(
-                "fastener.d",
-                "公称直径 d",
-                "mm",
-                "选择标准公制螺纹规格，或选「自定义」手动输入。",
-                mapping=("fastener", "d"),
-                widget_type="choice",
-                options=tuple(METRIC_THREAD_TABLE.keys()) + ("自定义",),
-                default="M10",
-                help_ref="terms/bolt_thread_nominal",
-            ),
-            FieldSpec(
-                "fastener.d_custom",
-                "自定义公称直径",
-                "mm",
-                "手动输入非标螺纹公称直径。",
-                mapping=None,
-                help_ref="terms/bolt_thread_nominal",
-            ),
-            FieldSpec(
-                "fastener.p",
-                "螺距 p",
-                "mm",
-                "选择与公称直径匹配的螺距，或选「自定义」手动输入。",
-                mapping=("fastener", "p"),
-                widget_type="choice",
-                options=("1.5",),
-                default="1.5",
-                help_ref="terms/bolt_thread_pitch",
-            ),
-            FieldSpec(
-                "fastener.p_custom",
-                "自定义螺距",
-                "mm",
-                "手动输入非标螺距。",
-                mapping=None,
-                help_ref="terms/bolt_thread_pitch",
-            ),
-            FieldSpec(
-                "fastener.d2",
-                "中径 d2（自动计算）",
-                "mm",
-                "由所选规格自动填入。自定义模式可手动输入。",
-                mapping=("fastener", "d2"),
-                help_ref="terms/bolt_stress_area",
-            ),
-            FieldSpec(
-                "fastener.d3",
-                "小径 d3（自动计算）",
-                "mm",
-                "由所选规格自动填入。自定义模式可手动输入。",
-                mapping=("fastener", "d3"),
-                help_ref="terms/bolt_stress_area",
-            ),
-            FieldSpec(
-                "fastener.As",
-                "应力截面积 As（自动计算）",
-                "mm²",
-                "由所选规格自动填入。自定义模式可手动输入或留空（系统估算）。",
-                mapping=("fastener", "As"),
-                help_ref="terms/bolt_stress_area",
-            ),
-            FieldSpec(
-                "fastener.grade",
-                "强度等级",
-                "-",
-                "选择螺栓强度等级以自动填入屈服强度 Rp0.2。选「自定义」可手动输入。",
-                mapping=None,
-                widget_type="choice",
-                options=tuple(BOLT_GRADE_TABLE.keys()) + ("自定义",),
-                default="8.8",
-                help_ref="terms/bolt_grade",
-            ),
-            FieldSpec(
-                "fastener.Rp02",
-                "屈服强度 Rp0.2（自动计算）",
-                "MPa",
-                "由强度等级自动填入。自定义模式可手动输入。",
-                mapping=("fastener", "Rp02"),
-                default="640",
-                help_ref="terms/bolt_yield_strength",
-            ),
-            FieldSpec(
-                "tightening.mu_thread",
-                "螺纹摩擦系数 μG",
-                "-",
-                "影响螺纹扭矩与扭转载荷。",
-                mapping=("tightening", "mu_thread"),
-                default="0.12",
-                help_ref="terms/bolt_friction_thread",
-            ),
-            FieldSpec(
-                "tightening.mu_bearing",
-                "支承面摩擦系数 μK",
-                "-",
-                "影响支承面扭矩。",
-                mapping=("tightening", "mu_bearing"),
-                default="0.14",
-                help_ref="terms/bolt_friction_bearing",
-            ),
-            FieldSpec(
-                "tightening.thread_flank_angle_deg",
-                "牙型角",
-                "deg",
-                "公制螺纹常用 60°。",
-                mapping=("tightening", "thread_flank_angle_deg"),
-                default="60",
-                help_ref="terms/bolt_thread_flank_angle",
-            ),
-            FieldSpec(
-                "bearing.bearing_d_inner",
-                "支承内径 DKm,i",
-                "mm",
-                "螺栓头/螺母下支承面的内径，通常等于通孔直径。",
-                mapping=("bearing", "bearing_d_inner"),
-                default="11",
-                help_ref="terms/bolt_bearing_pressure_allowable",
-            ),
-            FieldSpec(
-                "bearing.bearing_d_outer",
-                "支承外径 DKm,o",
-                "mm",
-                "螺栓头/螺母下支承面的外径，通常等于螺栓头对边宽度。",
-                mapping=("bearing", "bearing_d_outer"),
-                default="18",
-                help_ref="terms/bolt_bearing_pressure_allowable",
-            ),
-            FieldSpec(
-                "bearing.bearing_material", "支承面材料", "-",
-                "选择支承面材料以自动填入许用压强。",
-                mapping=None, widget_type="choice",
-                options=("钢", "铝合金", "自定义"), default="钢",
-                help_ref="terms/bolt_bearing_material",
-            ),
-            FieldSpec(
-                "bearing.p_G_allow", "许用支承面压强 p_G", "MPa",
-                "支承面许用面压强度。钢约 700 MPa，铝合金约 300 MPa。",
-                mapping=("bearing", "p_G_allow"), default="700",
-                help_ref="terms/bolt_bearing_pressure_allowable",
-            ),
-        ],
-    },
-    {
-        "id": "clamped",
-        "title": "被夹紧件和实体",
-        "subtitle": "描述螺栓所夹零件的厚度与软硬：被夹件柔度 δp 与螺栓柔度 δs 共同决定载荷因数 Φ_N。",
-        "help_ref": "modules/bolt_vdi/_section_clamped",
-        "fields": [
-            FieldSpec(
-                "clamped.basic_solid",
-                "基础实体类型",
-                "-",
-                "用于自动柔度建模。选择几何模型后，勾选自动计算可替代手动输入顺从度。",
-                mapping=None,  # spec D12/W-10：payload 由专用翻译代码写入，避免中文双写
-                widget_type="choice",
-                options=("圆柱体", "锥体", "套筒"),
-                default="圆柱体",
-                help_ref="terms/bolt_clamped_solid_type",
-            ),
-            FieldSpec(
-                "clamped.part_count",
-                "被夹件数量",
-                "-",
-                "参与夹紧的零件数量。选 2 或自定义时可分层输入参数。",
-                mapping=None,
-                widget_type="choice",
-                options=("1", "2", "自定义"),
-                default="1",
-                help_ref="terms/bolt_clamped_part_count",
-            ),
-            FieldSpec(
-                "clamped.custom_count",
-                "自定义层数",
-                "个",
-                "输入被夹件层数（3~5）。",
-                mapping=None,
-                default="3",
-                help_ref="terms/bolt_custom_part_count",
-            ),
-            *_make_layer_fields(1),
-            *_make_layer_fields(2),
-            *_make_layer_fields(3),
-            *_make_layer_fields(4),
-            *_make_layer_fields(5),
-            FieldSpec(
-                "clamped.surface_class",
-                "接触面粗糙度",
-                "-",
-                "用于嵌入损失自动估算。选择后当嵌入损失 FZ=0 时自动计算参考值。",
-                mapping=None,  # spec D12/W-10：payload 由专用翻译代码写入，避免中文双写
-                widget_type="choice",
-                options=("粗糙 (Ra≈6.3μm)", "中等 (Ra≈3.2μm)", "精细 (Ra≈1.6μm)"),
-                default="中等 (Ra≈3.2μm)",
-                help_ref="terms/bolt_embed_loss",
-            ),
-            FieldSpec(
-                "clamped.total_thickness",
-                "总夹紧长度 lK",
-                "mm",
-                "被夹件厚度总和。用于热损失自动估算和将来的自动刚度建模。",
-                mapping=("clamped", "total_thickness"),
-                default="20",
-                help_ref="terms/bolt_clamp_length_lk",
-            ),
-            FieldSpec(
-                "clamped.D_A",
-                "被夹件等效外径 DA",
-                "mm",
-                "圆柱/锥体模型表示等效外径；套筒模型下等同于套筒外径。自动柔度计算需要。",
-                mapping=("clamped", "D_A"),
-                default="24",
-                help_ref="terms/bolt_equivalent_outer_da",
-            ),
-            FieldSpec(
-                "stiffness.E_bolt",
-                "螺栓弹性模量",
-                "MPa",
-                "钢约 210000 MPa。自动柔度计算需要。",
-                mapping=("stiffness", "E_bolt"),
-                default="210000",
-                help_ref="terms/elastic_modulus",
-            ),
-            FieldSpec(
-                "stiffness.E_clamped",
-                "被夹件弹性模量",
-                "MPa",
-                "钢 210000 / 铝 70000 MPa。自动柔度计算需要。",
-                mapping=("stiffness", "E_clamped"),
-                default="210000",
-                help_ref="terms/elastic_modulus",
-            ),
-            FieldSpec(
-                "stiffness.auto_compliance",
-                "弹性柔度计算方式",
-                "-",
-                "柔度 = 单位力引起的弹性变形量（mm/N），描述零件软硬程度。"
-                "自动计算根据几何和材料估算；手动输入则直接填写工程经验值或试验值。",
-                mapping=("stiffness", "auto_compliance"),
-                widget_type="choice",
-                options=("手动输入", "自动计算"),
-                default="手动输入",
-                help_ref="terms/bolt_compliance",
-            ),
-            FieldSpec(
-                "stiffness.bolt_compliance",
-                "螺栓柔度 δs",
-                "mm/N",
-                "1N 拉力下螺栓的伸长量。值越大螺栓越软。"
-                "与被夹件柔度配套输入；若改用刚度输入可留空。",
-                mapping=("stiffness", "bolt_compliance"),
-                default="2.2e-06",
-                help_ref="terms/bolt_compliance",
-            ),
-            FieldSpec(
-                "stiffness.clamped_compliance",
-                "被夹件柔度 δp",
-                "mm/N",
-                "1N 压力下被夹件的压缩量。值越大被夹件越软。"
-                "与螺栓柔度配套输入。",
-                mapping=("stiffness", "clamped_compliance"),
-                default="3.1e-06",
-                help_ref="terms/bolt_compliance",
-            ),
-            FieldSpec(
-                "stiffness.bolt_stiffness",
-                "螺栓刚度 cs",
-                "N/mm",
-                "刚度 = 1/柔度，即产生 1mm 变形所需的力。"
-                "若使用刚度输入，填 cs 与 cp，柔度可留空。",
-                mapping=("stiffness", "bolt_stiffness"),
-                help_ref="terms/bolt_compliance",
-            ),
-            FieldSpec(
-                "stiffness.clamped_stiffness",
-                "被夹件刚度 cp",
-                "N/mm",
-                "刚度 = 1/柔度。与 cs 配套输入。",
-                mapping=("stiffness", "clamped_stiffness"),
-                help_ref="terms/bolt_compliance",
-            ),
-        ],
-    },
-    {
-        "id": "assembly",
-        "title": "装配属性",
-        "subtitle": "设定装配工艺与散差：拧紧方式决定 αA，利用系数 ν 决定装配允许应力；嵌入与热损失在此扣除。",
-        "help_ref": "modules/bolt_vdi/_section_assembly",
-        "fields": [
-            FieldSpec(
-                "assembly.tightening_method",
-                "拧紧方式",
-                "-",
-                "装配方式选项。用于 αA 建议范围提示，并影响扭矩法下 R5 的残余扭转载荷修正。",
-                widget_type="choice",
-                options=("扭矩法", "转角法", "液压拉伸法", "热装法"),
-                default="扭矩法",
-                help_ref="terms/bolt_tightening_method",
-            ),
-            FieldSpec(
-                "tightening.alpha_A",
-                "拧紧系数 αA",
-                "-",
-                "FMmax/FMmin，反映装配散差。扭矩法常见 1.4~1.8。",
-                mapping=("tightening", "alpha_A"),
-                default="1.6",
-                help_ref="terms/bolt_tightening_factor_alpha_a",
-            ),
-            FieldSpec(
-                "tightening.utilization",
-                "装配利用系数 ν",
-                "-",
-                "装配阶段允许屈服利用比例，常见 0.8~0.95。",
-                mapping=("tightening", "utilization"),
-                default="0.9",
-                help_ref="terms/bolt_utilization_nu",
-            ),
-            FieldSpec(
-                "tightening.prevailing_torque",
-                "附加防松扭矩 MA,prev",
-                "N·m",
-                "锁紧螺母等引入的附加扭矩。无则填 0。",
-                mapping=("tightening", "prevailing_torque"),
-                default="0",
-                help_ref="terms/bolt_prevailing_torque",
-            ),
-            FieldSpec(
-                "loads.embed_loss",
-                "嵌入损失 FZ",
-                "N",
-                "接触面粗糙峰压实造成的预紧力损失。**填 0** 时若已选择接触面粗糙度，"
-                "将按本模块简化模型（粗糙度 × 界面数）自动估算；填非零值时使用你的手动值。",
-                mapping=("loads", "embed_loss"),
-                default="0",
-                help_ref="terms/bolt_embed_loss",
-            ),
-            FieldSpec(
-                "loads.thermal_force_loss",
-                "热损失 Fth",
-                "N",
-                "热膨胀差异折算的预紧力损失。",
-                mapping=("loads", "thermal_force_loss"),
-                default="0",
-                help_ref="terms/bolt_thermal_loss",
-            ),
-            FieldSpec(
-                "loads.FM_min_input",
-                "已知最小预紧力 FM,min",
-                "N",
-                "校核模式下使用：输入已知的最小预紧力值。",
-                mapping=("loads", "FM_min_input"),
-                help_ref="terms/bolt_preload_fm",
-            ),
-        ],
-    },
-    {
-        "id": "operating",
-        "title": "工况数据",
-        "subtitle": "填服役实际承受的外载、温度与循环次数：驱动 R3 残余夹紧、R5 服役应力、疲劳与热损失校核。",
-        "help_ref": "modules/bolt_vdi/_section_operating",
-        "fields": [
-            FieldSpec(
-                "operating.setup_case",
-                "工况类型",
-                "-",
-                "载荷工况说明，用于记录设计场景。",
-                widget_type="choice",
-                options=("轴向载荷", "横向载荷", "轴向+横向", "自由输入"),
-                default="轴向+横向",
-                help_ref="terms/bolt_setup_case",
-            ),
-            FieldSpec(
-                "loads.FA_max",
-                "最大轴向工作载荷 FA,max",
-                "N",
-                "外部轴向拉载，作用于连接上的最大工作载荷。",
-                mapping=("loads", "FA_max"),
-                help_ref="terms/bolt_axial_load_fa",
-            ),
-            FieldSpec(
-                "loads.FQ_max",
-                "最大横向载荷 FQ,max",
-                "N",
-                "横向剪切载荷，用于防滑夹紧力校核。",
-                mapping=("loads", "FQ_max"),
-                default="0",
-                help_ref="terms/bolt_axial_load_fa",
-            ),
-            FieldSpec(
-                "loads.seal_force_required",
-                "密封所需残余夹紧力 FK,req",
-                "N",
-                "若有密封要求，填该值；否则可填 0。",
-                mapping=("loads", "seal_force_required"),
-                default="0",
-                help_ref="terms/bolt_seal_clamp_force",
-            ),
-            FieldSpec(
-                "loads.friction_interfaces",
-                "摩擦面数 qF",
-                "-",
-                "防滑校核中参与传力的摩擦界面数量。",
-                mapping=("loads", "friction_interfaces"),
-                default="1",
-                help_ref="terms/bolt_friction_interfaces",
-            ),
-            FieldSpec(
-                "loads.slip_mu_mode",
-                "防滑摩擦系数来源",
-                "-",
-                "默认跟随支承面摩擦 μK；只有防滑界面状态明显不同时才单独输入 μT。",
-                mapping=None,
-                widget_type="choice",
-                options=(SLIP_MU_MODE_FOLLOW, SLIP_MU_MODE_CUSTOM),
-                default=SLIP_MU_MODE_FOLLOW,
-            ),
-            FieldSpec(
-                "loads.slip_friction_coefficient",
-                "防滑摩擦系数 μT",
-                "-",
-                "防滑工况使用的摩擦系数，常与支承面摩擦不同。",
-                mapping=("loads", "slip_friction_coefficient"),
-                default="0.18",
-                help_ref="terms/bolt_slip_friction_coefficient",
-            ),
-            FieldSpec(
-                "operating.load_cycles",
-                "载荷循环次数 ND",
-                "次",
-                "用于疲劳校核的循环次数输入。",
-                mapping=("operating", "load_cycles"),
-                default="100000",
-                help_ref="terms/bolt_load_cycles",
-            ),
-            FieldSpec(
-                "options.surface_treatment",
-                "螺纹表面处理",
-                "-",
-                "影响疲劳极限 σ_ASV。轧制螺纹强于切削螺纹。",
-                mapping=None,
-                widget_type="choice",
-                options=("轧制", "切削"),
-                default="轧制",
-                help_ref="terms/bolt_surface_treatment",
-            ),
-            FieldSpec(
-                "operating.bolt_material",
-                "螺栓材料",
-                "-",
-                "选择螺栓材料以自动填入热膨胀系数。选「自定义」可手动输入。",
-                mapping=None,
-                widget_type="choice",
-                options=("钢", "不锈钢", "自定义"),
-                default="钢",
-                help_ref="terms/bolt_bolt_material",
-            ),
-            FieldSpec(
-                "operating.alpha_bolt",
-                "螺栓热膨胀系数 α_bolt（自动计算）",
-                "1/K",
-                "由材料选择自动填入。自定义模式可手动输入。",
-                mapping=("operating", "alpha_bolt"),
-                default="11.5e-6",
-                help_ref="terms/bolt_thermal_loss",
-            ),
-            FieldSpec(
-                "operating.clamped_material",
-                "被夹件/基体材料",
-                "-",
-                "选择被夹件材料以自动填入热膨胀系数。选「自定义」可手动输入。",
-                mapping=None,
-                widget_type="choice",
-                options=("钢", "铝合金", "铸铁", "不锈钢", "自定义"),
-                default="钢",
-                help_ref="terms/bolt_clamped_material",
-            ),
-            FieldSpec(
-                "operating.alpha_parts",
-                "被夹件热膨胀系数 α_parts（自动计算）",
-                "1/K",
-                "由材料选择自动填入。自定义模式可手动输入。",
-                mapping=("operating", "alpha_parts"),
-                default="11.5e-6",
-                help_ref="terms/bolt_thermal_loss",
-            ),
-            FieldSpec(
-                "operating.temp_bolt",
-                "螺栓温度",
-                "°C",
-                "用于热损失估算。若已知等效热损失可直接在下方输入。",
-                mapping=("operating", "temp_bolt"),
-                default="20",
-                help_ref="terms/bolt_thermal_loss",
-            ),
-            FieldSpec(
-                "operating.temp_parts",
-                "被夹件温度",
-                "°C",
-                "与螺栓温度共同影响热预紧力损失。",
-                mapping=("operating", "temp_parts"),
-                default="20",
-                help_ref="terms/bolt_thermal_loss",
-            ),
-        ],
-    },
-    {
-        "id": "introduction",
-        "title": "载荷导入",
-        "subtitle": "决定外力从哪进入连接（n 越小螺栓分担越少）并设定服役屈服安全系数 S_F。",
-        "help_ref": "modules/bolt_vdi/_section_introduction",
-        "fields": [
-            FieldSpec(
-                "stiffness.load_introduction_factor_n",
-                "载荷导入系数 n",
-                "-",
-                "修正外载导入比例。轴向端部导入通常取 1。",
-                mapping=("stiffness", "load_introduction_factor_n"),
-                default="1.0",
-                help_ref="terms/bolt_load_intro_factor",
-            ),
-            FieldSpec(
-                "introduction.position",
-                "载荷导入位置",
-                "-",
-                "用于记录载荷导入方式。",
-                widget_type="choice",
-                options=("螺栓头端", "螺母端", "中间", "分布式"),
-                default="螺栓头端",
-                help_ref="terms/bolt_load_intro_factor",
-            ),
-            FieldSpec(
-                "checks.yield_safety_operating",
-                "服役屈服安全系数 S_F",
-                "-",
-                "服役轴向应力允许值：Rp0.2 / S_F。",
-                mapping=("checks", "yield_safety_operating"),
-                default="1.1",
-                help_ref="terms/bolt_yield_safety",
-            ),
-            FieldSpec(
-                "introduction.eccentric_clamp",
-                "夹紧偏心 e_clamp",
-                "mm",
-                "偏心弯矩校核尚未启用，仅记录。",
-                default="0",
-                disabled=True,
-                help_ref="terms/bolt_eccentric_clamp",
-            ),
-            FieldSpec(
-                "introduction.eccentric_load",
-                "载荷偏心 e_load",
-                "mm",
-                "偏心弯矩校核尚未启用，仅记录。",
-                default="0",
-                disabled=True,
-                help_ref="terms/bolt_eccentric_load",
-            ),
-        ],
-    },
-    {
-        "id": "thread_strip",
-        "title": "螺纹脱扣校核",
-        "subtitle": "检查螺纹是否会在最大预紧力下被剪断（滑牙），尤其关键于铝 / 铸铁基体或浅孔螺纹。",
-        "help_ref": "modules/bolt_vdi/_section_thread_strip",
-        "fields": [
-            FieldSpec(
-                "thread_strip.m_eff",
-                "有效旋合深度 m_eff",
-                "mm",
-                "螺栓实际旋入螺母或螺纹孔的有效螺纹长度。"
-                "标准螺母高度约 0.8d~1.0d；螺纹孔连接需实测。"
-                "留空则跳过脱扣校核。",
-                mapping=("thread_strip", "m_eff"),
-                help_ref="terms/bolt_thread_engagement",
-            ),
-            FieldSpec(
-                "thread_strip.tau_BM",
-                "内螺纹剪切强度",
-                "MPa",
-                "螺母或壳体材料的剪切强度。"
-                "钢螺母一般可取 Rp0.2 x 0.6；"
-                "铝合金壳体约 150~200 MPa；铸铁约 200~250 MPa。",
-                mapping=("thread_strip", "tau_BM"),
-                help_ref="terms/bolt_thread_strip_tau",
-            ),
-            FieldSpec(
-                "thread_strip.tau_BS",
-                "外螺纹剪切强度",
-                "MPa",
-                "螺栓材料的剪切强度。留空时自动取 Rp0.2 x 0.6。",
-                mapping=("thread_strip", "tau_BS"),
-                help_ref="terms/bolt_thread_strip_tau",
-            ),
-            FieldSpec(
-                "thread_strip.safety_required",
-                "脱扣安全系数要求",
-                "-",
-                "最小脱扣安全系数，通常取 1.25。",
-                mapping=("thread_strip", "safety_required"),
-                default="1.25",
-                help_ref="terms/bolt_strip_safety_required",
-            ),
-        ],
-    },
-]
 
-
-CHECK_LABELS = {
-    "assembly_von_mises_ok": "装配等效应力校核（VDI R4）",
-    "operating_axial_ok": "服役轴向应力校核（VDI R5）",
-    "residual_clamp_ok": "残余夹紧力校核（VDI R3）",
-    "additional_load_ok": "附加载荷能力估算 ⚠ 参考",
-    "thermal_loss_ok": "温度损失影响校核",
-    "fatigue_ok": "疲劳校核（简化 Goodman）",
-    "bearing_pressure_ok": "支承面压强校核（R7）",
-    "thread_strip_ok": "螺纹脱扣校核",
-}
-
+CHECK_LABELS = BOLT_CHECK_LABELS
 _OVERALL_STATUS_TEXT = {
     "pass": "通过",
     "fail": "不通过",
@@ -999,11 +274,14 @@ class BoltPage(QWidget):
         self._last_result: dict[str, Any] | None = None
         self._field_widgets: dict[str, QWidget] = {}
         self._field_cards: dict[str, QWidget] = {}
-        self._field_specs: dict[str, FieldSpec] = {}
+        self._field_specs: dict[str, FieldSchema] = {}
+        self._field_error_labels: dict[str, QLabel] = {}
+        self._field_chapter_index: dict[str, int] = {}
         self._widget_hints: dict[QWidget, str] = {}
         self._check_badges: dict[str, QLabel] = {}
         self._check_name_labels: dict[str, QLabel] = {}
         self._chapter_step_index = 0
+        self._suspend_live_feedback = False
 
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 10, 12, 10)
@@ -1168,10 +446,13 @@ class BoltPage(QWidget):
         self._wire_combo("fastener.p", self._on_thread_p_changed)
         self._wire_combo("elements.joint_type", self._sync_joint_diagram_from_ui)
 
+        self._suspend_live_feedback = True
         self._apply_defaults()
         self._load_sample("input_case_01.json")
         self._apply_check_level_visibility()
+        self._suspend_live_feedback = False
         self._connect_dirty_signals()
+        self._refresh_all_field_errors()
         self._mark_results_dirty()
 
     def eventFilter(self, watched, event):  # noqa: N802
@@ -1205,11 +486,13 @@ class BoltPage(QWidget):
 
         for chapter in CHAPTERS:
             self._add_step_item(chapter["title"])
+            chapter_index = self.chapter_stack.count()
             page = self._create_chapter_page(
                 chapter["title"],
                 chapter["subtitle"],
                 chapter["fields"],
                 help_ref=chapter.get("help_ref", ""),
+                chapter_index=chapter_index,
             )
             if chapter["id"] == "assembly":
                 self._append_assembly_guide(page)
@@ -1288,8 +571,9 @@ class BoltPage(QWidget):
         self,
         title: str,
         subtitle: str,
-        fields: list[FieldSpec],
+        fields: list[FieldSchema],
         help_ref: str = "",
+        chapter_index: int | None = None,
     ) -> QWidget:
         page = QFrame(self)
         page.setObjectName("Card")
@@ -1345,6 +629,10 @@ class BoltPage(QWidget):
             hint = QLabel(spec.hint, field_card)
             hint.setObjectName("SectionHint")
             hint.setWordWrap(True)
+            error_label = QLabel("", field_card)
+            error_label.setObjectName("FieldErrorLabel")
+            error_label.setWordWrap(True)
+            error_label.setVisible(False)
 
             # 字段级 help_ref 存在时，把 label 与 HelpButton 包成一个水平布局放在 col 0
             if spec.help_ref:
@@ -1375,6 +663,7 @@ class BoltPage(QWidget):
                 row.addWidget(editor, 0, 2)
                 row.addWidget(unit, 0, 3)
                 row.addWidget(hint, 1, 0, 1, 4)
+                row.addWidget(error_label, 2, 0, 1, 4)
                 if isinstance(editor, QLineEdit):
                     editor.setReadOnly(True)
             else:
@@ -1382,8 +671,12 @@ class BoltPage(QWidget):
                 row.addWidget(editor, 0, 1)
                 row.addWidget(unit, 0, 2)
                 row.addWidget(hint, 1, 0, 1, 3)
+                row.addWidget(error_label, 2, 0, 1, 3)
             form_layout.addWidget(field_card)
             self._field_cards[spec.field_id] = field_card
+            self._field_error_labels[spec.field_id] = error_label
+            if chapter_index is not None:
+                self._field_chapter_index[spec.field_id] = chapter_index
 
         form_layout.addStretch(1)
         scroll.setWidget(container)
@@ -1518,7 +811,7 @@ class BoltPage(QWidget):
 
         dlg.exec()
 
-    def _create_editor(self, spec: FieldSpec, parent: QWidget) -> QWidget:
+    def _create_editor(self, spec: FieldSchema, parent: QWidget) -> QWidget:
         if spec.widget_type == "choice":
             editor = AppComboBox(parent)
             editor.addItems(spec.options)
@@ -1526,12 +819,18 @@ class BoltPage(QWidget):
                 idx = editor.findText(spec.default)
                 if idx >= 0:
                     editor.setCurrentIndex(idx)
+            editor.currentTextChanged.connect(
+                lambda _text, fid=spec.field_id: self._on_input_changed(fid)
+            )
         else:
             editor = QLineEdit(parent)
             editor.setObjectName("InputField")
             editor.setPlaceholderText("请输入数值")
             if spec.default:
                 editor.setText(spec.default)
+            editor.textChanged.connect(
+                lambda _text, fid=spec.field_id: self._on_input_changed(fid)
+            )
 
         help_text = self._build_field_help(spec)
         editor.setToolTip(help_text)
@@ -1541,7 +840,7 @@ class BoltPage(QWidget):
         self._field_specs[spec.field_id] = spec
         return editor
 
-    def _build_field_help(self, spec: FieldSpec) -> str:
+    def _build_field_help(self, spec: FieldSchema) -> str:
         unit_part = f"（单位：{spec.unit}）" if spec.unit and spec.unit != "-" else ""
         newbie = bolt_help.BEGINNER_GUIDES.get(spec.field_id, bolt_help.DEFAULT_BEGINNER_GUIDE)
         return f"{spec.label}{unit_part}\n参数说明：{spec.hint}\n新手提示：{newbie}"
@@ -1665,6 +964,8 @@ class BoltPage(QWidget):
             self._on_setup_case_changed(setup_case_widget.currentText())
         if hasattr(self, "flowchart_nav"):
             self.flowchart_nav.set_r6_visible(show_fatigue)
+        if not self._suspend_live_feedback:
+            self._refresh_all_field_errors()
 
     def _apply_calculation_mode_visibility(self, *_args) -> None:
         mode = self.calc_mode_combo.currentData() or "design"
@@ -2055,6 +1356,8 @@ class BoltPage(QWidget):
         hint.setWordWrap(True)
         content_layout.addWidget(title)
         content_layout.addWidget(hint)
+        self.model_scope_banner = make_scope_banner(container, BOLT_SCOPE)
+        content_layout.addWidget(self.model_scope_banner)
 
         summary_card = QFrame(container)
         summary_card.setObjectName("SubCard")
@@ -2159,9 +1462,15 @@ class BoltPage(QWidget):
         if cm_w and isinstance(cm_w, QComboBox):
             self._on_clamped_material_changed(cm_w.currentText())
 
-    def _set_badge(self, label: QLabel, text: str, is_pass: bool) -> None:
+    def _set_badge(self, label: QLabel, text: str, state: str | bool) -> None:
+        if state is True or state == "pass":
+            obj = "PassBadge"
+        elif state is False or state == "fail":
+            obj = "FailBadge"
+        else:
+            obj = "WaitBadge"
         label.setText(text)
-        label.setObjectName("PassBadge" if is_pass else "FailBadge")
+        label.setObjectName(obj)
         label.style().unpolish(label)
         label.style().polish(label)
 
@@ -2264,6 +1573,8 @@ class BoltPage(QWidget):
             widget.setCurrentIndex(idx)
             return True
 
+        previous = self._suspend_live_feedback
+        self._suspend_live_feedback = True
         self._clear()
         for spec in self._field_specs.values():
             value: Any | None = None
@@ -2560,6 +1871,8 @@ class BoltPage(QWidget):
         case_widget = self._field_widgets.get("operating.setup_case")
         if isinstance(case_widget, QComboBox):
             self._on_setup_case_changed(case_widget.currentText())
+        self._suspend_live_feedback = previous
+        self._refresh_all_field_errors()
         self._mark_results_dirty()
 
     def _load_sample(self, filename: str) -> None:
@@ -2619,6 +1932,8 @@ class BoltPage(QWidget):
         self.info_label.setText(f"已加载输入条件：{in_path}")
 
     def _clear(self) -> None:
+        previous = self._suspend_live_feedback
+        self._suspend_live_feedback = True
         self._apply_defaults()
         self._last_payload = None
         self._last_result = None
@@ -2627,10 +1942,13 @@ class BoltPage(QWidget):
         self.metrics_text.setText("尚无结果。")
         self.message_box.clear()
         for badge in self._check_badges.values():
-            self._set_badge(badge, "待计算", False)
+            self._set_badge(badge, "待计算", "wait")
         self.diagram_widget.set_forces(0.0, 0.0, 0.0)
         self.thread_triangle_widget.set_thread_forces(0.0, 0.0, 0.0)
         self._apply_check_level_visibility()
+        self._suspend_live_feedback = previous
+        if not self._suspend_live_feedback:
+            self._refresh_all_field_errors()
         self.info_label.setText("参数已重置为默认值。")
         self._mark_results_dirty()
 
@@ -2650,11 +1968,127 @@ class BoltPage(QWidget):
             elif isinstance(widget, QComboBox):
                 widget.currentIndexChanged.connect(self._mark_results_dirty)
 
-    def _read_widget_value(self, spec: FieldSpec) -> str:
+    def _read_widget_value(self, spec: FieldSchema) -> str:
         widget = self._field_widgets[spec.field_id]
         if spec.widget_type == "choice":
             return widget.currentText().strip()  # type: ignore[attr-defined]
         return widget.text().strip()  # type: ignore[attr-defined]
+
+    def _current_raw_values(self) -> dict[str, str]:
+        return {
+            field_id: self._read_widget_value(spec)
+            for field_id, spec in self._field_specs.items()
+        }
+
+    def _is_field_active(self, spec: FieldSchema) -> bool:
+        if spec.disabled:
+            return False
+        card = self._field_cards.get(spec.field_id)
+        if card is not None and card.isHidden():
+            return False
+        return True
+
+    def _set_field_error(self, field_id: str, message: str | None) -> None:
+        widget = self._field_widgets.get(field_id)
+        label = self._field_error_labels.get(field_id)
+        invalid = bool(message)
+        if widget is not None:
+            widget.setProperty("fieldError", invalid)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+        if label is not None:
+            label.setText(message or "")
+            label.setVisible(invalid)
+
+    def _validation_raw(self, spec: FieldSchema, values: dict[str, str]) -> str:
+        if spec.field_id == "fastener.d":
+            return self._resolve_thread_d()
+        if spec.field_id == "fastener.p":
+            return self._resolve_thread_p()
+        return values.get(spec.field_id, "")
+
+    def _validate_spec(self, spec: FieldSchema, values: dict[str, str]) -> tuple[bool, str]:
+        raw = self._validation_raw(spec, values)
+        if spec.field_id in {"fastener.d", "fastener.p"}:
+            numeric = FieldSpec(
+                spec.field_id,
+                spec.label,
+                spec.unit,
+                spec.hint,
+                mapping=spec.mapping,
+                min_value=0.0,
+                min_inclusive=False,
+            )
+            return validate_text(numeric, raw, values=values)
+        return validate_text(spec, raw, values=values)
+
+    def _refresh_field_error(self, field_id: str, values: dict[str, str] | None = None) -> None:
+        spec = self._field_specs.get(field_id)
+        if spec is None:
+            return
+        if not self._is_field_active(spec):
+            self._set_field_error(field_id, None)
+            return
+        raw_values = values if values is not None else self._current_raw_values()
+        ok, message = self._validate_spec(spec, raw_values)
+        self._set_field_error(field_id, None if ok else message)
+
+    def _dependent_field_ids(self, field_id: str) -> list[str]:
+        dependents: list[str] = []
+        for spec in self._field_specs.values():
+            for condition in (spec.required_when, spec.visible_when):
+                if (
+                    isinstance(condition, tuple)
+                    and len(condition) >= 2
+                    and condition[1] == field_id
+                ):
+                    dependents.append(spec.field_id)
+                    break
+        return dependents
+
+    def _refresh_all_field_errors(self) -> None:
+        values = self._current_raw_values()
+        for field_id in self._field_specs:
+            self._refresh_field_error(field_id, values)
+
+    def _collect_field_errors(self, *, show: bool) -> list[str]:
+        values = self._current_raw_values()
+        invalid: list[str] = []
+        for field_id, spec in self._field_specs.items():
+            if not self._is_field_active(spec):
+                if show:
+                    self._set_field_error(field_id, None)
+                continue
+            ok, message = self._validate_spec(spec, values)
+            if not ok:
+                invalid.append(field_id)
+            if show:
+                self._set_field_error(field_id, None if ok else message)
+        return invalid
+
+    def _focus_field(self, field_id: str) -> None:
+        if self.nav_stack.currentIndex() != 0:
+            self._switch_nav_tab(0)
+        chapter_index = self._field_chapter_index.get(field_id)
+        if chapter_index is not None:
+            self.chapter_list.setCurrentRow(chapter_index)
+            self.chapter_stack.setCurrentIndex(chapter_index)
+        widget = self._field_widgets.get(field_id)
+        if widget is None:
+            return
+        widget.setFocus(Qt.FocusReason.OtherFocusReason)
+        parent = widget.parentWidget()
+        while parent is not None and not isinstance(parent, QScrollArea):
+            parent = parent.parentWidget()
+        if isinstance(parent, QScrollArea):
+            parent.ensureWidgetVisible(widget)
+
+    def _on_input_changed(self, field_id: str) -> None:
+        if self._suspend_live_feedback:
+            return
+        self._refresh_field_error(field_id)
+        for dependent_id in self._dependent_field_ids(field_id):
+            self._refresh_field_error(dependent_id)
 
     def _build_payload(self) -> dict[str, Any]:
         payload: dict[str, Any] = {}
@@ -2672,7 +2106,9 @@ class BoltPage(QWidget):
                 raise InputError(f"字段 [{label}] 请输入数字，当前值: {raw}") from exc
 
         for spec in self._field_specs.values():
-            if spec.mapping is None:
+            if spec.mapping is None or spec.disabled:
+                continue
+            if not self._is_field_active(spec):
                 continue
             raw = self._read_widget_value(spec)
             # 螺纹规格特殊处理：从下拉选项提取数值
@@ -2831,6 +2267,14 @@ class BoltPage(QWidget):
         return str(data) if data is not None else text.split("（")[0].strip()
 
     def _calculate(self) -> None:
+        invalid = self._collect_field_errors(show=True)
+        if invalid:
+            self._last_payload = None
+            self._last_result = None
+            self._mark_results_dirty()
+            self._focus_field(invalid[0])
+            self.info_label.setText(f"有 {len(invalid)} 个字段需要修正。")
+            return
         try:
             payload = self._build_payload()
             payload.setdefault("options", {})["check_level"] = self._current_check_level()
@@ -2864,39 +2308,17 @@ class BoltPage(QWidget):
         self.chapter_list.setCurrentRow(self.chapter_list.count() - 1)
 
     def _render_result(self, payload: dict[str, Any], result: dict[str, Any]) -> None:
-        overall_status = str(
-            result.get("overall_status", "pass" if result.get("overall_pass") else "fail")
-        )
-        checks = result.get("checks", {})
+        view = from_bolt(result, payload)
         level = str(result.get("check_level", self._current_check_level()))
+        self.result_title.setText(view.title_zh)
+        self.result_summary.setText(view.summary_zh)
 
-        if overall_status == "pass":
-            title = "校核通过"
-            summary = "该工况满足当前模型下全部分项要求。"
-        elif overall_status == "incomplete":
-            title = "校核结论不完整"
-            summary = "无分项不通过，但存在未校核项（见'已跳过'徽章与警告），请补充输入后重新校核。"
-        else:
-            title = "校核不通过"
-            summary = "该工况存在未满足项，请查看下方分项状态与调整建议。"
-        self.result_title.setText(title)
-        self.result_summary.setText(summary)
-
-        for key, badge in self._check_badges.items():
-            if key == "residual_clamp_ok" and result.get("calculation_mode") == "design":
-                self._set_badge(badge, "通过（设计模式自动满足）", True)
-            elif key not in checks:
-                badge.setObjectName("WaitBadge")
-                badge.setText("已跳过")
-                badge.style().polish(badge)
-            else:
-                self._set_badge(badge, "通过" if checks[key] else "不通过", checks[key])
-        # 附加载荷参考 badge（从 references 读取，不在 checks 中）
-        ref_badge = self._check_badges.get("additional_load_ok")
-        if ref_badge:
-            refs = result.get("references", {})
-            ref_pass = refs.get("additional_load_ok", True)
-            self._set_badge(ref_badge, "通过" if ref_pass else "超限（仅参考）", ref_pass)
+        for check in view.checks:
+            badge = self._check_badges.get(check.id)
+            if badge is None:
+                continue
+            text = check.message or status_label_zh(check.status)
+            self._set_badge(badge, text, check.status)
         self._apply_check_level_visibility()
 
         inter = result["intermediate"]
@@ -2943,9 +2365,9 @@ class BoltPage(QWidget):
         self.metrics_text.setText("\n".join(metric_lines))
 
         messages = []
-        for warning in result.get("warnings", []):
+        for warning in view.warnings:
             messages.append(f"[警告] {warning}")
-        messages.extend(self._build_recommendations(result))
+        messages.extend(view.recommendations)
         jt = result.get("joint_type", "tapped")
         jt_label = "螺纹孔连接" if jt == "tapped" else "通孔螺栓连接"
         messages.append(f"[连接形式] {jt_label}")
@@ -2979,38 +2401,7 @@ class BoltPage(QWidget):
         )
 
     def _build_recommendations(self, result: dict[str, Any]) -> list[str]:
-        checks = result.get("checks", {})
-        recs: list[str] = []
-        if not checks.get("assembly_von_mises_ok", True):
-            recs.append(
-                "[建议] 装配应力超限：可提高螺栓等级、降低目标预紧力散差(αA)、或优化摩擦控制。"
-            )
-        if not checks.get("operating_axial_ok", True):
-            recs.append("[建议] 服役应力超限：可增大规格 d、提高强度等级、或降低外载 FA。")
-        if not checks.get("residual_clamp_ok", True):
-            recs.append("[建议] 残余夹紧力不足：可提高 FMmin、减小嵌入损失、或增加摩擦面能力。")
-        refs = result.get("references", {})
-        if not refs.get("additional_load_ok", True):
-            recs.append("[参考] 附加载荷超限（参考估算）：可提高 As、降低 n 或减少轴向外载。")
-        if "thermal_loss_ok" in checks and not checks.get("thermal_loss_ok", True):
-            recs.append("[建议] 热损失偏大：可补偿预紧力、优化材料热匹配或降低温差。")
-        if "fatigue_ok" in checks and not checks.get("fatigue_ok", True):
-            recs.append("[建议] 疲劳不通过：可降低应力幅、提高螺栓等级、优化载荷谱或增大规格。")
-        if "bearing_pressure_ok" in checks and not checks.get("bearing_pressure_ok", True):
-            recs.append("[建议] 支承面压强不通过：可增大支承直径、加垫圈、降低预紧力或提高支承面材料许用压强。")
-        if "thread_strip_ok" in checks and not checks.get("thread_strip_ok", True):
-            strip = result.get("thread_strip", {})
-            side = strip.get("critical_side", "")
-            if side == "nut":
-                recs.append("[建议] 螺纹脱扣不通过（壳体侧）：可加深旋合深度、换用更高强度壳体材料、或加大螺栓规格。")
-            else:
-                recs.append("[建议] 螺纹脱扣不通过（螺栓侧）：可加深旋合深度或提高螺栓强度等级。")
-        not_checked = result.get("not_checked", [])
-        if not recs and not_checked:
-            recs.append("[建议] 当前结论不完整：请补充 " + "、".join(not_checked) + " 后重新校核。")
-        if not recs:
-            recs.append("[建议] 当前工况满足全部校核。建议保留 10% 以上工程裕量。")
-        return recs
+        return list(from_bolt(result).recommendations)
 
     def _save_report(self) -> None:
         if self._last_result is None or self._last_payload is None:
@@ -3056,7 +2447,7 @@ class BoltPage(QWidget):
         assert self._last_payload is not None
         result = self._last_result
         payload = self._last_payload
-        checks = result["checks"]
+        view = from_bolt(result, payload)
         inter = result["intermediate"]
         torque = result["torque"]
         forces = result["forces"]
@@ -3064,32 +2455,24 @@ class BoltPage(QWidget):
 
         lines = [
             "VDI 2230 螺栓校核报告（本地版）",
-            *trace_report_lines(build_report_trace(MODULE_ID, payload)),
+            *trace_report_lines(
+                build_report_trace(
+                    MODULE_ID,
+                    payload,
+                    model_level=BOLT_SCOPE.model_level,
+                )
+            ),
             f"校核层级: {result.get('check_level', self._current_check_level())}",
             "",
-            "总体结论: " + _OVERALL_STATUS_TEXT.get(
-                str(result.get("overall_status", "pass" if result.get("overall_pass") else "fail")),
-                "不通过",
-            ),
+            *scope_report_lines(view.model_scope),
+            "",
+            f"总体结论: {view.title_zh}",
             "",
             "分项结果:",
         ]
-        for key, title in CHECK_LABELS.items():
-            if key in ("thermal_loss_ok", "fatigue_ok"):
-                level = str(result.get("check_level", self._current_check_level()))
-                if key == "thermal_loss_ok" and level == "basic":
-                    continue
-                if key == "fatigue_ok" and level != "fatigue":
-                    continue
-            if key == "additional_load_ok":
-                refs = result.get("references", {})
-                passed = refs.get("additional_load_ok", True)
-                lines.append(f"- {title}: {'通过' if passed else '超限（仅参考）'}")
-                continue
-            if key not in checks:
-                lines.append(f"- {title}: 已跳过")
-            else:
-                lines.append(f"- {title}: {'通过' if checks.get(key) else '不通过'}")
+        for check in view.checks:
+            detail = check.message or status_label_zh(check.status)
+            lines.append(f"- {check.label_zh}: {detail}")
 
         lines.extend(
             [

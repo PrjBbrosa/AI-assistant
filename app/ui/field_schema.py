@@ -40,6 +40,7 @@ class FieldSchema:
     help_ref: str | None = None
     hint: str = ""
     placeholder: str = ""
+    disabled: bool = False
 
     @property
     def widget_type(self) -> str:
@@ -72,6 +73,7 @@ def FieldSpec(
     visible_when: Condition | None = None,
     required_when: Condition | None = None,
     placeholder: str = "",
+    disabled: bool = False,
 ) -> FieldSchema:
     """Compatibility constructor matching page-local FieldSpec call sites."""
     if value_type is None:
@@ -112,6 +114,7 @@ def FieldSpec(
         help_ref=help_ref or None,
         hint=hint,
         placeholder=placeholder,
+        disabled=disabled,
     )
 
 
@@ -162,6 +165,8 @@ def validate_text(
     values: Mapping[str, str] | None = None,
 ) -> tuple[bool, str]:
     """Return (ok, message) using the same finite/range/enum rules as core."""
+    if schema.disabled:
+        return True, ""
     if values is not None and not is_schema_visible(schema, values):
         return True, ""
     text = _as_text(raw)
@@ -206,6 +211,8 @@ def build_payload(
     payload: dict[str, dict[str, Any]] = {}
     for schema in schemas:
         if schema.mapping is None:
+            continue
+        if schema.disabled:
             continue
         if not is_schema_visible(schema, raw_values):
             continue

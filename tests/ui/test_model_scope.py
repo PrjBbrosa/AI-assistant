@@ -2,6 +2,7 @@
 
 from core.hertz.calculator import OUTER_CONTACT_SCOPE_NOTE
 from app.ui.model_scope import (
+    BOLT_SCOPE,
     BUFFER_SCOPE,
     HERTZ_SCOPE,
     INTERFERENCE_SCOPE,
@@ -67,3 +68,16 @@ def test_tapped_and_buffer_scope_levels() -> None:
     assert "快速估算" in buffer_lines
     assert "认证" in buffer_lines
     assert "应变率" in buffer_lines
+
+
+def test_bolt_scope_is_formal_subset() -> None:
+    assert BOLT_SCOPE.model_level == MODEL_LEVEL_FORMAL_SUBSET
+    assert MODULE_SCOPES[BOLT_SCOPE.module_id] is BOLT_SCOPE
+    banner = format_scope_banner_text(BOLT_SCOPE)
+    assert "正式子集" in banner
+    assert "偏心" in banner
+    assert "疲劳" in banner
+    assert "脱扣" in banner
+    assert "完整 VDI 2230" in banner
+    lines = "\n".join(scope_report_lines(BOLT_SCOPE))
+    assert "不是完整标准签发校核" in lines

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from app.ui.model_scope import (
+    BOLT_SCOPE,
     BUFFER_SCOPE,
     HERTZ_ALLOWABLE_SOURCE_NOTE,
     HERTZ_SCOPE,
@@ -91,6 +92,17 @@ BUFFER_CHECK_LABELS: dict[str, str] = {
     "stroke_ok": "行程校核",
     "peak_force_ok": "峰值力校核",
     "energy_capacity_ok": "曲线能量容量校核",
+}
+
+BOLT_CHECK_LABELS: dict[str, str] = {
+    "assembly_von_mises_ok": "装配等效应力校核（VDI R4）",
+    "operating_axial_ok": "服役轴向应力校核（VDI R5）",
+    "residual_clamp_ok": "残余夹紧力校核（VDI R3）",
+    "additional_load_ok": "附加载荷能力估算 ⚠ 参考",
+    "thermal_loss_ok": "温度损失影响校核",
+    "fatigue_ok": "疲劳校核（简化 Goodman）",
+    "bearing_pressure_ok": "支承面压强校核（R7）",
+    "thread_strip_ok": "螺纹脱扣校核",
 }
 
 _SPLINE_OVERALL_TITLE_ZH: dict[str, str] = {
@@ -1506,3 +1518,211 @@ def _fmt_metric(value: Any, digits: int) -> str:
         except (TypeError, ValueError):
             return str(value)
     return f"{float(value):.{digits}f}"
+
+def from_bolt(
+    result: dict[str, Any],
+    payload: dict[str, Any] | None = None,
+) -> ResultViewModel:
+    """Build the VDI 2230 bolt UI/PDF view model from calculator output."""
+    del payload  # inputs are echoed on the result; payload kept for call-site symmetry
+    checks_raw = result.get("checks")
+    if not isinstance(checks_raw, dict):
+        checks_raw = {}
+    refs = result.get("references")
+    if not isinstance(refs, dict):
+        refs = {}
+
+    raw_overall = result.get("overall_status")
+    overall_status: OverallStatus
+    if raw_overall in ("pass", "fail", "incomplete"):
+        overall_status = raw_overall  # type: ignore[assignment]
+    else:
+        overall_status = "pass" if result.get("overall_pass") else "fail"
+
+    model_level = BOLT_SCOPE.model_level
+    title = overall_title_zh(overall_status, model_level)
+    if overall_status == "pass":
+        summary = "该工况满足当前模型下全部分项要求。"
+    elif overall_status == "incomplete":
+        summary = (
+            "无分项不通过，但存在未校核项（见'未校核'徽章与警告），"
+            "请补充输入后重新校核。"
+        )
+    else:
+        summary = "该工况存在未满足项，请查看下方分项状态与调整建议。"
+
+    calc_mode = str(result.get("calculation_mode", "design"))
+    joint_type = str(result.get("joint_type", "tapped"))
+    check_level = str(result.get("check_level", "basic"))
+    joint_zh = "螺纹孔连接" if joint_type == "tapped" else "通孔螺栓连接"
+    mode_zh = "设计模式" if calc_mode == "design" else "校核模式"
+    checks = (
+        _bolt_check(
+            "assembly_von_mises_ok",
+            checks_raw,
+            model_level,
+        ),
+        _bolt_check(
+            "operating_axial_ok",
+            checks_raw,
+            model_level,
+        ),
+        _bolt_residual_check(checks_raw, calc_mode, model_level),
+        _bolt_additional_load_check(refs, model_level),
+        _bolt_check("thermal_loss_ok", checks_raw, model_level),
+        _bolt_check("fatigue_ok", checks_raw, model_level),
+        _bolt_check("bearing_pressure_ok", checks_raw, model_level),
+        _bolt_check("thread_strip_ok", checks_raw, model_level),
+    )
+    metrics = _bolt_metrics(result)
+    warnings = tuple(
+        str(msg) for msg in result.get("warnings", []) if msg is not None
+    )
+    return ResultViewModel(
+        overall_status=overall_status,
+        title_zh=title,
+        summary_zh=summary,
+        checks=checks,
+        metrics=metrics,
+        warnings=warnings,
+        model_scope=BOLT_SCOPE,
+        source_notes=(BOLT_SCOPE.applicability,),
+        recommendations=_bolt_recommendations(result),
+        verdict_subtitle_zh=(
+            f"{mode_zh} | {joint_zh} | 层级: {check_level} | 模型等级: {model_level}"
+        ),
+    )
+
+
+def _bolt_check(
+    check_id: str,
+    checks_raw: dict[str, Any],
+    model_level: str,
+    *,
+    message: str = "",
+) -> CheckView:
+    label = BOLT_CHECK_LABELS[check_id]
+    if check_id not in checks_raw:
+        return CheckView(
+            id=check_id,
+            label_zh=label,
+            status="not_checked",
+            model_level=model_level,
+            message=message or "未校核",
+        )
+    status: CheckStatus = "pass" if checks_raw.get(check_id) else "fail"
+    return CheckView(
+        id=check_id,
+        label_zh=label,
+        status=status,
+        model_level=model_level,
+        message=status_label_zh(status) if not message else message,
+    )
+
+
+def _bolt_residual_check(
+    checks_raw: dict[str, Any],
+    calc_mode: str,
+    model_level: str,
+) -> CheckView:
+    if calc_mode == "design" and checks_raw.get("residual_clamp_ok"):
+        return CheckView(
+            id="residual_clamp_ok",
+            label_zh=BOLT_CHECK_LABELS["residual_clamp_ok"],
+            status="pass",
+            model_level=model_level,
+            message="通过（设计模式自动满足）",
+        )
+    return _bolt_check("residual_clamp_ok", checks_raw, model_level)
+
+
+def _bolt_additional_load_check(
+    refs: dict[str, Any],
+    model_level: str,
+) -> CheckView:
+    ref_pass = bool(refs.get("additional_load_ok", True))
+    return CheckView(
+        id="additional_load_ok",
+        label_zh=BOLT_CHECK_LABELS["additional_load_ok"],
+        status="reference_only",
+        model_level=model_level,
+        message="通过" if ref_pass else "超限（仅参考）",
+        source_kind="reference",
+    )
+
+
+def _bolt_metrics(result: dict[str, Any]) -> tuple[MetricView, ...]:
+    inter = result.get("intermediate")
+    if not isinstance(inter, dict):
+        inter = {}
+    torque = result.get("torque")
+    if not isinstance(torque, dict):
+        torque = {}
+    forces = result.get("forces")
+    if not isinstance(forces, dict):
+        forces = {}
+    stresses = result.get("stresses_mpa")
+    if not isinstance(stresses, dict):
+        stresses = {}
+    refs = result.get("references")
+    if not isinstance(refs, dict):
+        refs = {}
+    metrics: list[MetricView] = [
+        *_optional_metric("FMmin", inter.get("FMmin_N"), "N", 2),
+        *_optional_metric("FMmax", inter.get("FMmax_N"), "N", 2),
+        *_optional_metric("MAmin", torque.get("MA_min_Nm"), "N·m", 3),
+        *_optional_metric("MAmax", torque.get("MA_max_Nm"), "N·m", 3),
+        *_optional_metric("FK_residual", forces.get("F_K_residual_N"), "N", 2),
+        *_optional_metric("FK_required", inter.get("F_K_required_N"), "N", 2),
+        *_optional_metric("FA_perm", refs.get("FA_perm_N"), "N", 2),
+        *_optional_metric(
+            "sigma_vm_assembly", stresses.get("sigma_vm_assembly"), "MPa", 2
+        ),
+        *_optional_metric("sigma_vm_work", stresses.get("sigma_vm_work"), "MPa", 2),
+    ]
+    return tuple(metrics)
+
+
+def _bolt_recommendations(result: dict[str, Any]) -> tuple[str, ...]:
+    checks = result.get("checks")
+    if not isinstance(checks, dict):
+        checks = {}
+    recs: list[str] = []
+    if not checks.get("assembly_von_mises_ok", True):
+        recs.append(
+            "[建议] 装配应力超限：可提高螺栓等级、降低目标预紧力散差(αA)、或优化摩擦控制。"
+        )
+    if not checks.get("operating_axial_ok", True):
+        recs.append("[建议] 服役应力超限：可增大规格 d、提高强度等级、或降低外载 FA。")
+    if not checks.get("residual_clamp_ok", True):
+        recs.append("[建议] 残余夹紧力不足：可提高 FMmin、减小嵌入损失、或增加摩擦面能力。")
+    refs = result.get("references")
+    if not isinstance(refs, dict):
+        refs = {}
+    if not refs.get("additional_load_ok", True):
+        recs.append("[参考] 附加载荷超限（参考估算）：可提高 As、降低 n 或减少轴向外载。")
+    if "thermal_loss_ok" in checks and not checks.get("thermal_loss_ok", True):
+        recs.append("[建议] 热损失偏大：可补偿预紧力、优化材料热匹配或降低温差。")
+    if "fatigue_ok" in checks and not checks.get("fatigue_ok", True):
+        recs.append("[建议] 疲劳不通过：可降低应力幅、提高螺栓等级、优化载荷谱或增大规格。")
+    if "bearing_pressure_ok" in checks and not checks.get("bearing_pressure_ok", True):
+        recs.append(
+            "[建议] 支承面压强不通过：可增大支承直径、加垫圈、降低预紧力或提高支承面材料许用压强。"
+        )
+    if "thread_strip_ok" in checks and not checks.get("thread_strip_ok", True):
+        strip = result.get("thread_strip")
+        if not isinstance(strip, dict):
+            strip = {}
+        side = strip.get("critical_side", "")
+        if side == "nut":
+            recs.append(
+                "[建议] 螺纹脱扣不通过（壳体侧）：可加深旋合深度、换用更高强度壳体材料、或加大螺栓规格。"
+            )
+        else:
+            recs.append("[建议] 螺纹脱扣不通过（螺栓侧）：可加深旋合深度或提高螺栓强度等级。")
+    not_checked = result.get("not_checked", [])
+    if not recs and not_checked:
+        recs.append("[建议] 当前结论不完整：请补充 " + "、".join(not_checked) + " 后重新校核。")
+    if not recs:
+        recs.append("[建议] 当前工况满足全部校核。建议保留 10% 以上工程裕量。")
+    return tuple(recs)

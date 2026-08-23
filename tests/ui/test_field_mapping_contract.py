@@ -88,6 +88,13 @@ def _prepare_spline_combined(page: SplineFitPage) -> None:
 
 def _prepare_bolt_optional_fields(page: BoltPage) -> None:
     # 刚度字段与柔度字段是二选一输入；默认覆盖柔度，额外场景覆盖刚度。
+    # 隐藏/未启用 mode 字段不进 payload，因此切到疲劳层级 + 校核模式以露出 mapped 字段。
+    page._set_check_level("fatigue")
+    page._apply_check_level_visibility()
+    verify_idx = page.calc_mode_combo.findData("verify")
+    if verify_idx >= 0:
+        page.calc_mode_combo.setCurrentIndex(verify_idx)
+    _set_field(page, "loads.slip_mu_mode", "单独输入 μT")
     _set_field(page, "stiffness.bolt_stiffness", "454545.45")
     _set_field(page, "stiffness.clamped_stiffness", "322580.65")
     _set_field(page, "loads.FM_min_input", "12000")

@@ -18,6 +18,7 @@ from reportlab.platypus import (
     Spacer,
 )
 
+from app.ui.model_scope import BOLT_SCOPE, scope_kv_rows
 from app.ui.report_pdf_common import (
     _build_styles,
     _check_pills,
@@ -35,6 +36,7 @@ from app.ui.report_pdf_common import (
     build_pdf,
 )
 from app.ui.report_trace import build_report_trace, trace_kv_rows
+from app.ui.result_contract import from_bolt
 
 # ---------------------------------------------------------------------------
 # Recommendations (standalone, no UI dependency)
@@ -127,32 +129,28 @@ def generate_bolt_report(
     """Generate a professional PDF report for VDI 2230 bolt check."""
     _register_fonts()
     styles = _build_styles()
+    view = from_bolt(result, payload)
 
     elements: list = []
 
     # -- Header --
-    trace = build_report_trace("bolt_vdi2230", payload)
+    trace = build_report_trace(
+        "bolt_vdi2230",
+        payload,
+        model_level=BOLT_SCOPE.model_level,
+    )
     date_str = trace.generated_at
     elements.append(_header_bar(styles, "VDI 2230 \u87ba\u6813\u8fde\u63a5\u6821\u6838\u62a5\u544a", date_str))
     elements.append(Spacer(1, 8))
     elements.extend(_trace_block(styles, trace_kv_rows(trace)))
 
     # -- Overall verdict --
-    # 读取三态结论（pass/fail/incomplete），与 UI 徽章、文本报告口径一致；
-    # 缺 overall_status 时回退到旧的 overall_pass 布尔语义。
-    overall = result.get("overall_status", "pass" if result.get("overall_pass") else "fail")
+    # 三态结论与 UI / 文本报告共用 ResultViewModel。
     joint_type = result.get("joint_type", "tapped")
     check_level = result.get("check_level", "basic")
     method = result.get("tightening_method", "torque")
     calc_mode = result.get("calculation_mode", "check")
-
-    subtitle_parts = [
-        _MODE_CN.get(calc_mode, calc_mode),
-        _JOINT_CN.get(joint_type, joint_type),
-        _LEVEL_CN.get(check_level, check_level),
-        _METHOD_CN.get(method, method),
-    ]
-    elements.append(_verdict_block(styles, overall, " | ".join(subtitle_parts)))
+    elements.append(_verdict_block(styles, view.overall_status, view.verdict_subtitle_zh))
     elements.append(Spacer(1, 8))
 
     # -- Key metrics --
@@ -171,7 +169,13 @@ def generate_bolt_report(
     # -- Check pills --
     checks = result.get("checks", {})
     refs = result.get("references", {})
-    elements.append(_check_pills(styles, checks, CHECK_LABELS, refs))
+    check_states = {
+        item.id: True if item.status == "pass" else False if item.status == "fail" else None
+        for item in view.checks
+        if item.status != "reference_only"
+    }
+    check_labels = {item.id: item.label_zh for item in view.checks}
+    elements.append(_check_pills(styles, check_states, check_labels, refs))
     elements.append(Spacer(1, 10))
 
     # -- Input summary --
@@ -389,6 +393,10 @@ def generate_bolt_report(
     if scope:
         elements.append(Spacer(1, 6))
         elements.append(Paragraph(scope, styles["muted"]))
+
+    elements.append(Spacer(1, 6))
+    elements.append(_section_title(styles, "\u6a21\u578b\u8303\u56f4"))
+    elements.append(_kv_table(styles, scope_kv_rows(view.model_scope), 0.28))
 
     # -- Build PDF --
     build_pdf(path, elements, "VDI 2230 \u87ba\u6813\u6821\u6838\u5de5\u5177")

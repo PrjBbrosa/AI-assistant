@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from app.ui.model_scope import BOLT_SCOPE
 from app.ui.report_pdf import build_bolt_recommendations, generate_bolt_report
+from app.ui.result_contract import from_bolt
 from core.bolt.calculator import calculate_vdi2230_core
 
 EXAMPLES_DIR = Path(__file__).resolve().parents[2] / "examples"
@@ -62,6 +64,32 @@ class TestGenerateBoltReport:
         generate_bolt_report(out, data, result)
         assert out.exists()
         assert result["stiffness_model"]["auto_modeled"]
+
+    def test_verdict_matches_result_view_model(self, tmp_path: Path, monkeypatch) -> None:
+        from app.ui import report_pdf as report_pdf_mod
+
+        overalls: list[object] = []
+        original_verdict = report_pdf_mod._verdict_block
+
+        def capture_verdict(styles, overall, subtitle):
+            overalls.append((overall, subtitle))
+            return original_verdict(styles, overall, subtitle)
+
+        monkeypatch.setattr(report_pdf_mod, "_verdict_block", capture_verdict)
+        data = _load_example()
+        result = _run_calc(data)
+        view = from_bolt(result, data)
+        generate_bolt_report(tmp_path / "bolt_verdict.pdf", data, result)
+
+        assert overalls
+        assert overalls[0][0] == view.overall_status
+        assert view.overall_status in ("pass", "fail", "incomplete")
+        assert BOLT_SCOPE.model_level in overalls[0][1]
+        assert view.title_zh.startswith(
+            {"pass": "校核通过", "fail": "校核不通过", "incomplete": "校核不完整"}[
+                view.overall_status
+            ]
+        )
 
 
 class TestBuildBoltRecommendations:

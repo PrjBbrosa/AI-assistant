@@ -13,6 +13,7 @@ from app.ui.field_schema import (
     parse_payload_value,
     validate_text,
 )
+from app.ui.pages.bolt_fields import CHAPTERS as BOLT_CHAPTERS
 from app.ui.pages.bolt_tapped_axial_page import CHAPTERS
 from app.ui.pages.buffer_energy_page import FIELD_SPECS as BUFFER_FIELD_SPECS
 from app.ui.pages.hertz_contact_page import CHAPTERS as HERTZ_CHAPTERS
@@ -41,6 +42,7 @@ def test_field_spec_factory_builds_mapped_float_schema() -> None:
     assert schema.finite is True
     assert schema.hint == "hint"
     assert schema.default == "10.0"
+    assert schema.disabled is False
 
 
 def test_field_spec_choice_becomes_enum() -> None:
@@ -193,6 +195,58 @@ def test_build_payload_omits_unmapped_and_hidden_fields() -> None:
     assert payload == {"fastener": {"d": 10.0}}
     assert "notes" not in payload
     assert "hidden" not in payload
+
+
+def test_field_spec_disabled_is_skipped_by_payload_and_validation() -> None:
+    schema = FieldSpec(
+        "introduction.eccentric_clamp",
+        "夹紧偏心",
+        "mm",
+        "",
+        default="0",
+        disabled=True,
+    )
+
+    assert schema.disabled is True
+    ok, message = validate_text(schema, "abc")
+    assert ok
+    assert message == ""
+    payload = build_payload([schema], {"introduction.eccentric_clamp": "9"})
+    assert payload == {}
+
+
+def _bolt_chapter_specs() -> dict[str, FieldSchema]:
+    specs: dict[str, FieldSchema] = {}
+    for chapter in BOLT_CHAPTERS:
+        for spec in chapter["fields"]:
+            specs[spec.field_id] = spec
+    return specs
+
+
+def test_bolt_field_schema_contract() -> None:
+    specs = _bolt_chapter_specs()
+    safety = specs["thread_strip.safety_required"]
+    assert isinstance(safety, FieldSchema)
+    assert safety.value_type == "float"
+    assert safety.finite is True
+    assert safety.min_value == 1.0
+    assert safety.min_inclusive is True
+    assert safety.mapping == ("thread_strip", "safety_required")
+    ok, message = validate_text(safety, "0.5")
+    assert not ok
+    assert ">= 1.0" in message
+    assert parse_payload_value(safety, "1.0") == 1.0
+
+    yield_safety = specs["checks.yield_safety_operating"]
+    assert yield_safety.min_value == 1.0
+    assert specs["introduction.eccentric_clamp"].disabled is True
+    assert specs["introduction.eccentric_load"].disabled is True
+    assert specs["clamped.basic_solid"].mapping is None
+    assert specs["clamped.surface_class"].mapping is None
+    assert specs["thread_strip.m_eff"].required is False
+    assert specs["fastener.d"].widget_type == "choice"
+    assert specs["fastener.p"].widget_type == "choice"
+    assert specs["stiffness.auto_compliance"].widget_type == "choice"
 
 
 def test_tapped_axial_field_schema_contract() -> None:

@@ -159,6 +159,27 @@ BUFFER_SCOPE = ModuleScope(
     ),
 )
 
+BOLT_SCOPE = ModuleScope(
+    module_id="bolt_vdi2230",
+    model_level=MODEL_LEVEL_FORMAL_SUBSET,
+    covered=(
+        "VDI 2230 风格预紧螺栓连接核心链路（R3 残余夹紧 / R4 装配应力 / R5 服役应力）",
+        "支承面压强（R7）与螺纹脱扣（R8）最小子集",
+        "温度损失影响与简化 Goodman 疲劳（按校核层级可选）",
+    ),
+    not_covered=(
+        "偏心夹紧 / 偏心载荷弯矩",
+        "完整疲劳谱（FKN 法）",
+        "完整螺纹脱扣（详细几何与材料修正）",
+        "完整多层锥体/套筒逐层柔度签发模型",
+        "完整 VDI 2230 签发校核",
+    ),
+    applicability=(
+        "当前结论为 VDI 2230 正式子集，不是完整标准签发校核。"
+        "未覆盖偏心弯矩、完整疲劳谱与完整脱扣。"
+    ),
+)
+
 MODULE_SCOPES: dict[str, ModuleScope] = {
     HERTZ_SCOPE.module_id: HERTZ_SCOPE,
     SPLINE_SCOPE.module_id: SPLINE_SCOPE,
@@ -166,6 +187,7 @@ MODULE_SCOPES: dict[str, ModuleScope] = {
     INTERFERENCE_SCOPE.module_id: INTERFERENCE_SCOPE,
     TAPPED_SCOPE.module_id: TAPPED_SCOPE,
     BUFFER_SCOPE.module_id: BUFFER_SCOPE,
+    BOLT_SCOPE.module_id: BOLT_SCOPE,
 }
 
 
