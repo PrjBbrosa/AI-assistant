@@ -9,7 +9,6 @@ Uses reportlab to produce an A4 report with:
 
 from __future__ import annotations
 
-import datetime as dt
 from pathlib import Path
 
 from reportlab.platypus import (
@@ -28,9 +27,11 @@ from app.ui.report_pdf_common import (
     _register_fonts,
     _rstep_card,
     _section_title,
+    _trace_block,
     _verdict_block,
     build_pdf,
 )
+from app.ui.report_trace import build_report_trace, trace_kv_rows
 from core.bolt.grades import BOLT_GRADE_CUSTOM, rp02_source_zh
 
 CHECK_LABELS = {
@@ -58,11 +59,13 @@ def generate_tapped_axial_report(
         "overall_status",
         "pass" if result.get("overall_pass") else "fail",
     )
-    date_str = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    trace = build_report_trace("bolt_tapped_axial", payload)
+    date_str = trace.generated_at
 
     # 1. Header bar
     elems.append(_header_bar(styles, "轴向受力螺纹连接校核报告", date_str))
     elems.append(Spacer(1, 8))
+    elems.extend(_trace_block(styles, trace_kv_rows(trace)))
 
     # 2. Verdict（三态：pass / fail / incomplete）
     scope = result.get("scope_note", "")

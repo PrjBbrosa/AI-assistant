@@ -9,7 +9,6 @@ Uses reportlab to produce a modern, visually designed A4 report with:
 
 from __future__ import annotations
 
-import datetime as dt
 from pathlib import Path
 from typing import Any, Dict
 
@@ -31,9 +30,11 @@ from app.ui.report_pdf_common import (
     _register_fonts,
     _rstep_card,
     _section_title,
+    _trace_block,
     _verdict_block,
     build_pdf,
 )
+from app.ui.report_trace import build_report_trace, trace_kv_rows
 
 # ---------------------------------------------------------------------------
 # Check labels
@@ -157,11 +158,13 @@ def generate_interference_report(
     messages = result.get("messages", [])
 
     shaft_type_str = "空心轴" if model.get("shaft_type") == "hollow_shaft" else "实心轴"
-    date_str = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    trace = build_report_trace("interference_fit", payload)
+    date_str = trace.generated_at
 
     # 1. Header bar
     elems.append(_header_bar(styles, "DIN 7190 过盈配合校核报告", date_str))
     elems.append(Spacer(1, 8))
+    elems.extend(_trace_block(styles, trace_kv_rows(trace)))
 
     # 2. Verdict block
     subtitle = f"模型: 圆柱面过盈配合 ({shaft_type_str})"

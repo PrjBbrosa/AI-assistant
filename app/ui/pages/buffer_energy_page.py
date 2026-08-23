@@ -39,6 +39,7 @@ from app.ui.input_condition_store import (
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, write_text_report
+from app.ui.report_trace import build_report_trace, trace_report_lines
 from app.ui.theme import mark_input_field_surface
 from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.buffer_energy_curve import BufferEnergyCurveWidget
@@ -907,6 +908,7 @@ class BufferEnergyPage(BaseChapterPage):
         lines = [
             "缓冲块吸能仿真报告",
             "=" * 28,
+            *trace_report_lines(build_report_trace(MODULE_ID, self._last_payload or {})),
             "",
             "1. 输入条件",
             f"- 曲线文件: {self._curve_source.name if self._curve_source else '(未记录)'}",

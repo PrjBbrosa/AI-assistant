@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime as dt
 from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape
@@ -20,9 +19,11 @@ from app.ui.report_pdf_common import (
     _register_fonts,
     _rstep_card,
     _section_title,
+    _trace_block,
     _verdict_block,
     build_pdf,
 )
+from app.ui.report_trace import build_report_trace, trace_kv_rows
 
 
 DISCLAIMER_TEXT = (
@@ -156,10 +157,12 @@ def generate_buffer_report(out_path: Path, payload: dict, result: dict) -> None:
     impact = result.get("impact", {}) if isinstance(result.get("impact", {}), dict) else {}
     checks = result.get("checks", {}) if isinstance(result.get("checks", {}), dict) else {}
     overall = bool(result.get("overall_pass", False))
-    date_str = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    trace = build_report_trace("buffer_energy", payload)
+    date_str = trace.generated_at
 
     elems.append(_header_bar(styles, "缓冲块吸能仿真报告", date_str))
     elems.append(Spacer(1, 8))
+    elems.extend(_trace_block(styles, trace_kv_rows(trace)))
     subtitle = "单次冲击能量法"
     if impact.get("bottom_out"):
         subtitle += " - 触底 / 峰值未知"

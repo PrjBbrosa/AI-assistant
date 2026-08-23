@@ -9,7 +9,6 @@ Uses reportlab to produce a modern, visually designed A4 report with:
 
 from __future__ import annotations
 
-import datetime as dt
 from pathlib import Path
 from typing import Any, Dict
 
@@ -31,9 +30,11 @@ from app.ui.report_pdf_common import (
     _register_fonts,
     _rstep_card,
     _section_title,
+    _trace_block,
     _verdict_block,
     build_pdf,
 )
+from app.ui.report_trace import build_report_trace, trace_kv_rows
 
 # ---------------------------------------------------------------------------
 # Recommendations (standalone, no UI dependency)
@@ -130,9 +131,11 @@ def generate_bolt_report(
     elements: list = []
 
     # -- Header --
-    date_str = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    trace = build_report_trace("bolt_vdi2230", payload)
+    date_str = trace.generated_at
     elements.append(_header_bar(styles, "VDI 2230 \u87ba\u6813\u8fde\u63a5\u6821\u6838\u62a5\u544a", date_str))
     elements.append(Spacer(1, 8))
+    elements.extend(_trace_block(styles, trace_kv_rows(trace)))
 
     # -- Overall verdict --
     # 读取三态结论（pass/fail/incomplete），与 UI 徽章、文本报告口径一致；

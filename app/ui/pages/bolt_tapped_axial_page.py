@@ -41,6 +41,7 @@ from app.ui.input_condition_store import (
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, export_report_lines
+from app.ui.report_trace import build_report_trace, trace_report_lines
 from app.ui.theme import mark_input_field_label_wrap, mark_input_field_surface
 from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.help_button import HelpButton
@@ -981,6 +982,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         lines.append("=" * 60)
         lines.append("轴向受力螺纹连接校核报告")
         lines.append("=" * 60)
+        lines.extend(trace_report_lines(build_report_trace(MODULE_ID, payload)))
         lines.append("")
 
         lines.append("--- 适用范围 ---")

@@ -29,6 +29,19 @@ UI_FONT_FAMILY_CSS = _build_css_font_family(UI_FONT_FAMILIES)
 UI_FONT_FAMILY_SVG = _build_svg_font_family(UI_FONT_FAMILIES)
 
 
+def _build_mono_font_families() -> list[str]:
+    """Prefer Menlo/Monaco; Consolas is a later Windows fallback only."""
+    if platform.system() == "Windows":
+        return ["Menlo", "Monaco", "Consolas", "Courier New"]
+    if platform.system() == "Darwin":
+        return ["Menlo", "Monaco", "Courier New"]
+    return ["Menlo", "Monaco", "DejaVu Sans Mono", "Courier New"]
+
+
+MONO_FONT_FAMILIES = _build_mono_font_families()
+MONO_FONT_FAMILY_CSS = _build_css_font_family(MONO_FONT_FAMILIES) + ", monospace"
+
+
 def make_ui_font(
     point_size: int,
     weight: QFont.Weight | int = QFont.Weight.Normal,
@@ -41,6 +54,22 @@ def make_ui_font(
         font.setFamily(UI_FONT_FAMILIES[0])
     font.setPointSize(point_size)
     font.setWeight(QFont.Weight(weight))
+    return font
+
+
+def make_mono_font(
+    point_size: int,
+    weight: QFont.Weight | int = QFont.Weight.Normal,
+) -> QFont:
+    """Create a monospace font with Menlo/Monaco first in the fallback chain."""
+    font = QFont()
+    if hasattr(font, "setFamilies"):
+        font.setFamilies(MONO_FONT_FAMILIES)
+    else:  # pragma: no cover - kept for older Qt bindings.
+        font.setFamily(MONO_FONT_FAMILIES[0])
+    font.setPointSize(point_size)
+    font.setWeight(QFont.Weight(weight))
+    font.setStyleHint(QFont.StyleHint.Monospace)
     return font
 
 

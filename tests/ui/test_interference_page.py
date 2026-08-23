@@ -3,9 +3,13 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit
 
-from app.ui.pages.interference_fit_page import InterferenceFitPage
+from app.ui.pages.interference_fit_page import (
+    INTERFERENCE_YIELD_SOURCE_NOTE,
+    MATERIAL_LIBRARY,
+    InterferenceFitPage,
+)
 
 
 class InterferenceFitPageTests(unittest.TestCase):
@@ -190,6 +194,40 @@ class InterferenceFitPageTests(unittest.TestCase):
 
         self.assertTrue(any("shaft material preset" in line for line in report_lines))
         self.assertTrue(any("roughness profile source" in line for line in report_lines))
+        joined = "\n".join(report_lines)
+        self.assertIn("生成时间", joined)
+        self.assertIn("输入摘要哈希", joined)
+        self.assertIn("模块: interference_fit", joined)
+        self.assertIn("软件版本", joined)
+
+    def test_material_e_source_shows_recommended_then_user_override(self) -> None:
+        page = InterferenceFitPage()
+        shaft_material = page._field_widgets["materials.shaft_material"]
+        self.assertIsInstance(shaft_material, QComboBox)
+        shaft_material.setCurrentText("45钢")
+
+        e_label = page._source_labels["materials.shaft_e_mpa"].text()
+        nu_label = page._source_labels["materials.shaft_nu"].text()
+        yield_label = page._source_labels["materials.shaft_yield_mpa"].text()
+        self.assertIn("建议值", e_label)
+        self.assertIn("45钢", e_label)
+        self.assertIn("建议值", nu_label)
+        self.assertEqual(page._field_cards["materials.shaft_e_mpa"].objectName(), "AutoCalcCard")
+        self.assertEqual(page._field_cards["materials.shaft_nu"].objectName(), "AutoCalcCard")
+        self.assertIn("用户输入", yield_label)
+        self.assertEqual(yield_label, INTERFERENCE_YIELD_SOURCE_NOTE)
+        self.assertEqual(page._field_cards["materials.shaft_yield_mpa"].objectName(), "SubCard")
+        for material in MATERIAL_LIBRARY.values():
+            if material is not None:
+                self.assertNotIn("yield_mpa", material)
+                self.assertNotIn("yield", material)
+
+        shaft_material.setCurrentText("自定义")
+        self.assertIn("用户输入", page._source_labels["materials.shaft_e_mpa"].text())
+        self.assertEqual(page._field_cards["materials.shaft_e_mpa"].objectName(), "SubCard")
+        self.assertIsInstance(page._field_widgets["materials.shaft_e_mpa"], QLineEdit)
+        self.assertFalse(page._field_widgets["materials.shaft_e_mpa"].isReadOnly())  # type: ignore[attr-defined]
+        self.assertIn("用户输入", page._source_labels["materials.shaft_yield_mpa"].text())
 
     def test_report_lines_include_hollow_shaft_geometry_and_model_semantics(self) -> None:
         page = InterferenceFitPage()

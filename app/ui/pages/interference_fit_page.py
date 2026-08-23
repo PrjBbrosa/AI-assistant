@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import importlib
 import json
 from dataclasses import dataclass
@@ -36,8 +35,10 @@ from app.ui.input_condition_store import (
     validate_snapshot,
     write_input_conditions,
 )
+from app.ui.model_scope import SOURCE_RECOMMENDED, SOURCE_USER, format_source_label
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, export_report_lines, write_text_report
+from app.ui.report_trace import build_report_trace, trace_report_lines
 from app.ui.theme import mark_input_field_label_wrap, mark_input_field_surface
 from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.help_button import HelpButton
@@ -116,6 +117,21 @@ _FRICTION_MU_FIELDS: tuple[str, ...] = (
     "friction.mu_torque",
     "friction.mu_axial",
     "friction.mu_assembly",
+)
+
+_MATERIAL_E_NU_FIELDS: tuple[str, ...] = (
+    "materials.shaft_e_mpa",
+    "materials.shaft_nu",
+    "materials.hub_e_mpa",
+    "materials.hub_nu",
+)
+_MATERIAL_YIELD_FIELDS: tuple[str, ...] = (
+    "materials.shaft_yield_mpa",
+    "materials.hub_yield_mpa",
+)
+INTERFERENCE_YIELD_SOURCE_NOTE = format_source_label(
+    SOURCE_USER,
+    "材料牌号只填充 E/ν 建议值，不会自动生成屈服强度",
 )
 
 ROUGHNESS_PROFILE_FACTORS: dict[str, float | None] = {
@@ -341,7 +357,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "materials.shaft_e_mpa",
                 "轴弹性模量 E_s",
                 "MPa",
-                "钢材常见约 206000~210000 MPa。",
+                "钢材常见约 206000~210000 MPa。预设材料为建议值，自定义为用户输入。",
                 mapping=("materials", "shaft_e_mpa"),
                 default="210000",
                 placeholder="例如 210000",
@@ -351,7 +367,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "materials.shaft_nu",
                 "轴泊松比 nu_s",
                 "-",
-                "钢材常见约 0.28~0.30。",
+                "钢材常见约 0.28~0.30。预设材料为建议值，自定义为用户输入。",
                 mapping=("materials", "shaft_nu"),
                 default="0.30",
                 placeholder="0<nu<0.5",
@@ -361,7 +377,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "materials.shaft_yield_mpa",
                 "轴屈服强度 Re_s",
                 "MPa",
-                "用于轴侧应力安全系数计算。",
+                "用于轴侧应力安全系数计算。材料牌号不会自动填充屈服强度，须用户输入。",
                 mapping=("materials", "shaft_yield_mpa"),
                 default="600",
                 placeholder="例如 600",
@@ -380,7 +396,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "materials.hub_e_mpa",
                 "轮毂弹性模量 E_h",
                 "MPa",
-                "钢材常见约 206000~210000 MPa。",
+                "钢材常见约 206000~210000 MPa。预设材料为建议值，自定义为用户输入。",
                 mapping=("materials", "hub_e_mpa"),
                 default="210000",
                 placeholder="例如 210000",
@@ -390,7 +406,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "materials.hub_nu",
                 "轮毂泊松比 nu_h",
                 "-",
-                "钢材常见约 0.28~0.30。",
+                "钢材常见约 0.28~0.30。预设材料为建议值，自定义为用户输入。",
                 mapping=("materials", "hub_nu"),
                 default="0.30",
                 placeholder="0<nu<0.5",
@@ -400,7 +416,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "materials.hub_yield_mpa",
                 "轮毂屈服强度 Re_h",
                 "MPa",
-                "用于轮毂侧应力安全系数计算。",
+                "用于轮毂侧应力安全系数计算。材料牌号不会自动填充屈服强度，须用户输入。",
                 mapping=("materials", "hub_yield_mpa"),
                 default="320",
                 placeholder="例如 320",
@@ -773,6 +789,7 @@ class InterferenceFitPage(BaseChapterPage):
         self.roughness_warning_box: QFrame | None = None
         self.roughness_warning_text: QLabel | None = None
         self._ref_badges: dict[str, QLabel] = {}
+        self._source_labels: dict[str, QLabel] = {}
         self._friction_ref_values: dict[str, float] = {}
         self._friction_source_text: str = ""
         self._material_links: dict[str, tuple[str, str]] = {
@@ -960,6 +977,14 @@ class InterferenceFitPage(BaseChapterPage):
                 ref_badge.setVisible(False)
                 row.addWidget(ref_badge, 2, 0, 1, 3)
                 self._ref_badges[spec.field_id] = ref_badge
+            elif spec.field_id in _MATERIAL_E_NU_FIELDS or spec.field_id in _MATERIAL_YIELD_FIELDS:
+                source = QLabel("", field_card)
+                source.setObjectName("SectionHint")
+                source.setWordWrap(True)
+                if spec.field_id in _MATERIAL_YIELD_FIELDS:
+                    source.setText(INTERFERENCE_YIELD_SOURCE_NOTE)
+                row.addWidget(source, 2, 0, 1, 3)
+                self._source_labels[spec.field_id] = source
             form_layout.addWidget(field_card)
             self._field_cards[spec.field_id] = field_card
 
@@ -1190,13 +1215,21 @@ class InterferenceFitPage(BaseChapterPage):
         material_name = selector.currentText().strip()
         material = MATERIAL_LIBRARY.get(material_name)
         is_custom = material is None
-        e_widget.setReadOnly(not is_custom)
-        nu_widget.setReadOnly(not is_custom)
+        self._set_card_disabled(e_id, not is_custom)
+        self._set_card_disabled(nu_id, not is_custom)
 
-        if material is None:
-            return
-        e_widget.setText(f"{material['e_mpa']:.0f}")
-        nu_widget.setText(f"{material['nu']:.2f}")
+        if material is not None:
+            e_widget.setText(f"{material['e_mpa']:.0f}")
+            nu_widget.setText(f"{material['nu']:.2f}")
+            source_text = format_source_label(
+                SOURCE_RECOMMENDED, f"{material_name} 材料库典型值，可切自定义覆盖"
+            )
+        else:
+            source_text = format_source_label(SOURCE_USER)
+        for field_id in (e_id, nu_id):
+            source_label = self._source_labels.get(field_id)
+            if source_label is not None:
+                source_label.setText(source_text)
 
     def _hide_all_ref_badges(self) -> None:
         for badge in self._ref_badges.values():
@@ -2086,7 +2119,7 @@ class InterferenceFitPage(BaseChapterPage):
 
         lines = [
             "过盈配合校核报告（DIN 7190 核心增强版）",
-            f"生成时间: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            *trace_report_lines(build_report_trace(MODULE_ID, self._last_payload or {})),
             "",
             f"总体结论: {'通过' if result['overall_pass'] else '不通过'}",
             "",

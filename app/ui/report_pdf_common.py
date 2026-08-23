@@ -215,6 +215,21 @@ def _header_bar(styles: dict, title: str, date_str: str) -> Table:
     return t
 
 
+def _trace_block(styles: dict, rows: list[tuple[str, str]]) -> list:
+    """Small provenance block (version / time / module / input hash).
+
+    Callers pass rows from ``report_trace.trace_kv_rows``. Empty input is a
+    no-op so existing header helpers keep working when provenance is omitted.
+    """
+    if not rows:
+        return []
+    return [
+        _section_title(styles, "报告溯源"),
+        _kv_table(styles, rows, col_ratio=0.28),
+        Spacer(1, 8),
+    ]
+
+
 def _verdict_block(
     styles: dict,
     overall_pass: bool | str,

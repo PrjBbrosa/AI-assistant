@@ -156,6 +156,9 @@ class BoltTappedAxialPageTests(unittest.TestCase):
         self.assertIn("适用范围", report_text)
         self.assertIn("螺纹脱扣", report_text)
         self.assertNotIn("FK_residual", report_text)
+        self.assertIn("生成时间", report_text)
+        self.assertIn("输入摘要哈希", report_text)
+        self.assertIn("模块: bolt_tapped_axial", report_text)
 
     # --- Codex §3.2 / §3.4：As/d2/d3 自动派生 + 缓存失效 ---
 

@@ -410,6 +410,18 @@ class BoltPageStateTests(unittest.TestCase):
         self.assertTrue(headline)
         self.assertIn("不完整", headline[0])
 
+    def test_text_report_includes_provenance_metadata(self) -> None:
+        page = BoltPage()
+        payload = _raw_bolt_payload()
+        result = calculate_vdi2230_core(payload)
+        page._last_payload = payload
+        page._last_result = result
+        joined = "\n".join(page._build_report_lines())
+        self.assertIn("生成时间", joined)
+        self.assertIn("输入摘要哈希", joined)
+        self.assertIn("模块: bolt_vdi2230", joined)
+        self.assertIn("软件版本", joined)
+
     def test_flowchart_includes_optional_r8_thread_strip_step(self) -> None:
         page = BoltPage()
 

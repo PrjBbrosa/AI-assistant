@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import importlib
 import json
 import re
@@ -46,6 +45,7 @@ from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.clamping_diagram import ClampingDiagramWidget, ThreadForceTriangleWidget
 from app.ui.widgets.help_button import HelpButton
 from app.ui.report_export import ReportExportError, write_text_report
+from app.ui.report_trace import build_report_trace, trace_report_lines
 from app.ui.pages import bolt_help_content as bolt_help
 from app.ui.pages.bolt_flowchart import (
     FlowchartNavWidget, RStepDetailPage, R_STEPS,
@@ -3064,7 +3064,7 @@ class BoltPage(QWidget):
 
         lines = [
             "VDI 2230 螺栓校核报告（本地版）",
-            f"生成时间: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            *trace_report_lines(build_report_trace(MODULE_ID, payload)),
             f"校核层级: {result.get('check_level', self._current_check_level())}",
             "",
             "总体结论: " + _OVERALL_STATUS_TEXT.get(

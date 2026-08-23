@@ -9,6 +9,8 @@ from PySide6.QtWidgets import (
     QLineEdit, QScrollArea, QVBoxLayout, QWidget,
 )
 
+from app.ui.fonts import MONO_FONT_FAMILY_CSS, make_mono_font
+
 
 R_STEPS: list[dict[str, Any]] = [
     {"id": "r0", "title": "R0 输入汇总",  "has_check": False},
@@ -347,8 +349,9 @@ class RStepDetailPage(QFrame):
         self._calc_text = QLabel("—", self._calc_card)
         self._calc_text.setObjectName("SectionHint")
         self._calc_text.setWordWrap(True)
+        self._calc_text.setFont(make_mono_font(12))
         self._calc_text.setStyleSheet(
-            'font-family: "Menlo", "Consolas", "Courier New", monospace; font-size: 12px;'
+            f"font-family: {MONO_FONT_FAMILY_CSS}; font-size: 12px;"
         )
         calc_layout.addWidget(self._calc_text)
         self._content_layout.addWidget(self._calc_card)

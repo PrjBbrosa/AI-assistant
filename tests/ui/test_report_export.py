@@ -220,5 +220,48 @@ class ReportExportTests(unittest.TestCase):
         information.assert_not_called()
 
 
+class ReportTraceTests(unittest.TestCase):
+    def test_payload_hash_is_stable_for_same_payload(self) -> None:
+        from app.ui.report_trace import payload_sha256
+
+        payload = {"b": 2, "a": {"z": 1, "y": [3, 4]}}
+        shuffled = {"a": {"y": [3, 4], "z": 1}, "b": 2}
+        first = payload_sha256(payload)
+        second = payload_sha256(shuffled)
+        self.assertTrue(first.startswith("sha256:"))
+        self.assertEqual(len(first), len("sha256:") + 64)
+        self.assertEqual(first, second)
+        self.assertEqual(first, payload_sha256(payload))
+
+    def test_payload_hash_changes_when_value_changes(self) -> None:
+        from app.ui.report_trace import payload_sha256
+
+        self.assertNotEqual(payload_sha256({"x": 1}), payload_sha256({"x": 2}))
+
+    def test_trace_lines_include_version_time_module_and_hash(self) -> None:
+        from app.ui.report_trace import build_report_trace, trace_report_lines
+
+        trace = build_report_trace("bolt_vdi2230", {"fastener": {"d": 12}})
+        lines = trace_report_lines(trace)
+        joined = "\n".join(lines)
+        self.assertIn("软件版本:", joined)
+        self.assertNotEqual(trace.software_version, "")
+        self.assertIn("生成时间:", joined)
+        self.assertRegex(trace.generated_at, r"[+-]\d{4}$")
+        self.assertIn("模块: bolt_vdi2230", joined)
+        self.assertIn("输入摘要哈希: sha256:", joined)
+        self.assertNotIn("模型等级:", joined)
+
+    def test_optional_model_level_is_included_when_provided(self) -> None:
+        from app.ui.report_trace import build_report_trace, trace_report_lines
+
+        trace = build_report_trace(
+            "interference_fit",
+            {"geometry": {"shaft_d_mm": 50}},
+            model_level="正式子集",
+        )
+        self.assertIn("模型等级: 正式子集", trace_report_lines(trace))
+
+
 if __name__ == "__main__":
     unittest.main()
