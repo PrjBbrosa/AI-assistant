@@ -70,11 +70,11 @@ def test_field_has_expected_help_ref(field_id, expected_ref):
 
 
 def test_non_help_fields_have_empty_help_ref():
-    """All fields not in the explicit mapping should have help_ref == ''."""
+    """All fields not in the explicit mapping should have no help_ref."""
     for s in _all_specs():
         if s.field_id in EXPECTED_FIELD_HELP_REFS:
             continue
-        assert s.help_ref == "", (
+        assert not s.help_ref, (
             f"field {s.field_id} has unexpected help_ref={s.help_ref!r}"
         )
 

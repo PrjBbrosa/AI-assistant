@@ -982,3 +982,132 @@ class WormLoadCapacityLayoutTests(unittest.TestCase):
             f"四个 badge 的 y 坐标应互不相同（各占一行），实际 y 值：{ys}。"
             "若全部相同（均为 0），说明 badges_card 仍被纵向压缩。"
         )
+
+
+# ============================================================
+# Phase 2.1 / 2.2 — FieldSchema + live validation
+# ============================================================
+
+
+class WormGearPageFieldSchemaTests(unittest.TestCase):
+    """Shared FieldSchema live errors, payload gating, lazy stress-curve."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_application_factor_live_error_when_field_visible(self) -> None:
+        page = WormGearPage()
+        widget = page._field_widgets["operating.application_factor"]
+        error = page._field_error_labels["operating.application_factor"]
+        self.assertTrue(error.isHidden())
+
+        widget.setText("0.5")
+
+        self.assertFalse(error.isHidden())
+        self.assertIn(">= 1.0", error.text())
+        self.assertIn(widget.property("fieldError"), (True, "true"))
+        self.assertTrue(page.btn_calculate.isEnabled())
+
+        widget.setText("1.25")
+
+        self.assertTrue(error.isHidden())
+        self.assertIn(widget.property("fieldError"), (False, "false", None))
+
+    def test_calculate_with_invalid_application_factor_focuses_error(self) -> None:
+        from unittest.mock import patch
+
+        page = WormGearPage()
+        page._field_widgets["operating.application_factor"].setText("0.5")
+
+        with patch(
+            "app.ui.pages.worm_gear_page.QMessageBox.critical",
+            side_effect=AssertionError("no dialog"),
+        ):
+            page._calculate()
+
+        self.assertIsNone(page._last_result)
+        self.assertTrue(page.btn_calculate.isEnabled())
+        error = page._field_error_labels["operating.application_factor"]
+        self.assertFalse(error.isHidden())
+        self.assertEqual(
+            page.chapter_list.currentRow(),
+            page._field_chapter_index["operating.application_factor"],
+        )
+        self.assertIn("字段需要修正", page.info_label.text())
+
+    def test_page_init_does_not_construct_worm_stress_curve_widget(self) -> None:
+        from unittest.mock import patch
+
+        with patch(
+            "app.ui.pages.worm_gear_page.WormStressCurveWidget",
+            side_effect=AssertionError("WormStressCurveWidget constructed during init"),
+        ):
+            page = WormGearPage()
+
+        self.assertFalse(isinstance(page.stress_curve, WormStressCurveWidget))
+        self.assertFalse(page._stress_curve_ready)
+        self.assertGreaterEqual(page.stress_curve.minimumHeight(), 350)
+
+    def test_safety_and_amplification_fields_have_min_value_one(self) -> None:
+        page = WormGearPage()
+        for field_id in (
+            "operating.application_factor",
+            "load_capacity.dynamic_factor_kv",
+            "load_capacity.transverse_load_factor_kha",
+            "load_capacity.face_load_factor_khb",
+            "load_capacity.required_contact_safety",
+            "load_capacity.required_root_safety",
+        ):
+            spec = page._field_specs[field_id]
+            self.assertEqual(spec.min_value, 1.0, field_id)
+            self.assertTrue(spec.min_inclusive, field_id)
+
+    def test_load_capacity_parameter_fields_omitted_when_disabled(self) -> None:
+        page = WormGearPage()
+        page._field_widgets["load_capacity.enabled"].setCurrentText("关闭")
+
+        payload = page._build_payload()
+        lc = payload["load_capacity"]
+
+        self.assertIs(lc["enabled"], False)
+        for key in (
+            "allowable_contact_stress_mpa",
+            "allowable_root_stress_mpa",
+            "dynamic_factor_kv",
+            "transverse_load_factor_kha",
+            "face_load_factor_khb",
+            "required_contact_safety",
+            "required_root_safety",
+        ):
+            self.assertNotIn(key, lc, key)
+        self.assertIn("method", lc)
+
+    def test_load_capacity_parameter_fields_present_when_enabled(self) -> None:
+        page = WormGearPage()
+        payload = page._build_payload()
+        lc = payload["load_capacity"]
+
+        self.assertIs(lc["enabled"], True)
+        self.assertIn("dynamic_factor_kv", lc)
+        self.assertIn("required_contact_safety", lc)
+        self.assertIn("face_load_factor_khb", lc)
+
+    def test_kv_below_one_not_live_error_when_load_capacity_disabled(self) -> None:
+        page = WormGearPage()
+        page._field_widgets["load_capacity.enabled"].setCurrentText("关闭")
+        page._field_widgets["load_capacity.dynamic_factor_kv"].setText("0.5")
+
+        error = page._field_error_labels["load_capacity.dynamic_factor_kv"]
+        self.assertTrue(error.isHidden())
+
+    def test_mapped_fields_use_shared_field_schema(self) -> None:
+        from app.ui.field_schema import FieldSchema
+
+        page = WormGearPage()
+        self.assertTrue(page._field_specs)
+        for spec in page._field_specs.values():
+            self.assertIsInstance(spec, FieldSchema)
+            if spec.mapping is not None:
+                section, key = spec.mapping
+                self.assertEqual(spec.field_id, f"{section}.{key}")

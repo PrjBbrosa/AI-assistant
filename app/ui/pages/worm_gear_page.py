@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +32,12 @@ except ImportError:
     PLASTIC_MATERIALS = {}
     _PLASTIC_MATERIALS_AVAILABLE = False
 
+from app.ui.field_schema import (
+    FieldSchema,
+    FieldSpec,
+    build_payload,
+    validate_text,
+)
 from app.ui.input_condition_store import (
     InputConditionError,
     build_form_snapshot,
@@ -44,7 +49,14 @@ from app.ui.input_condition_store import (
     validate_snapshot,
     write_input_conditions,
 )
-from app.ui.model_scope import WORM_SCOPE, make_scope_banner, scope_report_lines
+from app.ui.model_scope import (
+    SOURCE_RECOMMENDED,
+    SOURCE_USER,
+    WORM_SCOPE,
+    format_source_label,
+    make_scope_banner,
+    scope_report_lines,
+)
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, write_text_report
 from app.ui.theme import mark_input_field_surface
@@ -67,24 +79,18 @@ SAVED_INPUTS_DIR = build_saved_inputs_dir(PROJECT_ROOT)
 ASSETS_DIR = PROJECT_ROOT / "app" / "assets"
 MODULE_ID = "worm_gear"
 
-
-@dataclass(frozen=True)
-class FieldSpec:
-    field_id: str
-    label: str
-    unit: str
-    hint: str
-    widget_type: str = "number"
-    options: tuple[str, ...] = ()
-    default: str = ""
-    placeholder: str = ""
-    help_ref: str = ""
-
-    @property
-    def mapping(self) -> tuple[str, str] | None:
-        if "." not in self.field_id:
-            return None
-        return tuple(self.field_id.split(".", 1))  # type: ignore[return-value]
+# Load-capacity parameter fields stay on the page (layout unchanged) but only
+# enter the calculator payload / live-error set while the toggle is 启用.
+_LC_ENABLED = ("eq", "load_capacity.enabled", "启用")
+_MATERIAL_SOURCE_FIELDS = (
+    "materials.worm_e_mpa",
+    "materials.worm_nu",
+    "materials.wheel_e_mpa",
+    "materials.wheel_nu",
+    "load_capacity.allowable_contact_stress_mpa",
+    "load_capacity.allowable_root_stress_mpa",
+)
+_FRICTION_OVERRIDE_PLACEHOLDER = "留空则自动"
 
 
 BASIC_SETTINGS_FIELDS = [
@@ -167,16 +173,56 @@ MATERIAL_FIELDS = [
         default="grease",
         help_ref="terms/worm_lubrication_mode",
     ),
-    FieldSpec("materials.worm_e_mpa", "蜗杆弹性模量 E1", "MPa", "Method B 最小子集使用的材料弹性参数。", default="210000", help_ref="terms/elastic_modulus"),
-    FieldSpec("materials.worm_nu", "蜗杆泊松比 nu1", "-", "Method B 最小子集使用的材料弹性参数。", default="0.30", help_ref="terms/poisson_ratio"),
-    FieldSpec("materials.wheel_e_mpa", "蜗轮弹性模量 E2", "MPa", "Method B 最小子集使用的材料弹性参数。", default="3000", help_ref="terms/elastic_modulus"),
-    FieldSpec("materials.wheel_nu", "蜗轮泊松比 nu2", "-", "Method B 最小子集使用的材料弹性参数。", default="0.38", help_ref="terms/poisson_ratio"),
+    FieldSpec(
+        "materials.worm_e_mpa",
+        "蜗杆弹性模量 E1",
+        "MPa",
+        "Method B 最小子集使用的材料弹性参数。",
+        default="210000",
+        source_kind="preset",
+        help_ref="terms/elastic_modulus",
+    ),
+    FieldSpec(
+        "materials.worm_nu",
+        "蜗杆泊松比 nu1",
+        "-",
+        "Method B 最小子集使用的材料弹性参数。",
+        default="0.30",
+        source_kind="preset",
+        help_ref="terms/poisson_ratio",
+    ),
+    FieldSpec(
+        "materials.wheel_e_mpa",
+        "蜗轮弹性模量 E2",
+        "MPa",
+        "Method B 最小子集使用的材料弹性参数。",
+        default="3000",
+        source_kind="preset",
+        help_ref="terms/elastic_modulus",
+    ),
+    FieldSpec(
+        "materials.wheel_nu",
+        "蜗轮泊松比 nu2",
+        "-",
+        "Method B 最小子集使用的材料弹性参数。",
+        default="0.38",
+        source_kind="preset",
+        help_ref="terms/poisson_ratio",
+    ),
 ]
 
 OPERATING_FIELDS = [
     FieldSpec("operating.input_torque_nm", "输入扭矩 T1", "Nm", "蜗杆轴输入扭矩。", default="19.76"),
     FieldSpec("operating.speed_rpm", "输入转速 n", "rpm", "蜗杆轴转速。", default="1450"),
-    FieldSpec("operating.application_factor", "使用系数 KA", "-", "工况冲击影响的简化系数。", default="1.25", help_ref="terms/gear_application_factor_ka"),
+    FieldSpec(
+        "operating.application_factor",
+        "使用系数 KA",
+        "-",
+        "工况冲击影响的简化系数，须 >= 1。",
+        default="1.25",
+        min_value=1.0,
+        help_ref="terms/gear_application_factor_ka",
+    ),
     FieldSpec("operating.torque_ripple_percent", "扭矩波动", "%", "围绕名义扭矩的峰值波动幅值。", default="0.0"),
 ]
 
@@ -187,7 +233,7 @@ ADVANCED_FIELDS = [
         "-",
         "为空时使用材料配对的默认经验值。",
         default="",
-        placeholder="留空则自动",
+        required=False,
     ),
     FieldSpec("advanced.normal_pressure_angle_deg", "法向压力角 alpha_n", "deg", "力分解与最小齿面/齿根模型的几何参数。", default="20.0", help_ref="terms/gear_pressure_angle"),
     FieldSpec(
@@ -207,13 +253,74 @@ ADVANCED_FIELDS = [
 ]
 
 LOAD_CAPACITY_PARAMETER_FIELDS = [
-    FieldSpec("load_capacity.allowable_contact_stress_mpa", "许用齿面应力", "MPa", "用于最小齿面安全系数计算。", default="42.0", help_ref="terms/allowable_contact_stress"),
-    FieldSpec("load_capacity.allowable_root_stress_mpa", "许用齿根应力", "MPa", "用于最小齿根安全系数计算。", default="55.0", help_ref="terms/allowable_root_stress"),
-    FieldSpec("load_capacity.dynamic_factor_kv", "动载系数 Kv", "-", "最小子集中的动载放大系数。", default="1.05", help_ref="terms/kv_factor"),
-    FieldSpec("load_capacity.transverse_load_factor_kha", "横向载荷系数 KHalpha", "-", "横向载荷分配系数。", default="1.00", help_ref="terms/kh_alpha"),
-    FieldSpec("load_capacity.face_load_factor_khb", "齿宽载荷系数 KHbeta", "-", "齿宽方向载荷分配系数。", default="1.10", help_ref="terms/kh_beta"),
-    FieldSpec("load_capacity.required_contact_safety", "目标齿面安全系数", "-", "用于通过/不通过判定。", default="1.00"),
-    FieldSpec("load_capacity.required_root_safety", "目标齿根安全系数", "-", "用于通过/不通过判定。", default="1.00"),
+    FieldSpec(
+        "load_capacity.allowable_contact_stress_mpa",
+        "许用齿面应力",
+        "MPa",
+        "用于最小齿面安全系数计算。",
+        default="42.0",
+        source_kind="preset",
+        visible_when=_LC_ENABLED,
+        help_ref="terms/allowable_contact_stress",
+    ),
+    FieldSpec(
+        "load_capacity.allowable_root_stress_mpa",
+        "许用齿根应力",
+        "MPa",
+        "用于最小齿根安全系数计算。",
+        default="55.0",
+        source_kind="preset",
+        visible_when=_LC_ENABLED,
+        help_ref="terms/allowable_root_stress",
+    ),
+    FieldSpec(
+        "load_capacity.dynamic_factor_kv",
+        "动载系数 Kv",
+        "-",
+        "最小子集中的动载放大系数，须 >= 1。",
+        default="1.05",
+        min_value=1.0,
+        visible_when=_LC_ENABLED,
+        help_ref="terms/kv_factor",
+    ),
+    FieldSpec(
+        "load_capacity.transverse_load_factor_kha",
+        "横向载荷系数 KHalpha",
+        "-",
+        "横向载荷分配系数，须 >= 1。",
+        default="1.00",
+        min_value=1.0,
+        visible_when=_LC_ENABLED,
+        help_ref="terms/kh_alpha",
+    ),
+    FieldSpec(
+        "load_capacity.face_load_factor_khb",
+        "齿宽载荷系数 KHbeta",
+        "-",
+        "齿宽方向载荷分配系数，须 >= 1。",
+        default="1.10",
+        min_value=1.0,
+        visible_when=_LC_ENABLED,
+        help_ref="terms/kh_beta",
+    ),
+    FieldSpec(
+        "load_capacity.required_contact_safety",
+        "目标齿面安全系数",
+        "-",
+        "用于通过/不通过判定，须 >= 1。",
+        default="1.00",
+        min_value=1.0,
+        visible_when=_LC_ENABLED,
+    ),
+    FieldSpec(
+        "load_capacity.required_root_safety",
+        "目标齿根安全系数",
+        "-",
+        "用于通过/不通过判定，须 >= 1。",
+        default="1.00",
+        min_value=1.0,
+        visible_when=_LC_ENABLED,
+    ),
 ]
 
 WORM_DIMENSION_FIELDS = [
@@ -244,9 +351,14 @@ class WormGearPage(BaseChapterPage):
             parent=parent,
         )
         self._field_widgets: dict[str, QWidget] = {}
-        self._field_specs: dict[str, FieldSpec] = {}
+        self._field_specs: dict[str, FieldSchema] = {}
+        self._field_cards: dict[str, QFrame] = {}
+        self._field_error_labels: dict[str, QLabel] = {}
+        self._field_chapter_index: dict[str, int] = {}
+        self._source_labels: dict[str, QLabel] = {}
         self._last_result: dict[str, Any] | None = None
         self._last_payload: dict[str, Any] | None = None
+        self._suspend_live_feedback = True
         # Step 1: throttle timer for geometry preview
         self._preview_timer = QTimer(self)
         self._preview_timer.setSingleShot(True)
@@ -292,6 +404,7 @@ class WormGearPage(BaseChapterPage):
             w = self._field_widgets.get(fid)
             if isinstance(w, QLineEdit):
                 w.editingFinished.connect(lambda: self._on_material_changed())
+        self._on_material_changed()
         self.set_current_chapter(0)
         self.chapter_list.currentRowChanged.connect(self._on_chapter_row_changed)
         self.btn_save_inputs.clicked.connect(self._save_input_conditions)
@@ -303,10 +416,12 @@ class WormGearPage(BaseChapterPage):
         self.btn_load_2.clicked.connect(lambda: self._load_sample("worm_case_02.json"))
         # Step 3: connect every input widget change to dirty-state marker
         self._connect_dirty_signals()
+        self._suspend_live_feedback = False
+        self._refresh_all_field_errors()
         self.set_info("按左侧顺序输入 DIN 3975 / Method B 参数，再执行计算。")
 
     def _build_input_steps(self) -> None:
-        self.add_chapter(
+        basic_index = self.add_chapter(
             "基本设置",
             self._create_form_page(
                 "基本设置",
@@ -315,12 +430,17 @@ class WormGearPage(BaseChapterPage):
             ),
             help_ref="modules/worm/_section_basic",
         )
-        self.add_chapter(
+        self._register_chapter_fields(basic_index, BASIC_SETTINGS_FIELDS)
+        geometry_index = self.add_chapter(
             "几何参数",
             self._create_geometry_page(),
             help_ref="modules/worm/_section_geometry",
         )
-        self.add_chapter(
+        self._register_chapter_fields(
+            geometry_index,
+            WORM_GEOMETRY_FIELDS + WHEEL_GEOMETRY_FIELDS + MESH_GEOMETRY_FIELDS + ADVANCED_FIELDS,
+        )
+        material_index = self.add_chapter(
             "材料与配对",
             self._create_form_page(
                 "材料与配对",
@@ -329,7 +449,8 @@ class WormGearPage(BaseChapterPage):
             ),
             help_ref="modules/worm/_section_material",
         )
-        self.add_chapter(
+        self._register_chapter_fields(material_index, MATERIAL_FIELDS)
+        operating_index = self.add_chapter(
             "工况与润滑",
             self._create_form_page(
                 "工况与润滑",
@@ -338,8 +459,13 @@ class WormGearPage(BaseChapterPage):
             ),
             help_ref="modules/worm/_section_operating",
         )
+        self._register_chapter_fields(operating_index, OPERATING_FIELDS)
 
-    def _create_form_page(self, title: str, subtitle: str, fields: list[FieldSpec]) -> QWidget:
+    def _register_chapter_fields(self, chapter_index: int, fields: list[FieldSchema]) -> None:
+        for spec in fields:
+            self._field_chapter_index[spec.field_id] = chapter_index
+
+    def _create_form_page(self, title: str, subtitle: str, fields: list[FieldSchema]) -> QWidget:
         page = QFrame(self)
         page.setObjectName("Card")
         layout = QVBoxLayout(page)
@@ -427,7 +553,7 @@ class WormGearPage(BaseChapterPage):
         layout.addWidget(scroll)
         return page
 
-    def _create_group_input_card(self, title: str, fields: list[FieldSpec], parent: QWidget) -> QFrame:
+    def _create_group_input_card(self, title: str, fields: list[FieldSchema], parent: QWidget) -> QFrame:
         card = QFrame(parent)
         card.setObjectName("SubCard")
         layout = QVBoxLayout(card)
@@ -442,7 +568,7 @@ class WormGearPage(BaseChapterPage):
             layout.addWidget(self._create_input_row_card(spec, card))
         return card
 
-    def _create_input_row_card(self, spec: FieldSpec, parent: QWidget) -> QFrame:
+    def _create_input_row_card(self, spec: FieldSchema, parent: QWidget) -> QFrame:
         card = QFrame(parent)
         card.setObjectName("SubCard")
         mark_input_field_surface(card)
@@ -460,10 +586,25 @@ class WormGearPage(BaseChapterPage):
         hint.setObjectName("SectionHint")
         hint.setWordWrap(True)
 
+        error_label = QLabel("", card)
+        error_label.setObjectName("FieldErrorLabel")
+        error_label.setWordWrap(True)
+        error_label.setVisible(False)
+
         row.addWidget(label, 0, 0)
         row.addWidget(editor, 0, 1)
         row.addWidget(unit, 0, 2)
         row.addWidget(hint, 1, 0, 1, 3)
+        row.addWidget(error_label, 2, 0, 1, 3)
+        next_row = 3
+        if spec.field_id in _MATERIAL_SOURCE_FIELDS:
+            source = QLabel("", card)
+            source.setObjectName("SectionHint")
+            source.setWordWrap(True)
+            row.addWidget(source, next_row, 0, 1, 3)
+            self._source_labels[spec.field_id] = source
+        self._field_cards[spec.field_id] = card
+        self._field_error_labels[spec.field_id] = error_label
         return card
 
     def _create_dimension_group_card(
@@ -512,14 +653,18 @@ class WormGearPage(BaseChapterPage):
             target[key] = value_label
         return card
 
-    def _create_input(self, spec: FieldSpec, parent: QWidget) -> QWidget:
+    def _create_input(self, spec: FieldSchema, parent: QWidget) -> QWidget:
         if spec.widget_type == "choice":
             combo = AppComboBox(parent)
             combo.addItems(spec.options)
-            if spec.default:
-                index = combo.findText(spec.default)
+            default_text = "" if spec.default is None else str(spec.default)
+            if default_text:
+                index = combo.findText(default_text)
                 if index >= 0:
                     combo.setCurrentIndex(index)
+            combo.currentTextChanged.connect(
+                lambda _text, fid=spec.field_id: self._on_input_changed(fid)
+            )
             if spec.field_id.startswith("geometry."):
                 combo.currentTextChanged.connect(lambda _text: self._schedule_preview())
             self._field_widgets[spec.field_id] = combo
@@ -527,9 +672,14 @@ class WormGearPage(BaseChapterPage):
             return combo
 
         editor = QLineEdit(parent)
-        editor.setText(spec.default)
-        if spec.placeholder:
-            editor.setPlaceholderText(spec.placeholder)
+        editor.setObjectName("InputField")
+        default_text = "" if spec.default is None else str(spec.default)
+        editor.setText(default_text)
+        if spec.field_id == "advanced.friction_override":
+            editor.setPlaceholderText(_FRICTION_OVERRIDE_PLACEHOLDER)
+        editor.textChanged.connect(
+            lambda _text, fid=spec.field_id: self._on_input_changed(fid)
+        )
         if spec.field_id.startswith("geometry."):
             editor.textChanged.connect(lambda _text: self._schedule_preview())
         self._field_widgets[spec.field_id] = editor
@@ -720,7 +870,8 @@ class WormGearPage(BaseChapterPage):
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.add_chapter("Load Capacity", scroll, help_ref="modules/worm/_section_load_capacity")
+        lc_index = self.add_chapter("Load Capacity", scroll, help_ref="modules/worm/_section_load_capacity")
+        self._register_chapter_fields(lc_index, LOAD_CAPACITY_PARAMETER_FIELDS)
 
     def _build_results_step(self) -> None:
         page = QFrame(self)
@@ -813,21 +964,28 @@ class WormGearPage(BaseChapterPage):
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.add_chapter("结果与报告", scroll)
 
-    def _read_widget_value(self, spec: FieldSpec) -> str:
+    def _read_widget_value(self, spec: FieldSchema) -> str:
         widget = self._field_widgets[spec.field_id]
         if spec.widget_type == "choice":
             return widget.currentText().strip()  # type: ignore[attr-defined]
         return widget.text().strip()  # type: ignore[attr-defined]
 
+    def _current_raw_values(self) -> dict[str, str]:
+        return {
+            field_id: self._read_widget_value(spec)
+            for field_id, spec in self._field_specs.items()
+        }
+
     def _apply_defaults(self) -> None:
         for spec in self._field_specs.values():
             widget = self._field_widgets[spec.field_id]
+            default_text = "" if spec.default is None else str(spec.default)
             if spec.widget_type == "choice":
-                index = widget.findText(spec.default)  # type: ignore[attr-defined]
+                index = widget.findText(default_text)  # type: ignore[attr-defined]
                 if index >= 0:
                     widget.setCurrentIndex(index)  # type: ignore[attr-defined]
             else:
-                widget.setText(spec.default)  # type: ignore[attr-defined]
+                widget.setText(default_text)  # type: ignore[attr-defined]
         self._refresh_derived_geometry_preview()
 
     def _capture_input_snapshot(self) -> dict[str, Any]:
@@ -838,6 +996,8 @@ class WormGearPage(BaseChapterPage):
         )
 
     def _apply_input_data(self, data: dict[str, Any]) -> None:
+        previous = self._suspend_live_feedback
+        self._suspend_live_feedback = True
         self._field_widgets["materials.worm_material"].blockSignals(True)
         self._field_widgets["materials.wheel_material"].blockSignals(True)
         ui_state_data = data.get("ui_state")
@@ -849,7 +1009,10 @@ class WormGearPage(BaseChapterPage):
             if spec.field_id in ui_state:
                 value = ui_state[spec.field_id]
             else:
-                section, key = spec.field_id.split(".", 1)
+                mapping = spec.mapping
+                if mapping is None:
+                    continue
+                section, key = mapping
                 section_data = inputs.get(section)
                 if not isinstance(section_data, dict) or key not in section_data:
                     section_data = data.get(section)
@@ -869,44 +1032,27 @@ class WormGearPage(BaseChapterPage):
                 widget.setText(str(value))  # type: ignore[attr-defined]
         self._field_widgets["materials.worm_material"].blockSignals(False)
         self._field_widgets["materials.wheel_material"].blockSignals(False)
+        self._refresh_material_source_labels()
         self._refresh_derived_geometry_preview()
+        self._suspend_live_feedback = previous
+        if not self._suspend_live_feedback:
+            self._refresh_all_field_errors()
 
     def _build_payload(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {}
-        for spec in self._field_specs.values():
-            raw = self._read_widget_value(spec)
-            if raw == "":
-                continue
-            if spec.widget_type == "choice":
-                if spec.field_id == "load_capacity.enabled":
-                    value: Any = raw == "启用"
-                else:
-                    value = raw
-            elif spec.widget_type == "text":
-                value = raw
-            else:
-                try:
-                    value = float(raw)
-                except ValueError as exc:
-                    raise InputError(f"字段 {spec.label} 请输入数字，当前值: {raw}") from exc
-            section, key = spec.field_id.split(".", 1)
-            payload.setdefault(section, {})[key] = value
+        payload = build_payload(self._field_specs.values(), self._current_raw_values())
+        lc = payload.get("load_capacity")
+        if isinstance(lc, dict) and "enabled" in lc:
+            enabled = lc["enabled"]
+            if isinstance(enabled, str):
+                lc["enabled"] = enabled == "启用"
         return payload
 
     def _set_card_style(self, field_id: str, *, auto: bool) -> None:
         """将字段的外层 SubCard frame 切换为 AutoCalcCard（auto=True）或 SubCard（auto=False）。
         同时设置 QLineEdit 的 readOnly 状态。
         """
-        widget = self._field_widgets.get(field_id)
-        if widget is None:
-            return
-        # 找到直接父 frame（即 _create_input_row_card 返回的 card）
-        parent_frame = widget.parent()
-        if isinstance(parent_frame, QWidget):
-            # 向上找到 QFrame（SubCard 级别）
-            frame = parent_frame if isinstance(parent_frame, QFrame) else None
-            if frame is None:
-                return
+        frame = self._field_cards.get(field_id)
+        if frame is not None:
             obj_name = "AutoCalcCard" if auto else "SubCard"
             frame.setObjectName(obj_name)
             frame.style().unpolish(frame)
@@ -914,10 +1060,62 @@ class WormGearPage(BaseChapterPage):
             for child in frame.findChildren(QWidget):
                 child.style().unpolish(child)
                 child.style().polish(child)
+        widget = self._field_widgets.get(field_id)
         if isinstance(widget, QLineEdit):
             widget.setReadOnly(auto)
         elif isinstance(widget, QComboBox):
             widget.setEnabled(not auto)
+
+    def _set_source_label(self, field_id: str, kind: str, detail: str = "") -> None:
+        label = self._source_labels.get(field_id)
+        if label is None:
+            return
+        label.setText(format_source_label(kind, detail) if kind else "")
+
+    def _refresh_material_source_labels(self) -> None:
+        """Mark E/allowable fields as 建议值 or 用户输入 without rewriting values."""
+        worm_mat = self._field_widgets["materials.worm_material"].currentText()
+        wheel_mat = self._field_widgets["materials.wheel_material"].currentText()
+        from core.worm.calculator import MATERIAL_ELASTIC_HINTS, MATERIAL_ALLOWABLE_HINTS
+
+        worm_hints = MATERIAL_ELASTIC_HINTS.get(worm_mat, {})
+        wheel_hints = MATERIAL_ELASTIC_HINTS.get(wheel_mat, {})
+        if worm_hints:
+            detail = f"{worm_mat} 材料库典型值"
+            self._set_source_label("materials.worm_e_mpa", SOURCE_RECOMMENDED, detail)
+            self._set_source_label("materials.worm_nu", SOURCE_RECOMMENDED, detail)
+        else:
+            self._set_source_label("materials.worm_e_mpa", SOURCE_USER)
+            self._set_source_label("materials.worm_nu", SOURCE_USER)
+        if wheel_hints:
+            detail = f"{wheel_mat} 材料库典型值"
+            self._set_source_label("materials.wheel_e_mpa", SOURCE_RECOMMENDED, detail)
+            self._set_source_label("materials.wheel_nu", SOURCE_RECOMMENDED, detail)
+        else:
+            self._set_source_label("materials.wheel_e_mpa", SOURCE_USER)
+            self._set_source_label("materials.wheel_nu", SOURCE_USER)
+
+        plastic = PLASTIC_MATERIALS.get(wheel_mat) if _PLASTIC_MATERIALS_AVAILABLE else None
+        allowable_hints = MATERIAL_ALLOWABLE_HINTS.get(wheel_mat, {})
+        if plastic is not None:
+            detail = f"{wheel_mat} 降额建议值，非完整标准许用"
+            self._set_source_label(
+                "load_capacity.allowable_contact_stress_mpa", SOURCE_RECOMMENDED, detail
+            )
+            self._set_source_label(
+                "load_capacity.allowable_root_stress_mpa", SOURCE_RECOMMENDED, detail
+            )
+        elif allowable_hints:
+            detail = f"{wheel_mat} 材料库建议值，非完整标准许用"
+            self._set_source_label(
+                "load_capacity.allowable_contact_stress_mpa", SOURCE_RECOMMENDED, detail
+            )
+            self._set_source_label(
+                "load_capacity.allowable_root_stress_mpa", SOURCE_RECOMMENDED, detail
+            )
+        else:
+            self._set_source_label("load_capacity.allowable_contact_stress_mpa", SOURCE_USER)
+            self._set_source_label("load_capacity.allowable_root_stress_mpa", SOURCE_USER)
 
     def _apply_plastic_defaults(self, material_name: str) -> None:
         """从塑料材料库自动填充弹性参数和许用应力，并切换为 AutoCalcCard 样式。
@@ -1003,6 +1201,7 @@ class WormGearPage(BaseChapterPage):
         self._apply_plastic_defaults(wheel_mat)
         default_mu = MATERIAL_FRICTION_HINTS.get((worm_mat, wheel_mat), 0.20)
         self._field_widgets["advanced.friction_override"].setPlaceholderText(f"留空则自动 \u03bc={default_mu:.2f}")
+        self._refresh_material_source_labels()
         self._refresh_derived_geometry_preview()
 
     def _on_method_changed(self, method_label: str) -> None:
@@ -1036,6 +1235,8 @@ class WormGearPage(BaseChapterPage):
             widget = self._field_widgets.get(spec_id)
             if isinstance(widget, QLineEdit):
                 widget.setReadOnly(disabled)
+        if not self._suspend_live_feedback:
+            self._refresh_all_field_errors()
 
     def _schedule_preview(self) -> None:
         """Throttled signal handler: restarts 300 ms timer on every keystroke.
@@ -1099,6 +1300,78 @@ class WormGearPage(BaseChapterPage):
             elif isinstance(widget, QComboBox):
                 widget.currentIndexChanged.connect(self._mark_results_dirty)
 
+    def _set_field_error(self, field_id: str, message: str | None) -> None:
+        widget = self._field_widgets.get(field_id)
+        label = self._field_error_labels.get(field_id)
+        invalid = bool(message)
+        if widget is not None:
+            widget.setProperty("fieldError", invalid)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+        if label is not None:
+            label.setText(message or "")
+            label.setVisible(invalid)
+
+    def _refresh_field_error(self, field_id: str, values: dict[str, str] | None = None) -> None:
+        spec = self._field_specs.get(field_id)
+        if spec is None:
+            return
+        raw_values = values if values is not None else self._current_raw_values()
+        ok, message = validate_text(spec, raw_values.get(field_id, ""), values=raw_values)
+        self._set_field_error(field_id, None if ok else message)
+
+    def _dependent_field_ids(self, field_id: str) -> list[str]:
+        dependents: list[str] = []
+        for spec in self._field_specs.values():
+            for condition in (spec.required_when, spec.visible_when):
+                if (
+                    isinstance(condition, tuple)
+                    and len(condition) >= 2
+                    and condition[1] == field_id
+                ):
+                    dependents.append(spec.field_id)
+                    break
+        return dependents
+
+    def _refresh_all_field_errors(self) -> None:
+        values = self._current_raw_values()
+        for field_id in self._field_specs:
+            self._refresh_field_error(field_id, values)
+
+    def _collect_field_errors(self, *, show: bool) -> list[str]:
+        values = self._current_raw_values()
+        invalid: list[str] = []
+        for field_id, spec in self._field_specs.items():
+            ok, message = validate_text(spec, values.get(field_id, ""), values=values)
+            if not ok:
+                invalid.append(field_id)
+            if show:
+                self._set_field_error(field_id, None if ok else message)
+        return invalid
+
+    def _focus_field(self, field_id: str) -> None:
+        chapter_index = self._field_chapter_index.get(field_id)
+        if chapter_index is not None:
+            self.set_current_chapter(chapter_index)
+        widget = self._field_widgets.get(field_id)
+        if widget is None:
+            return
+        widget.setFocus(Qt.FocusReason.OtherFocusReason)
+        parent = widget.parentWidget()
+        while parent is not None and not isinstance(parent, QScrollArea):
+            parent = parent.parentWidget()
+        if isinstance(parent, QScrollArea):
+            parent.ensureWidgetVisible(widget)
+
+    def _on_input_changed(self, field_id: str) -> None:
+        if self._suspend_live_feedback:
+            return
+        self._mark_results_dirty()
+        self.set_info("输入已变更，待重新计算")
+        self._refresh_field_error(field_id)
+        for dependent_id in self._dependent_field_ids(field_id):
+            self._refresh_field_error(dependent_id)
+
     def _set_dimension_group_values(
         self,
         labels: dict[str, QLabel],
@@ -1126,10 +1399,18 @@ class WormGearPage(BaseChapterPage):
         label.style().polish(label)
 
     def _calculate(self) -> None:
+        invalid = self._collect_field_errors(show=True)
+        if invalid:
+            self._last_payload = None
+            self._last_result = None
+            self._mark_results_dirty()
+            self._focus_field(invalid[0])
+            self.set_info(f"有 {len(invalid)} 个字段需要修正。")
+            return
         try:
             payload = self._build_payload()
             result = calculate_worm_geometry(payload)
-        except InputError as exc:
+        except (InputError, ValueError) as exc:
             self._last_payload = None
             self._last_result = None
             self._mark_results_dirty()
@@ -1468,7 +1749,11 @@ class WormGearPage(BaseChapterPage):
     def _clear(self) -> None:
         self._last_result = None
         self._last_payload = None
+        self._suspend_live_feedback = True
         self._apply_defaults()
+        self._on_material_changed()
+        self._suspend_live_feedback = False
+        self._refresh_all_field_errors()
         self._reset_result_panels()
         self._mark_results_dirty()
         self.set_info("参数已重置，可重新执行蜗杆副计算。")
