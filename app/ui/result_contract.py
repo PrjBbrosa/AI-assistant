@@ -1370,6 +1370,8 @@ def _tapped_metrics(result: dict[str, Any]) -> tuple[MetricView, ...]:
         thread_strip = {}
 
     f_min = assembly.get("F_preload_min_N", 0)
+    if f_min is None:
+        raise TypeError("assembly.F_preload_min_N")
     f_max = assembly.get("F_preload_max_N", 0)
     ma_min = assembly.get("MA_min_Nm", 0)
     ma_max = assembly.get("MA_max_Nm", 0)
