@@ -278,3 +278,62 @@ class TestSplineFitPage:
         assert "未覆盖:" in joined
         assert "PRECHECK PASS" not in joined
         assert "PRECHECK FAIL" not in joined
+
+    def test_application_factor_ka_live_error_below_one(self, app):
+        page = SplineFitPage()
+        widget = page._widgets["loads.application_factor_ka"]
+        error = page._field_error_labels["loads.application_factor_ka"]
+        assert error.isHidden()
+
+        widget.setText("0.5")
+
+        assert not error.isHidden()
+        assert ">= 1.0" in error.text()
+        assert widget.property("fieldError") in (True, "true")
+        assert page.btn_calculate.isEnabled()
+
+        widget.setText("1.25")
+
+        assert error.isHidden()
+        assert widget.property("fieldError") in (False, "false", None)
+
+    def test_flank_safety_min_live_error_below_one(self, app):
+        page = SplineFitPage()
+        widget = page._widgets["checks.flank_safety_min"]
+        error = page._field_error_labels["checks.flank_safety_min"]
+        assert error.isHidden()
+
+        widget.setText("0.1")
+
+        assert not error.isHidden()
+        assert ">= 1.0" in error.text()
+        assert widget.property("fieldError") in (True, "true")
+        assert page.btn_calculate.isEnabled()
+
+        widget.setText("1.30")
+
+        assert error.isHidden()
+        assert widget.property("fieldError") in (False, "false", None)
+
+    def test_calculate_with_live_errors_focuses_first_field(self, app):
+        page = SplineFitPage()
+        page._widgets["checks.flank_safety_min"].setText("0.1")
+        page._widgets["loads.application_factor_ka"].setText("0.5")
+
+        page._on_calculate()
+
+        assert page._last_result is None
+        assert page.btn_save.isEnabled() is False
+        assert page.btn_calculate.isEnabled()
+        assert not page._field_error_labels["checks.flank_safety_min"].isHidden()
+        assert not page._field_error_labels["loads.application_factor_ka"].isHidden()
+        assert page.chapter_list.currentRow() == 0
+        assert "字段需要修正" in page.info_label.text()
+
+    def test_spline_only_payload_omits_smooth_fit_keys(self, app):
+        page = SplineFitPage()
+        page._widgets["mode"].setCurrentText("仅花键")
+        payload = page._build_payload()
+        assert payload["mode"] == "spline_only"
+        for key in ("smooth_fit", "smooth_materials", "smooth_friction", "smooth_roughness"):
+            assert key not in payload

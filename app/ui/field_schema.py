@@ -39,6 +39,7 @@ class FieldSchema:
     required_when: Condition | None = None
     help_ref: str | None = None
     hint: str = ""
+    placeholder: str = ""
 
     @property
     def widget_type(self) -> str:
@@ -70,6 +71,7 @@ def FieldSpec(
     source_kind: str = "user",
     visible_when: Condition | None = None,
     required_when: Condition | None = None,
+    placeholder: str = "",
 ) -> FieldSchema:
     """Compatibility constructor matching page-local FieldSpec call sites."""
     if value_type is None:
@@ -109,6 +111,7 @@ def FieldSpec(
         required_when=required_when,
         help_ref=help_ref or None,
         hint=hint,
+        placeholder=placeholder,
     )
 
 

@@ -14,6 +14,8 @@ from app.ui.field_schema import (
     validate_text,
 )
 from app.ui.pages.bolt_tapped_axial_page import CHAPTERS
+from app.ui.pages.spline_fit_page import CHAPTERS as SPLINE_CHAPTERS
+from app.ui.pages.spline_fit_page import SMOOTH_FIT_FIELD_IDS
 from core.bolt.grades import BOLT_GRADE_CUSTOM, bolt_grade_options
 
 
@@ -218,3 +220,64 @@ def test_tapped_axial_field_schema_contract() -> None:
     for spec in mapped:
         section, key = spec.mapping
         assert spec.field_id == f"{section}.{key}"
+
+
+def _spline_chapter_specs() -> dict[str, FieldSchema]:
+    specs: dict[str, FieldSchema] = {}
+    for chapter in SPLINE_CHAPTERS:
+        for spec in chapter["fields"]:
+            specs[spec.field_id] = spec
+    return specs
+
+
+def test_spline_field_schema_contract() -> None:
+    specs = _spline_chapter_specs()
+    for field_id in ("checks.flank_safety_min", "loads.application_factor_ka"):
+        schema = specs[field_id]
+        assert isinstance(schema, FieldSchema)
+        assert schema.value_type == "float"
+        assert schema.finite is True
+        assert schema.min_value == 1.0
+        assert schema.min_inclusive is True
+        assert schema.required is True
+
+    ka = specs["loads.application_factor_ka"]
+    ok, message = validate_text(ka, "0.5")
+    assert not ok
+    assert ">= 1.0" in message
+    assert parse_payload_value(ka, "1.0") == 1.0
+
+    flank = specs["checks.flank_safety_min"]
+    ok, message = validate_text(flank, "0.1")
+    assert not ok
+    assert ">= 1.0" in message
+
+    for field_id in SMOOTH_FIT_FIELD_IDS:
+        assert specs[field_id].visible_when == ("eq", "mode", "联合")
+
+    mapped = [spec for spec in specs.values() if spec.mapping is not None]
+    assert mapped
+    for spec in mapped:
+        section, key = spec.mapping
+        assert spec.field_id == f"{section}.{key}"
+
+
+def test_spline_build_payload_omits_smooth_when_spline_only() -> None:
+    specs = list(_spline_chapter_specs().values())
+    values = {spec.field_id: "" if spec.default is None else str(spec.default) for spec in specs}
+    values["mode"] = "仅花键"
+
+    payload = build_payload(specs, values)
+
+    assert "smooth_fit" not in payload
+    assert "smooth_materials" not in payload
+    assert "smooth_friction" not in payload
+    assert "smooth_roughness" not in payload
+    assert "flank_safety_min" in payload.get("checks", {})
+    assert "slip_safety_min" not in payload.get("checks", {})
+
+    values["mode"] = "联合"
+    combined = build_payload(specs, values)
+    assert "smooth_fit" in combined
+    assert "shaft_d_mm" in combined["smooth_fit"]
+    assert combined["checks"]["slip_safety_min"] == 1.5

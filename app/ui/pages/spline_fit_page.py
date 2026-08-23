@@ -5,8 +5,6 @@ from __future__ import annotations
 import datetime as dt
 import importlib
 import json
-import math
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +24,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.field_schema import (
+    FieldSchema,
+    FieldSpec,
+    build_payload,
+    validate_text,
+)
 from app.ui.input_condition_store import (
     InputConditionError,
     build_form_snapshot,
@@ -52,20 +56,9 @@ EXAMPLES_DIR = PROJECT_ROOT / "examples"
 SAVED_INPUTS_DIR = build_saved_inputs_dir(PROJECT_ROOT)
 MODULE_ID = "spline_fit"
 
-
-@dataclass(frozen=True)
-class FieldSpec:
-    field_id: str
-    label: str
-    unit: str
-    hint: str
-    mapping: tuple[str, str] | None = None
-    widget_type: str = "number"
-    options: tuple[str, ...] = ()
-    default: str = ""
-    placeholder: str = ""
-    help_ref: str = ""
-    help_ref: str = ""
+# Schema-level visibility: combined-only fields stay on screen (disabled)
+# in spline_only, but are omitted from payload and live validation.
+_COMBINED_MODE: tuple[str, str, str] = ("eq", "mode", "联合")
 
 
 LOAD_CONDITION_OPTIONS: tuple[str, ...] = (
@@ -133,6 +126,7 @@ CHAPTERS: list[dict[str, Any]] = [
             FieldSpec(
                 "mode", "校核模式", "-",
                 "仅花键：只校核花键齿面承压（场景 A）；联合：同时校核花键轴光滑段与轮毂孔的圆柱过盈配合（场景 B）。",
+                mapping=None,
                 widget_type="choice",
                 options=("仅花键", "联合"),
                 default="仅花键",
@@ -143,6 +137,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "场景 A 齿面承压校核使用的最小安全系数。",
                 mapping=("checks", "flank_safety_min"),
                 default="1.30", placeholder="建议 1.2~1.5",
+                min_value=1.0,
                 help_ref="terms/spline_flank_safety",
             ),
             FieldSpec(
@@ -150,6 +145,8 @@ CHAPTERS: list[dict[str, Any]] = [
                 "场景 B 光滑段防滑校核使用的最小安全系数。",
                 mapping=("checks", "slip_safety_min"),
                 default="1.50", placeholder="建议 1.2~2.0",
+                min_value=1.0,
+                visible_when=_COMBINED_MODE,
                 help_ref="terms/spline_slip_safety",
             ),
             FieldSpec(
@@ -157,6 +154,8 @@ CHAPTERS: list[dict[str, Any]] = [
                 "场景 B 轴/轮毂应力校核使用的最小安全系数。",
                 mapping=("checks", "stress_safety_min"),
                 default="1.20", placeholder="建议 1.1~1.8",
+                min_value=1.0,
+                visible_when=_COMBINED_MODE,
                 help_ref="terms/spline_stress_safety",
             ),
             FieldSpec(
@@ -164,6 +163,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "考虑驱动/负载特性引起的动态过载，同时放大场景 A 和 B 的设计载荷。电机驱动约 1.0~1.25，内燃机约 1.25~1.75。",
                 mapping=("loads", "application_factor_ka"),
                 default="1.25", placeholder="建议 1.0~2.25",
+                min_value=1.0,
                 help_ref="terms/spline_application_factor_ka",
             ),
         ],
@@ -177,6 +177,7 @@ CHAPTERS: list[dict[str, Any]] = [
             FieldSpec(
                 "spline.standard_designation", "标准花键规格", "-",
                 "选择 DIN 5480 标准规格后自动填充几何尺寸；选'自定义'手动输入。",
+                mapping=None,
                 widget_type="choice",
                 options=tuple(all_designations()) + ("自定义",),
                 default="自定义",
@@ -196,6 +197,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "渐开线花键模数。",
                 mapping=("spline", "module_mm"),
                 default="1.25", placeholder="例如 0.8, 1.25",
+                min_value=0.0, min_inclusive=False,
                 help_ref="terms/module",
             ),
             FieldSpec(
@@ -203,6 +205,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "花键齿数，最小 6。",
                 mapping=("spline", "tooth_count"),
                 default="10", placeholder="例如 10, 16",
+                min_value=6.0,
                 help_ref="terms/spline_tooth_count",
             ),
             FieldSpec(
@@ -210,6 +213,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "DIN 5480 花键的基本尺寸参考直径。例如 '外花键 W 15x1.25x10' 表示 d_B=15mm, m=1.25, z=10。",
                 mapping=("spline", "reference_diameter_mm"),
                 default="15.0", placeholder="例如 15",
+                min_value=0.0, min_inclusive=False,
                 help_ref="terms/spline_reference_diameter",
             ),
             FieldSpec(
@@ -217,6 +221,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "优先使用目录或图纸尺寸。公开样例 W15x1.25x10 约为 14.75 mm。",
                 mapping=("spline", "tip_diameter_shaft_mm"),
                 default="14.75", placeholder="例如 14.75",
+                min_value=0.0, min_inclusive=False,
                 help_ref="terms/spline_tip_root_diameter",
             ),
             FieldSpec(
@@ -224,6 +229,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "优先使用目录或图纸尺寸。公开样例 W15x1.25x10 约为 12.1 mm。",
                 mapping=("spline", "root_diameter_shaft_mm"),
                 default="12.1", placeholder="例如 12.1",
+                min_value=0.0, min_inclusive=False,
                 help_ref="terms/spline_tip_root_diameter",
             ),
             FieldSpec(
@@ -231,6 +237,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "优先使用目录或图纸尺寸。公开样例 N15x1.25x10 约为 12.5 mm。",
                 mapping=("spline", "tip_diameter_hub_mm"),
                 default="12.5", placeholder="例如 12.5",
+                min_value=0.0, min_inclusive=False,
                 help_ref="terms/spline_tip_root_diameter",
             ),
             FieldSpec(
@@ -238,6 +245,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "花键齿面轴向有效接触长度。",
                 mapping=("spline", "engagement_length_mm"),
                 default="40.0", placeholder="例如 25, 40",
+                min_value=0.0, min_inclusive=False,
                 help_ref="terms/spline_engagement_length",
             ),
             FieldSpec(
@@ -246,11 +254,13 @@ CHAPTERS: list[dict[str, Any]] = [
                 "过盈固定连接约 1.0~1.3，滑移连接约 1.5~2.0。",
                 mapping=("spline", "k_alpha"),
                 default="1.3", placeholder="例如 1.1~2.0",
+                min_value=0.0, min_inclusive=False,
                 help_ref="terms/spline_k_alpha",
             ),
             FieldSpec(
                 "spline.load_condition", "载荷工况", "-",
                 "选择后自动填充许用齿面压力；切到自定义手工输入。",
+                mapping=None,
                 widget_type="choice",
                 options=LOAD_CONDITION_OPTIONS,
                 default="固定连接，静载，调质钢",
@@ -261,6 +271,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "取决于材料状态和载荷类型。",
                 mapping=("spline", "p_allowable_mpa"),
                 default="100.0", placeholder="例如 60~200",
+                min_value=0.0, min_inclusive=False,
                 help_ref="terms/spline_allowable_flank_pressure",
             ),
         ],
@@ -276,121 +287,166 @@ CHAPTERS: list[dict[str, Any]] = [
                 "光滑段轴径。",
                 mapping=("smooth_fit", "shaft_d_mm"),
                 default="40.0", placeholder="例如 40",
+                min_value=0.0, min_inclusive=False,
+                visible_when=_COMBINED_MODE,
             ),
             FieldSpec(
                 "smooth_fit.shaft_inner_d_mm", "轴内径 d_i", "mm",
                 "0 表示实心轴。",
                 mapping=("smooth_fit", "shaft_inner_d_mm"),
                 default="0.0", placeholder="实心轴填 0",
+                min_value=0.0,
+                visible_when=_COMBINED_MODE,
             ),
             FieldSpec(
                 "smooth_fit.hub_outer_d_mm", "轮毂外径 D", "mm",
                 "轮毂外圆直径。",
                 mapping=("smooth_fit", "hub_outer_d_mm"),
                 default="80.0", placeholder="例如 80",
+                min_value=0.0, min_inclusive=False,
+                visible_when=_COMBINED_MODE,
             ),
             FieldSpec(
                 "smooth_fit.fit_length_mm", "名义配合长度 L", "mm",
                 "轴向名义接触长度（含退刀槽，计算时自动扣除）。",
                 mapping=("smooth_fit", "fit_length_mm"),
                 default="45.0", placeholder="例如 45",
+                min_value=0.0, min_inclusive=False,
+                visible_when=_COMBINED_MODE,
             ),
             FieldSpec(
                 "smooth_fit.relief_groove_width_mm", "退刀槽宽度", "mm",
                 "花键齿根与光滑段之间的让刀凹槽宽度，用于加工退刀。计算时自动从配合长度中扣除。",
                 mapping=("smooth_fit", "relief_groove_width_mm"),
                 default="3.0", placeholder="例如 2~5",
+                min_value=0.0,
+                visible_when=_COMBINED_MODE,
                 help_ref="terms/spline_relief_groove",
             ),
             FieldSpec(
                 "smooth_fit.delta_min_um", "最小过盈量 delta_min", "um",
                 "直径值。", mapping=("smooth_fit", "delta_min_um"),
                 default="20.0", placeholder="例如 20",
+                min_value=0.0,
+                visible_when=_COMBINED_MODE,
                 help_ref="terms/spline_smooth_interference",
             ),
             FieldSpec(
                 "smooth_fit.delta_max_um", "最大过盈量 delta_max", "um",
                 "直径值。", mapping=("smooth_fit", "delta_max_um"),
                 default="45.0", placeholder="例如 45",
+                min_value=0.0, min_inclusive=False,
+                visible_when=_COMBINED_MODE,
                 help_ref="terms/spline_smooth_interference",
             ),
             FieldSpec(
                 "smooth_materials.shaft_material", "轴材料", "-",
                 "选择后自动填充 E 与 nu。",
+                mapping=None,
                 widget_type="choice",
                 options=tuple(MATERIAL_LIBRARY.keys()),
                 default="45钢",
+                visible_when=_COMBINED_MODE,
             ),
             FieldSpec(
                 "smooth_materials.shaft_e_mpa", "轴弹性模量 E_s", "MPa",
                 "", mapping=("smooth_materials", "shaft_e_mpa"),
                 default="210000", placeholder="例如 210000",
+                min_value=0.0, min_inclusive=False,
+                visible_when=_COMBINED_MODE,
                 help_ref="terms/elastic_modulus",
             ),
             FieldSpec(
                 "smooth_materials.shaft_nu", "轴泊松比 nu_s", "-",
                 "", mapping=("smooth_materials", "shaft_nu"),
                 default="0.30",
+                min_value=0.0, max_value=0.5,
+                min_inclusive=False, max_inclusive=False,
+                visible_when=_COMBINED_MODE,
                 help_ref="terms/poisson_ratio",
             ),
             FieldSpec(
                 "smooth_materials.shaft_yield_mpa", "轴屈服强度 Re_s", "MPa",
                 "", mapping=("smooth_materials", "shaft_yield_mpa"),
                 default="600",
+                min_value=0.0, min_inclusive=False,
+                visible_when=_COMBINED_MODE,
                 help_ref="terms/spline_smooth_yield_strength",
             ),
             FieldSpec(
                 "smooth_materials.hub_material", "轮毂材料", "-",
                 "",
+                mapping=None,
                 widget_type="choice",
                 options=tuple(MATERIAL_LIBRARY.keys()),
                 default="45钢",
+                visible_when=_COMBINED_MODE,
             ),
             FieldSpec(
                 "smooth_materials.hub_e_mpa", "轮毂弹性模量 E_h", "MPa",
                 "", mapping=("smooth_materials", "hub_e_mpa"),
                 default="210000",
+                min_value=0.0, min_inclusive=False,
+                visible_when=_COMBINED_MODE,
                 help_ref="terms/elastic_modulus",
             ),
             FieldSpec(
                 "smooth_materials.hub_nu", "轮毂泊松比 nu_h", "-",
                 "", mapping=("smooth_materials", "hub_nu"),
                 default="0.30",
+                min_value=0.0, max_value=0.5,
+                min_inclusive=False, max_inclusive=False,
+                visible_when=_COMBINED_MODE,
                 help_ref="terms/poisson_ratio",
             ),
             FieldSpec(
                 "smooth_materials.hub_yield_mpa", "轮毂屈服强度 Re_h", "MPa",
                 "", mapping=("smooth_materials", "hub_yield_mpa"),
                 default="320",
+                min_value=0.0, min_inclusive=False,
+                visible_when=_COMBINED_MODE,
                 help_ref="terms/spline_smooth_yield_strength",
             ),
             FieldSpec(
                 "smooth_friction.mu_torque", "摩擦系数 mu_T（扭矩）", "-",
                 "", mapping=("smooth_friction", "mu_torque"),
                 default="0.14",
+                min_value=0.0, max_value=1.0,
+                min_inclusive=False, max_inclusive=False,
+                visible_when=_COMBINED_MODE,
                 help_ref="terms/spline_smooth_friction",
             ),
             FieldSpec(
                 "smooth_friction.mu_axial", "摩擦系数 mu_ax（轴向）", "-",
                 "", mapping=("smooth_friction", "mu_axial"),
                 default="0.14",
+                min_value=0.0, max_value=1.0,
+                min_inclusive=False, max_inclusive=False,
+                visible_when=_COMBINED_MODE,
                 help_ref="terms/spline_smooth_friction",
             ),
             FieldSpec(
                 "smooth_friction.mu_assembly", "装配摩擦系数 mu_M", "-",
                 "", mapping=("smooth_friction", "mu_assembly"),
                 default="0.12",
+                min_value=0.0, max_value=1.0,
+                min_inclusive=False, max_inclusive=False,
+                visible_when=_COMBINED_MODE,
                 help_ref="terms/spline_smooth_friction",
             ),
             FieldSpec(
                 "smooth_roughness.shaft_rz_um", "轴 Rz", "um",
                 "", mapping=("smooth_roughness", "shaft_rz_um"),
                 default="6.3",
+                min_value=0.0,
+                visible_when=_COMBINED_MODE,
             ),
             FieldSpec(
                 "smooth_roughness.hub_rz_um", "轮毂 Rz", "um",
                 "", mapping=("smooth_roughness", "hub_rz_um"),
                 default="6.3",
+                min_value=0.0,
+                visible_when=_COMBINED_MODE,
             ),
         ],
     },
@@ -405,12 +461,14 @@ CHAPTERS: list[dict[str, Any]] = [
                 "两场景共用的名义扭矩。",
                 mapping=("loads", "torque_required_nm"),
                 default="500.0", placeholder="例如 500",
+                min_value=0.0, min_inclusive=False,
             ),
             FieldSpec(
                 "loads.axial_force_required_n", "轴向力 F_ax", "N",
                 "仅场景 B 使用。",
                 mapping=("loads", "axial_force_required_n"),
                 default="0.0", placeholder="例如 0",
+                min_value=0.0,
             ),
         ],
     },
@@ -436,8 +494,10 @@ class SplineFitPage(BaseChapterPage):
         )
 
         self._widgets: dict[str, QWidget] = {}
-        self._field_specs: dict[str, FieldSpec] = {}
+        self._field_specs: dict[str, FieldSchema] = {}
         self._field_cards: dict[str, QWidget] = {}
+        self._field_error_labels: dict[str, QLabel] = {}
+        self._field_chapter_index: dict[str, int] = {}
         self._result_labels: dict[str, QLabel] = {}
         self._chapter_indices: dict[str, int] = {}
         self._suspend_live_feedback = False
@@ -462,10 +522,13 @@ class SplineFitPage(BaseChapterPage):
 
         for chapter in CHAPTERS:
             page = self._build_chapter_page(chapter)
-            self._chapter_indices[chapter["title"]] = self.add_chapter(
+            chapter_index = self.add_chapter(
                 chapter["title"], page,
                 help_ref=chapter.get("help_ref") or None,
             )
+            self._chapter_indices[chapter["title"]] = chapter_index
+            for spec in chapter["fields"]:
+                self._field_chapter_index[spec.field_id] = chapter_index
 
         self.set_current_chapter(0)
 
@@ -503,6 +566,7 @@ class SplineFitPage(BaseChapterPage):
 
         self.set_info(SPLINE_SCOPE_DISCLAIMER)
         self._sync_state_from_ui(refresh=True)
+        self._refresh_all_field_errors()
         self.btn_save.setEnabled(False)
 
     def _build_chapter_page(self, chapter: dict) -> QWidget:
@@ -530,7 +594,7 @@ class SplineFitPage(BaseChapterPage):
         scroll.setWidget(inner)
         return scroll
 
-    def _build_field_card(self, spec: FieldSpec) -> QFrame:
+    def _build_field_card(self, spec: FieldSchema) -> QFrame:
         card = QFrame()
         card.setObjectName("SubCard")
         mark_input_field_surface(card)
@@ -563,27 +627,41 @@ class SplineFitPage(BaseChapterPage):
             w = AppComboBox()
             w.addItems(spec.options)
             if spec.default:
-                idx = w.findText(spec.default)
+                idx = w.findText(str(spec.default))
                 if idx >= 0:
                     w.setCurrentIndex(idx)
         else:
             w = QLineEdit()
-            w.setText(spec.default)
+            w.setObjectName("InputField")
+            w.setText("" if spec.default is None else str(spec.default))
             w.setPlaceholderText(spec.placeholder)
         grid.addWidget(w, 0, 1)
 
+        next_row = 1
         if spec.hint:
             hint = QLabel(spec.hint)
             hint.setObjectName("SectionHint")
             hint.setWordWrap(True)
             grid.addWidget(hint, 1, 0, 1, 2)
+            next_row = 2
+
+        error_label = QLabel("")
+        error_label.setObjectName("FieldErrorLabel")
+        error_label.setWordWrap(True)
+        error_label.setVisible(False)
+        grid.addWidget(error_label, next_row, 0, 1, 2)
 
         self._widgets[spec.field_id] = w
         self._field_specs[spec.field_id] = spec
+        self._field_error_labels[spec.field_id] = error_label
         if isinstance(w, QComboBox):
-            w.currentTextChanged.connect(lambda _text: self._on_inputs_changed())
+            w.currentTextChanged.connect(
+                lambda _text, fid=spec.field_id: self._on_inputs_changed(fid)
+            )
         elif isinstance(w, QLineEdit):
-            w.textChanged.connect(lambda _text: self._on_inputs_changed())
+            w.textChanged.connect(
+                lambda _text, fid=spec.field_id: self._on_inputs_changed(fid)
+            )
         return card
 
     def _build_result_chapter(self, layout: QVBoxLayout) -> None:
@@ -754,9 +832,15 @@ class SplineFitPage(BaseChapterPage):
         if not self._suspend_live_feedback:
             self._mark_dirty()
 
-    def _on_inputs_changed(self) -> None:
+    def _on_inputs_changed(self, field_id: str | None = None) -> None:
         if self._suspend_live_feedback:
             return
+        if field_id:
+            self._refresh_field_error(field_id)
+            for dependent_id in self._dependent_field_ids(field_id):
+                self._refresh_field_error(dependent_id)
+        else:
+            self._refresh_all_field_errors()
         self._mark_dirty()
 
     def _mark_dirty(self) -> None:
@@ -797,8 +881,77 @@ class SplineFitPage(BaseChapterPage):
         if refresh:
             self._run_calculation(strict=False)
 
-    def _read_snapshot_value(self, spec: FieldSpec) -> str:
+    def _read_snapshot_value(self, spec: FieldSchema) -> str:
         return self._get_value(spec.field_id)
+
+    def _current_raw_values(self) -> dict[str, str]:
+        return {
+            field_id: self._get_value(field_id)
+            for field_id in self._field_specs
+        }
+
+    def _set_field_error(self, field_id: str, message: str | None) -> None:
+        widget = self._widgets.get(field_id)
+        label = self._field_error_labels.get(field_id)
+        invalid = bool(message)
+        if widget is not None:
+            widget.setProperty("fieldError", invalid)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+        if label is not None:
+            label.setText(message or "")
+            label.setVisible(invalid)
+
+    def _refresh_field_error(self, field_id: str, values: dict[str, str] | None = None) -> None:
+        spec = self._field_specs.get(field_id)
+        if spec is None:
+            return
+        raw_values = values if values is not None else self._current_raw_values()
+        ok, message = validate_text(spec, raw_values.get(field_id, ""), values=raw_values)
+        self._set_field_error(field_id, None if ok else message)
+
+    def _dependent_field_ids(self, field_id: str) -> list[str]:
+        dependents: list[str] = []
+        for spec in self._field_specs.values():
+            for condition in (spec.required_when, spec.visible_when):
+                if (
+                    isinstance(condition, tuple)
+                    and len(condition) >= 2
+                    and condition[1] == field_id
+                ):
+                    dependents.append(spec.field_id)
+                    break
+        return dependents
+
+    def _refresh_all_field_errors(self) -> None:
+        values = self._current_raw_values()
+        for field_id in self._field_specs:
+            self._refresh_field_error(field_id, values)
+
+    def _collect_field_errors(self, *, show: bool) -> list[str]:
+        values = self._current_raw_values()
+        invalid: list[str] = []
+        for field_id, spec in self._field_specs.items():
+            ok, message = validate_text(spec, values.get(field_id, ""), values=values)
+            if not ok:
+                invalid.append(field_id)
+            if show:
+                self._set_field_error(field_id, None if ok else message)
+        return invalid
+
+    def _focus_field(self, field_id: str) -> None:
+        chapter_index = self._field_chapter_index.get(field_id)
+        if chapter_index is not None:
+            self.set_current_chapter(chapter_index)
+        widget = self._widgets.get(field_id)
+        if widget is None:
+            return
+        widget.setFocus(Qt.FocusReason.OtherFocusReason)
+        parent = widget.parentWidget()
+        while parent is not None and not isinstance(parent, QScrollArea):
+            parent = parent.parentWidget()
+        if isinstance(parent, QScrollArea):
+            parent.ensureWidgetVisible(widget)
 
     def _capture_input_snapshot(self) -> dict[str, Any]:
         return build_form_snapshot(
@@ -924,11 +1077,21 @@ class SplineFitPage(BaseChapterPage):
             self.message_box.clear()
 
     def _run_calculation(self, *, strict: bool) -> None:
+        invalid = self._collect_field_errors(show=True)
+        if invalid:
+            self._last_payload = None
+            self._last_result = None
+            self.btn_save.setEnabled(False)
+            self._reset_scenario_cards()
+            if strict:
+                self._focus_field(invalid[0])
+                self.set_info(f"有 {len(invalid)} 个字段需要修正。")
+            return
         try:
             payload = self._build_payload()
             result = calculate_spline_fit(payload)
             self._display_result(result)
-        except InputError as exc:
+        except (InputError, ValueError) as exc:
             self._last_payload = None
             self._last_result = None
             self.btn_save.setEnabled(False)
@@ -948,36 +1111,13 @@ class SplineFitPage(BaseChapterPage):
         self.btn_save.setEnabled(True)
 
     def _build_payload(self) -> dict:
-        mode_text = self._get_value("mode")
-        mode = MODE_MAP.get(mode_text, "spline_only")
-
-        active_sections = {"spline", "loads", "checks"}
-        if mode == "combined":
-            active_sections |= {
-                "smooth_fit", "smooth_materials",
-                "smooth_roughness", "smooth_friction",
-            }
-
-        payload: dict[str, Any] = {"mode": mode}
-        for section in active_sections:
-            payload[section] = {}
-        for chapter in CHAPTERS:
-            for spec in chapter["fields"]:
-                if spec.mapping is None:
-                    continue
-                section, key = spec.mapping
-                if section not in active_sections:
-                    continue
-                raw = self._get_value(spec.field_id)
-                if not raw:
-                    continue
-                if spec.field_id == "spline.geometry_mode":
-                    payload[section][key] = GEOMETRY_MODE_MAP.get(raw, "approximate")
-                    continue
-                try:
-                    payload[section][key] = float(raw)
-                except ValueError:
-                    payload[section][key] = raw
+        raw_values = self._current_raw_values()
+        payload = build_payload(self._field_specs.values(), raw_values)
+        payload["mode"] = MODE_MAP.get(raw_values.get("mode", ""), "spline_only")
+        spline = payload.get("spline")
+        if isinstance(spline, dict) and "geometry_mode" in spline:
+            raw_geo = str(spline["geometry_mode"])
+            spline["geometry_mode"] = GEOMETRY_MODE_MAP.get(raw_geo, raw_geo)
         return payload
 
     def _on_calculate(self) -> None:
@@ -1159,5 +1299,6 @@ class SplineFitPage(BaseChapterPage):
         self._last_payload = None
         self._last_result = None
         self.btn_save.setEnabled(False)
+        self._refresh_all_field_errors()
         self._reset_scenario_cards()
         self.set_info("参数已重置为默认值。")
