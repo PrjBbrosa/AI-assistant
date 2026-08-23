@@ -8,7 +8,9 @@ from typing import Any, Literal
 from app.ui.model_scope import (
     HERTZ_ALLOWABLE_SOURCE_NOTE,
     HERTZ_SCOPE,
+    MODEL_LEVEL_REFERENCE,
     SPLINE_SCOPE,
+    WORM_SCOPE,
     ModuleScope,
 )
 
@@ -43,6 +45,14 @@ SPLINE_CHECK_LABELS: dict[str, str] = {
     "flank_ok": "齿面承压校核",
     "slip_ok": "光滑段防滑校核",
     "stress_ok": "光滑段应力校核",
+}
+
+WORM_CHECK_LABELS: dict[str, str] = {
+    "geometry_consistent": "几何一致性",
+    "contact_ok": "齿面接触应力",
+    "root_ok": "齿根弯曲应力",
+    "fatigue_life": "疲劳寿命",
+    "wear_life": "磨损寿命",
 }
 
 _SPLINE_OVERALL_TITLE_ZH: dict[str, str] = {
@@ -513,3 +523,361 @@ def _optional_metric(
     else:
         text = str(value)
     return (MetricView(label=label, value=text, unit=unit),)
+
+
+def from_worm(
+    result: dict[str, Any],
+    payload: dict[str, Any] | None = None,
+) -> ResultViewModel:
+    """Build the worm UI/PDF view model from calculator output."""
+    del payload  # inputs are echoed on the result; payload kept for call-site symmetry
+    geometry = result.get("geometry")
+    if not isinstance(geometry, dict):
+        raise TypeError("geometry")
+    performance = result.get("performance")
+    if not isinstance(performance, dict):
+        raise TypeError("performance")
+    load_capacity = result.get("load_capacity")
+    if load_capacity is not None and not isinstance(load_capacity, dict):
+        raise TypeError("load_capacity")
+    if not isinstance(load_capacity, dict):
+        load_capacity = {}
+
+    lc_enabled = bool(load_capacity.get("enabled", False))
+    overall_status = _worm_overall_status(result, load_capacity, lc_enabled)
+    model_level = WORM_SCOPE.model_level
+    title = overall_title_zh(overall_status, model_level)
+    lc_status = str(load_capacity.get("status") or "").strip()
+    if lc_enabled:
+        subtitle = f"Load Capacity | 模型等级: {model_level}"
+        if lc_status:
+            subtitle = f"{subtitle} | {lc_status}"
+    else:
+        subtitle = f"Load Capacity 未启用 | 模型等级: {model_level}"
+
+    return ResultViewModel(
+        overall_status=overall_status,
+        title_zh=title,
+        summary_zh=_worm_summary(overall_status),
+        checks=_worm_checks(load_capacity, lc_enabled, model_level),
+        metrics=_worm_metrics(geometry, performance, load_capacity, lc_enabled),
+        warnings=_worm_warnings(geometry, performance, load_capacity),
+        model_scope=WORM_SCOPE,
+        source_notes=(WORM_SCOPE.applicability,),
+        recommendations=_worm_recommendations(load_capacity, lc_enabled, overall_status),
+        verdict_subtitle_zh=subtitle,
+    )
+
+
+def _worm_overall_status(
+    result: dict[str, Any],
+    load_capacity: dict[str, Any],
+    lc_enabled: bool,
+) -> OverallStatus:
+    raw_status = result.get("overall_status")
+    if raw_status in ("pass", "fail", "incomplete"):
+        return raw_status
+    if "overall_pass" in result:
+        return "pass" if bool(result.get("overall_pass")) else "fail"
+    if not lc_enabled:
+        return "incomplete"
+    # Missing load-capacity overall_pass must not be inferred from checks.
+    return "pass" if bool(load_capacity.get("overall_pass")) else "fail"
+
+
+def _worm_summary(overall_status: OverallStatus) -> str:
+    scope = WORM_SCOPE.applicability
+    if overall_status == "pass":
+        return (
+            "该工况满足 Method B 风格最小负载能力子集要求。"
+            "负载能力（Load Capacity）为正式子集，不是完整 DIN 3996 签发。"
+            f"{scope}"
+        )
+    if overall_status == "incomplete":
+        return (
+            "已完成蜗杆副几何与基础性能；负载能力（Load Capacity）未启用或未校核，总体结论不完整。"
+            f"{scope}"
+        )
+    return (
+        "负载能力（Load Capacity）校核不通过，请调整几何、载荷或材料。"
+        "负载能力为正式子集，不是完整 DIN 3996 签发。"
+        f"{scope}"
+    )
+
+
+def _worm_flag_status(enabled: bool, raw: Any) -> CheckStatus:
+    if not enabled:
+        return "not_checked"
+    return "pass" if raw else "fail"
+
+
+def _worm_checks(
+    load_capacity: dict[str, Any],
+    lc_enabled: bool,
+    model_level: str,
+) -> tuple[CheckView, ...]:
+    raw_checks = load_capacity.get("checks")
+    if not isinstance(raw_checks, dict):
+        raw_checks = {}
+    contact = load_capacity.get("contact")
+    if not isinstance(contact, dict):
+        contact = {}
+    root = load_capacity.get("root")
+    if not isinstance(root, dict):
+        root = {}
+    skipped = "负载能力校核：未启用"
+    checks: list[CheckView] = [
+        CheckView(
+            id="geometry_consistent",
+            label_zh=WORM_CHECK_LABELS["geometry_consistent"],
+            status=_worm_flag_status(lc_enabled, raw_checks.get("geometry_consistent")),
+            model_level=model_level,
+            message="" if lc_enabled else skipped,
+        ),
+        CheckView(
+            id="contact_ok",
+            label_zh=WORM_CHECK_LABELS["contact_ok"],
+            status=_worm_flag_status(lc_enabled, raw_checks.get("contact_ok")),
+            actual=_as_float(contact.get("sigma_hm_peak_mpa")),
+            limit=_as_float(contact.get("allowable_contact_stress_mpa")),
+            unit="MPa",
+            model_level=model_level,
+            message="" if lc_enabled else skipped,
+            source_kind="user",
+        ),
+        CheckView(
+            id="root_ok",
+            label_zh=WORM_CHECK_LABELS["root_ok"],
+            status=_worm_flag_status(lc_enabled, raw_checks.get("root_ok")),
+            actual=_as_float(root.get("sigma_f_peak_mpa")),
+            limit=_as_float(root.get("allowable_root_stress_mpa")),
+            unit="MPa",
+            model_level=model_level,
+            message="" if lc_enabled else skipped,
+            source_kind="user",
+        ),
+    ]
+    checks.extend(_worm_life_checks(load_capacity.get("life")))
+    return tuple(checks)
+
+
+def _worm_life_checks(life: Any) -> tuple[CheckView, ...]:
+    if not isinstance(life, dict) or not life:
+        return ()
+    checks: list[CheckView] = []
+    ref_message = "参考项，不参与总体判定。"
+    if life.get("fatigue_life_hours") is not None:
+        checks.append(
+            CheckView(
+                id="fatigue_life",
+                label_zh=WORM_CHECK_LABELS["fatigue_life"],
+                status="reference_only",
+                actual=_as_float(life.get("fatigue_life_hours")),
+                unit="h",
+                model_level=MODEL_LEVEL_REFERENCE,
+                message=ref_message,
+            )
+        )
+    if (
+        life.get("wear_life_hours_until_0p3mm") is not None
+        or life.get("wear_depth_mm_per_hour") is not None
+    ):
+        checks.append(
+            CheckView(
+                id="wear_life",
+                label_zh=WORM_CHECK_LABELS["wear_life"],
+                status="reference_only",
+                actual=_as_float(life.get("wear_life_hours_until_0p3mm")),
+                unit="h",
+                model_level=MODEL_LEVEL_REFERENCE,
+                message=ref_message,
+            )
+        )
+    return tuple(checks)
+
+
+def _worm_metrics(
+    geometry: dict[str, Any],
+    performance: dict[str, Any],
+    load_capacity: dict[str, Any],
+    lc_enabled: bool,
+) -> tuple[MetricView, ...]:
+    worm_dimensions = geometry.get("worm_dimensions")
+    if not isinstance(worm_dimensions, dict):
+        worm_dimensions = {}
+    wheel_dimensions = geometry.get("wheel_dimensions")
+    if not isinstance(wheel_dimensions, dict):
+        wheel_dimensions = {}
+    contact = load_capacity.get("contact")
+    if not isinstance(contact, dict):
+        contact = {}
+    root = load_capacity.get("root")
+    if not isinstance(root, dict):
+        root = {}
+    ripple = load_capacity.get("torque_ripple")
+    if not isinstance(ripple, dict):
+        ripple = {}
+    raw_checks = load_capacity.get("checks")
+    if not isinstance(raw_checks, dict):
+        raw_checks = {}
+    life = load_capacity.get("life")
+    if not isinstance(life, dict):
+        life = {}
+
+    metrics: list[MetricView] = [
+        *_optional_metric("传动比 i", geometry.get("ratio"), "", 3),
+        *_optional_metric("中心距 a", geometry.get("center_distance_mm"), "mm", 3),
+        *_optional_metric(
+            "理论中心距 a_th", geometry.get("theoretical_center_distance_mm"), "mm", 3
+        ),
+        *_optional_metric(
+            "蜗杆分度圆直径 d1", worm_dimensions.get("pitch_diameter_mm"), "mm", 3
+        ),
+        *_optional_metric(
+            "蜗轮分度圆直径 d2", wheel_dimensions.get("pitch_diameter_mm"), "mm", 3
+        ),
+        *_optional_metric("导程角 gamma", geometry.get("lead_angle_deg"), "deg", 3),
+        *_optional_metric("效率估算 eta", performance.get("efficiency_estimate"), "", 4),
+        *_optional_metric(
+            "输入功率 P1（反算）", performance.get("input_power_kw"), "kW", 4
+        ),
+        *_optional_metric("输出功率 P2", performance.get("output_power_kw"), "kW", 4),
+        *_optional_metric("输出扭矩 T2", performance.get("output_torque_nm"), "N·m", 3),
+        *_optional_metric("损失功率", performance.get("power_loss_kw"), "kW", 4),
+    ]
+    if lc_enabled:
+        metrics.extend(
+            _optional_metric(
+                "齿面接触应力 sigma_H", contact.get("sigma_hm_peak_mpa"), "MPa", 3
+            )
+        )
+        metrics.extend(
+            _optional_metric("齿根应力 sigma_F", root.get("sigma_f_peak_mpa"), "MPa", 3)
+        )
+        metrics.extend(
+            _optional_metric(
+                "扭矩波动 peak", ripple.get("output_torque_peak_nm"), "N·m", 3
+            )
+        )
+        metrics.extend(
+            _optional_metric(
+                "sigma_H,nom", contact.get("sigma_hm_nominal_mpa"), "MPa", 3
+            )
+        )
+        metrics.extend(
+            _optional_metric(
+                "sigma_H,peak", contact.get("sigma_hm_peak_mpa"), "MPa", 3
+            )
+        )
+        metrics.extend(
+            _optional_metric("SH_peak", contact.get("safety_factor_peak"), "", 3)
+        )
+        metrics.extend(
+            _optional_metric("sigma_F,nom", root.get("sigma_f_nominal_mpa"), "MPa", 3)
+        )
+        metrics.extend(
+            _optional_metric("sigma_F,peak", root.get("sigma_f_peak_mpa"), "MPa", 3)
+        )
+        metrics.extend(
+            _optional_metric("SF_peak", root.get("safety_factor_peak"), "", 3)
+        )
+        metrics.extend(
+            _optional_metric(
+                "T2_nom", ripple.get("output_torque_nominal_nm"), "N·m", 3
+            )
+        )
+        metrics.extend(
+            _optional_metric("T2_rms", ripple.get("output_torque_rms_nm"), "N·m", 3)
+        )
+        metrics.extend(
+            _optional_metric("T2_peak", ripple.get("output_torque_peak_nm"), "N·m", 3)
+        )
+        geo_text = (
+            "通过" if raw_checks.get("geometry_consistent") else "存在警告"
+        )
+        metrics.append(MetricView("几何一致性", geo_text))
+    else:
+        metrics.extend(
+            (
+                MetricView("齿面接触应力 sigma_H", "未启用"),
+                MetricView("齿根应力 sigma_F", "未启用"),
+                MetricView("扭矩波动 peak", "未启用"),
+                MetricView("负载能力校核", "未启用"),
+            )
+        )
+
+    wear_rate = life.get("wear_depth_mm_per_hour")
+    metrics.extend(
+        _optional_metric("疲劳寿命 (参考项)", life.get("fatigue_life_hours"), "h", 0)
+    )
+    if isinstance(wear_rate, (int, float)) and not isinstance(wear_rate, bool):
+        metrics.extend(
+            _optional_metric("磨损速率 (参考项)", wear_rate * 1000.0, "um/h", 3)
+        )
+    metrics.extend(
+        _optional_metric(
+            "磨损寿命 (参考项)", life.get("wear_life_hours_until_0p3mm"), "h", 0
+        )
+    )
+    metrics.extend(
+        _optional_metric(
+            "滑动速度 vs (参考项)", life.get("sliding_velocity_mps"), "m/s", 2
+        )
+    )
+    return tuple(metrics)
+
+
+def _worm_warnings(
+    geometry: dict[str, Any],
+    performance: dict[str, Any],
+    load_capacity: dict[str, Any],
+) -> tuple[str, ...]:
+    messages: list[str] = []
+    for source in (
+        load_capacity.get("warnings"),
+        performance.get("warnings"),
+    ):
+        if isinstance(source, list):
+            messages.extend(str(msg) for msg in source if msg is not None)
+    consistency = geometry.get("consistency")
+    if isinstance(consistency, dict):
+        geo_warnings = consistency.get("warnings")
+        if isinstance(geo_warnings, list):
+            messages.extend(str(msg) for msg in geo_warnings if msg is not None)
+    return tuple(messages)
+
+
+def _worm_recommendations(
+    load_capacity: dict[str, Any],
+    lc_enabled: bool,
+    overall_status: OverallStatus,
+) -> tuple[str, ...]:
+    if not lc_enabled:
+        return (
+            "负载能力（Load Capacity）未启用。如需校核齿面/齿根安全系数，请在基本设置中启用。",
+        )
+    recs: list[str] = []
+    raw_checks = load_capacity.get("checks")
+    if not isinstance(raw_checks, dict):
+        raw_checks = {}
+    if raw_checks.get("geometry_consistent") is False:
+        recs.append(
+            "几何一致性存在警告：请核对导程角与中心距是否与 m、q、z1、z2 自洽。"
+        )
+    if raw_checks.get("contact_ok") is False:
+        recs.append(
+            "齿面接触应力不通过：可增大模数/齿宽、降低载荷或提高许用接触应力。"
+        )
+    if raw_checks.get("root_ok") is False:
+        recs.append(
+            "齿根弯曲应力不通过：可增大模数、增大齿宽或提高许用齿根应力。"
+        )
+    if overall_status == "fail" and not recs:
+        recs.append(
+            "负载能力总体不通过：请按 Method B 最小子集复核几何、许用应力与载荷。"
+        )
+    if not recs:
+        recs.append(
+            "当前工况满足 Method B 风格最小负载能力子集；寿命与磨损为参考项，不替代完整 DIN 3996 签发。"
+        )
+    return tuple(recs)

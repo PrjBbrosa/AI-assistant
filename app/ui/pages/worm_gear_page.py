@@ -60,6 +60,7 @@ from app.ui.model_scope import (
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, write_text_report
 from app.ui.report_trace import build_report_trace, trace_report_lines
+from app.ui.result_contract import ResultViewModel, from_worm, status_label_zh
 from app.ui.theme import mark_input_field_surface
 from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.worm_geometry_overview import WormGeometryOverviewWidget
@@ -1437,7 +1438,59 @@ class WormGearPage(BaseChapterPage):
             return
         self._last_result = result
 
+    @staticmethod
+    def _format_metric_line(metric) -> str:
+        unit = f" {metric.unit}" if metric.unit else ""
+        return f"{metric.label} = {metric.value}{unit}"
+
+    def _format_load_capacity_metrics(
+        self,
+        view: ResultViewModel,
+        result: dict[str, Any],
+    ) -> str:
+        load_capacity = result.get("load_capacity")
+        if not isinstance(load_capacity, dict):
+            load_capacity = {}
+        lc_enabled = bool(load_capacity.get("enabled", False))
+        warning_lines = [f"warning: {msg}" for msg in view.warnings]
+        if not lc_enabled:
+            return "\n".join(
+                [
+                    "负载能力校核：未启用",
+                    "如需校核齿面/齿根安全系数，请在【基本设置】中启用负载能力（Load Capacity）页。",
+                    *warning_lines,
+                ]
+            )
+
+        lc_labels = {
+            "sigma_H,nom",
+            "sigma_H,peak",
+            "SH_peak",
+            "sigma_F,nom",
+            "sigma_F,peak",
+            "SF_peak",
+            "T2_nom",
+            "T2_rms",
+            "T2_peak",
+            "几何一致性",
+        }
+        lines = [
+            self._format_metric_line(metric)
+            for metric in view.metrics
+            if metric.label in lc_labels
+        ]
+        if not any(line.startswith("几何一致性") for line in lines):
+            geo = next(
+                (item for item in view.checks if item.id == "geometry_consistent"),
+                None,
+            )
+            geo_ok = geo is not None and geo.status == "pass"
+            lines.append(f"几何一致性 = {'通过' if geo_ok else '存在警告'}")
+        lines.extend(warning_lines)
+        return "\n".join(lines)
+
     def _render_result(self, result: dict[str, Any]) -> None:
+        view = from_worm(result, self._last_payload)
         geometry = result["geometry"]
         performance = result["performance"]
         curve = result["curve"]
@@ -1445,50 +1498,11 @@ class WormGearPage(BaseChapterPage):
         payload = self._last_payload or {}
         worm_dimensions = geometry["worm_dimensions"]
         wheel_dimensions = geometry["wheel_dimensions"]
-        contact = load_capacity.get("contact", {})
-        root = load_capacity.get("root", {})
-        ripple = load_capacity.get("torque_ripple", {})
-        warnings = load_capacity.get("warnings", [])
-        checks = load_capacity.get("checks", {})
-        lc_enabled = bool(load_capacity.get("enabled", len(checks) > 0))
 
-        self.result_title.setText(
-            f"已完成蜗杆副几何、基础性能与 Method B 最小校核（{WORM_SCOPE.model_level}）"
-        )
-        self.result_summary.setText(
-            "当前版本已输出几何结果、效率估算、齿面应力、齿根应力和扭矩波动摘要。"
-            "负载能力（Load Capacity）为正式子集，不是完整 DIN 3996 签发。"
-        )
-
-        # W-03: 当 LC 未启用时，应力/力/扭矩显示"未启用"而非 0.000
-        if lc_enabled:
-            sigma_hm_line = f"齿面接触应力 sigma_H = {contact.get('sigma_hm_peak_mpa', 0.0):.3f} MPa"
-            sigma_f_line = f"齿根应力 sigma_F = {root.get('sigma_f_peak_mpa', 0.0):.3f} MPa"
-            ripple_line = f"扭矩波动 peak = {ripple.get('output_torque_peak_nm', 0.0):.3f} N·m"
-        else:
-            sigma_hm_line = "齿面接触应力 sigma_H = 未启用"
-            sigma_f_line = "齿根应力 sigma_F = 未启用"
-            ripple_line = "扭矩波动 peak = 未启用"
-
+        self.result_title.setText(view.title_zh)
+        self.result_summary.setText(view.summary_zh)
         self.result_metrics.setPlainText(
-            "\n".join(
-                [
-                    f"传动比 i = {geometry['ratio']:.3f}",
-                    f"中心距 a = {geometry['center_distance_mm']:.3f} mm",
-                    f"理论中心距 a_th = {geometry['theoretical_center_distance_mm']:.3f} mm",
-                    f"蜗杆分度圆直径 d1 = {worm_dimensions['pitch_diameter_mm']:.3f} mm",
-                    f"蜗轮分度圆直径 d2 = {wheel_dimensions['pitch_diameter_mm']:.3f} mm",
-                    f"导程角 gamma = {geometry['lead_angle_deg']:.3f} deg",
-                    f"效率估算 eta = {performance['efficiency_estimate']:.4f}",
-                    f"输入功率 P1 = {performance['input_power_kw']:.4f} kW（反算）",
-                    f"输出功率 P2 = {performance['output_power_kw']:.4f} kW",
-                    f"输出扭矩 T2 = {performance['output_torque_nm']:.3f} N·m",
-                    f"损失功率 = {performance['power_loss_kw']:.4f} kW",
-                    sigma_hm_line,
-                    sigma_f_line,
-                    ripple_line,
-                ]
-            )
+            "\n".join(self._format_metric_line(metric) for metric in view.metrics)
         )
         temp_rise_curve = curve.get("temperature_rise_k", [])
         self.performance_curve.set_curves(
@@ -1524,50 +1538,24 @@ class WormGearPage(BaseChapterPage):
             "几何总览",
             f"i={geometry['ratio']:.2f}，a={geometry['center_distance_mm']:.1f} mm，gamma={geometry.get('lead_angle_calc_deg', geometry.get('lead_angle_deg', 0.0)):.1f} deg",
         )
-        self.load_capacity_status.setText(load_capacity["status"])
-
-        # W-03: LC 未启用时，负载能力详情区显示"未计算"占位
-        if lc_enabled:
-            lc_metrics_lines = [
-                f"sigma_H,nom = {contact.get('sigma_hm_nominal_mpa', 0.0):.3f} MPa",
-                f"sigma_H,peak = {contact.get('sigma_hm_peak_mpa', 0.0):.3f} MPa",
-                f"SH_peak = {contact.get('safety_factor_peak', 0.0):.3f}",
-                f"sigma_F,nom = {root.get('sigma_f_nominal_mpa', 0.0):.3f} MPa",
-                f"sigma_F,peak = {root.get('sigma_f_peak_mpa', 0.0):.3f} MPa",
-                f"SF_peak = {root.get('safety_factor_peak', 0.0):.3f}",
-                f"T2_nom = {ripple.get('output_torque_nominal_nm', 0.0):.3f} N·m",
-                f"T2_rms = {ripple.get('output_torque_rms_nm', 0.0):.3f} N·m",
-                f"T2_peak = {ripple.get('output_torque_peak_nm', 0.0):.3f} N·m",
-                f"几何一致性 = {'通过' if checks.get('geometry_consistent', False) else '存在警告'}",
-                *[f"warning: {msg}" for msg in warnings],
-            ]
-        else:
-            lc_metrics_lines = [
-                "负载能力校核：未启用",
-                "如需校核齿面/齿根安全系数，请在【基本设置】中启用负载能力（Load Capacity）页。",
-                *[f"warning: {msg}" for msg in warnings],
-            ]
-
-        self.load_capacity_metrics.setPlainText("\n".join(lc_metrics_lines))
+        self.load_capacity_status.setText(str(load_capacity.get("status", view.status_label_zh)))
+        self.load_capacity_metrics.setPlainText(
+            self._format_load_capacity_metrics(view, result)
+        )
         self._apply_geometry_preview(geometry)
 
-        # W-03 + W-02: LC 未启用时不显示通过/不通过徽章；几何不一致时总体为不通过
-        if lc_enabled:
-            for key, (_, badge) in self._check_badges.items():
-                ok = checks.get(key, False)
-                self._set_badge(badge, "通过" if ok else "不通过", "pass" if ok else "fail")
-            # R-3: 总体判定消费 core 权威字段，不在 UI 重新聚合。
-            overall_lc_ok = load_capacity.get("overall_pass", False)
-            self._set_badge(
-                self._overall_lc_badge,
-                "总体通过" if overall_lc_ok else "总体不通过",
-                "pass" if overall_lc_ok else "fail",
-            )
-        else:
-            # LC 未启用：徽章显示"未启用"，整体状态为等待
-            for _key, (_, badge) in self._check_badges.items():
-                self._set_badge(badge, "未启用", "wait")
-            self._set_badge(self._overall_lc_badge, "未启用", "wait")
+        checks_by_id = {item.id: item for item in view.checks}
+        for key, (_, badge) in self._check_badges.items():
+            check = checks_by_id.get(key)
+            if check is None:
+                self._set_badge(badge, status_label_zh("not_checked"), "not_checked")
+            else:
+                self._set_badge(badge, status_label_zh(check.status), check.status)
+        self._set_badge(
+            self._overall_lc_badge,
+            status_label_zh(view.overall_status),
+            view.overall_status,
+        )
         # Step 4: 效率与自锁副标题
         lead_angle_calc_deg = geometry.get("lead_angle_calc_deg", geometry.get("lead_angle_deg", 0.0))
         friction_mu = performance.get("friction_mu", 0.0)
@@ -1640,24 +1628,41 @@ class WormGearPage(BaseChapterPage):
         self.set_info(f"报告已导出: {out_path}")
 
     def _build_report_lines(self) -> list[str]:
-        result = self._last_result or {}
-        note = result.get("inputs_echo", {}).get("meta", {}).get("note", "")
-        return [
+        assert self._last_result is not None
+        payload = self._last_payload or {}
+        view = from_worm(self._last_result, payload)
+        note = self._last_result.get("inputs_echo", {}).get("meta", {}).get("note", "")
+        lines = [
             f"蜗杆副计算报告 -- {note}",
             *trace_report_lines(
                 build_report_trace(
                     MODULE_ID,
-                    self._last_payload or {},
-                    model_level=WORM_SCOPE.model_level,
+                    payload,
+                    model_level=view.model_scope.model_level,
                 )
             ),
             "",
-            *scope_report_lines(WORM_SCOPE),
+            *scope_report_lines(view.model_scope),
             "",
-            self.result_metrics.toPlainText(),
+            f"总体结论: {view.title_zh}",
+            view.summary_zh,
             "",
-            self.load_capacity_metrics.toPlainText(),
+            "分项结果:",
         ]
+        for check in view.checks:
+            lines.append(f"- {check.label_zh}: {status_label_zh(check.status)}")
+        lines.extend(["", "关键结果:"])
+        for metric in view.metrics:
+            unit = f" {metric.unit}" if metric.unit else ""
+            lines.append(f"- {metric.label}: {metric.value}{unit}")
+        for note_text in view.source_notes:
+            lines.append(f"- {note_text}")
+        if view.warnings:
+            lines.extend(["", "提示:"])
+            lines.extend(f"- {msg}" for msg in view.warnings)
+        lines.extend(["", "建议:"])
+        lines.extend(f"- {msg}" for msg in view.recommendations)
+        return lines
 
     def _write_text_report(self, path: Path) -> None:
         write_text_report(path, "\n".join(self._build_report_lines()))

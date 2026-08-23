@@ -20,7 +20,7 @@ from reportlab.platypus import (
     Spacer,
 )
 
-from app.ui.model_scope import WORM_SCOPE, scope_kv_rows
+from app.ui.model_scope import scope_kv_rows
 from app.ui.report_pdf_common import (
     C_PRIMARY,
     _build_styles,
@@ -38,15 +38,15 @@ from app.ui.report_pdf_common import (
     build_pdf,
 )
 from app.ui.report_trace import build_report_trace, trace_kv_rows
+from app.ui.result_contract import from_worm
 
-# ---------------------------------------------------------------------------
-# Check labels (load capacity only)
-# ---------------------------------------------------------------------------
-LC_CHECK_LABELS = {
-    "geometry_consistent": "几何一致性",
-    "contact_ok": "齿面接触应力",
-    "root_ok": "齿根弯曲应力",
-}
+
+def _check_pill_state(status: str) -> bool | None:
+    if status == "pass":
+        return True
+    if status == "fail":
+        return False
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -61,26 +61,21 @@ def generate_worm_report(
     _register_fonts()
     styles = _build_styles()
     elems: list = []
+    view = from_worm(result, payload)
 
     geometry = result.get("geometry", {})
     performance = result.get("performance", {})
     lc = result.get("load_capacity", {})
     lc_enabled = lc.get("enabled", False)
-    checks = lc.get("checks", {})
+    checks = {item.id: item for item in view.checks}
     inputs_echo = result.get("inputs_echo", {})
 
     trace = build_report_trace(
-        WORM_SCOPE.module_id,
+        view.model_scope.module_id,
         payload,
-        model_level=WORM_SCOPE.model_level,
+        model_level=view.model_scope.model_level,
     )
     date_str = trace.generated_at
-
-    # Determine overall pass/fail
-    if lc_enabled and checks:
-        overall = bool(lc.get("overall_pass", False))
-    else:
-        overall = None
 
     # 1. Header bar
     elems.append(_header_bar(styles, "DIN 3975 蜗杆副设计报告", date_str))
@@ -88,16 +83,10 @@ def generate_worm_report(
     elems.extend(_trace_block(styles, trace_kv_rows(trace)))
 
     # 2. Verdict block
-    if overall is not None:
-        subtitle = f"模型等级: {WORM_SCOPE.model_level} | {lc.get('status', '')}"
-        elems.append(_verdict_block(styles, overall, subtitle))
-    else:
-        # Geometry-only mode: show primary accent, no pass/fail
-        subtitle = f"模型等级: {WORM_SCOPE.model_level} | 几何与性能设计"
-        elems.append(_rstep_card(styles, subtitle, [], passed=None))
+    elems.append(_verdict_block(styles, view.overall_status, view.verdict_subtitle_zh))
     elems.append(Spacer(1, 8))
     elems.append(_section_title(styles, "模型范围"))
-    elems.append(_kv_table(styles, scope_kv_rows(WORM_SCOPE), 0.28))
+    elems.append(_kv_table(styles, scope_kv_rows(view.model_scope), 0.28))
     elems.append(Spacer(1, 10))
 
     # 3. Metric cards
@@ -183,9 +172,18 @@ def generate_worm_report(
     if lc_enabled:
         elems.append(_section_title(styles, "负载能力校核"))
 
-        # Check pills
-        if checks:
-            elems.append(_check_pills(styles, checks, LC_CHECK_LABELS, {}))
+        # Check pills from the shared view model (load-capacity items only)
+        lc_check_items = [
+            item
+            for item in view.checks
+            if item.id in ("geometry_consistent", "contact_ok", "root_ok")
+        ]
+        if lc_check_items:
+            check_states = {
+                item.id: _check_pill_state(item.status) for item in lc_check_items
+            }
+            check_labels = {item.id: item.label_zh for item in lc_check_items}
+            elems.append(_check_pills(styles, check_states, check_labels, {}))
             elems.append(Spacer(1, 8))
 
         # Forces card — uses load_capacity.forces new fields (F_n / F_a / F_r)
@@ -214,9 +212,13 @@ def generate_worm_report(
                 f"名义安全系数 SH,nom = {_fmt(contact.get('safety_factor_nominal'), 2)}",
                 f"峰值安全系数 SH,peak = {_fmt(contact.get('safety_factor_peak'), 2)}",
             ]
+            contact_check = checks.get("contact_ok")
+            contact_passed = (
+                contact_check.status == "pass" if contact_check is not None else None
+            )
             elems.append(KeepTogether([
                 _rstep_card(styles, "齿面接触应力校核", contact_values,
-                            passed=checks.get("contact_ok")),
+                            passed=contact_passed),
                 Spacer(1, 6),
             ]))
 
@@ -230,9 +232,13 @@ def generate_worm_report(
                 f"名义安全系数 SF,nom = {_fmt(root.get('safety_factor_nominal'), 2)}",
                 f"峰值安全系数 SF,peak = {_fmt(root.get('safety_factor_peak'), 2)}",
             ]
+            root_check = checks.get("root_ok")
+            root_passed = (
+                root_check.status == "pass" if root_check is not None else None
+            )
             elems.append(KeepTogether([
                 _rstep_card(styles, "齿根弯曲应力校核", root_values,
-                            passed=checks.get("root_ok")),
+                            passed=root_passed),
                 Spacer(1, 6),
             ]))
 
@@ -281,10 +287,7 @@ def generate_worm_report(
             elems.append(Spacer(1, 8))
 
     # 8. Warnings
-    all_warnings = []
-    all_warnings.extend(lc.get("warnings", []))
-    all_warnings.extend(performance.get("warnings", []))
-    all_warnings.extend(geometry.get("consistency", {}).get("warnings", []))
+    all_warnings = list(view.warnings)
     if all_warnings:
         elems.append(_section_title(styles, "警告信息"))
         for msg in all_warnings:

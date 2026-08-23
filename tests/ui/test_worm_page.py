@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QApplication, QFrame, QLabel
 from app.ui.main_window import MainWindow
 from app.ui.model_scope import MODEL_LEVEL_FORMAL_SUBSET, WORM_SCOPE
 from app.ui.pages.worm_gear_page import WormGearPage, LOAD_CAPACITY_OPTIONS
+from app.ui.result_contract import from_worm, status_label_zh
 from app.ui.widgets.worm_geometry_overview import WormGeometryOverviewWidget
 from app.ui.widgets.worm_performance_curve import WormPerformanceCurveWidget
 from app.ui.widgets.worm_stress_curve import WormStressCurveWidget
@@ -536,6 +537,8 @@ class WormGearPageTests(unittest.TestCase):
 
         page._calculate()
         self.app.processEvents()
+        view = from_worm(page._last_result, page._last_payload)
+        self.assertEqual(page.result_title.text(), view.title_zh)
         self.assertIn(MODEL_LEVEL_FORMAL_SUBSET, page.result_title.text())
         lines = page._build_report_lines()
         joined = "\n".join(lines)
@@ -545,6 +548,26 @@ class WormGearPageTests(unittest.TestCase):
         self.assertIn(f"模型等级: {WORM_SCOPE.model_level}", joined)
         self.assertIn("覆盖工况:", joined)
         self.assertIn("未覆盖:", joined)
+
+    def test_result_view_model_overall_matches_ui_title(self) -> None:
+        page = WormGearPage()
+        page._calculate()
+        self.app.processEvents()
+
+        view = from_worm(page._last_result, page._last_payload)
+        self.assertEqual(page.result_title.text(), view.title_zh)
+        self.assertEqual(page.result_summary.text(), view.summary_zh)
+        self.assertIn(WORM_SCOPE.model_level, view.title_zh)
+        self.assertIn(view.title_zh, ("校核通过（正式子集）", "校核不通过（正式子集）", "校核不完整（正式子集）"))
+        self.assertEqual(
+            page._overall_lc_badge.text(),
+            status_label_zh(view.overall_status),
+        )
+        report = "\n".join(page._build_report_lines())
+        self.assertIn(f"总体结论: {view.title_zh}", report)
+        self.assertIn("软件版本", report)
+        self.assertIn("输入摘要哈希", report)
+        self.assertIn("Load Capacity", view.verdict_subtitle_zh)
 
 
 class MainWindowWormModuleTests(unittest.TestCase):
