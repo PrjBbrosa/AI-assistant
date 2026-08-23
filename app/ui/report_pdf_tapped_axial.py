@@ -17,6 +17,7 @@ from reportlab.platypus import (
     Spacer,
 )
 
+from app.ui.model_scope import TAPPED_SCOPE, scope_kv_rows
 from app.ui.report_pdf_common import (
     _build_styles,
     _check_pills,
@@ -32,14 +33,16 @@ from app.ui.report_pdf_common import (
     build_pdf,
 )
 from app.ui.report_trace import build_report_trace, trace_kv_rows
+from app.ui.result_contract import from_tapped_axial
 from core.bolt.grades import BOLT_GRADE_CUSTOM, rp02_source_zh
 
-CHECK_LABELS = {
-    "assembly_von_mises_ok": "装配强度",
-    "service_von_mises_ok": "服役最大强度",
-    "fatigue_ok": "交变轴向疲劳",
-    "thread_strip_ok": "螺纹脱扣",
-}
+
+def _check_pill_state(status: str) -> bool | None:
+    if status == "pass":
+        return True
+    if status == "fail":
+        return False
+    return None
 
 
 def generate_tapped_axial_report(
@@ -51,15 +54,17 @@ def generate_tapped_axial_report(
     _register_fonts()
     styles = _build_styles()
     elems: list = []
+    view = from_tapped_axial(result, payload)
 
     checks = result.get("checks", {})
     # Codex follow-up 2026-04-16：使用 overall_status 三态（pass/fail/incomplete），
     # 避免 None 分项被 bool() 当作 fail 导出为红色 FAIL 报告。
-    overall_status = result.get(
-        "overall_status",
-        "pass" if result.get("overall_pass") else "fail",
+    overall_status = view.overall_status
+    trace = build_report_trace(
+        TAPPED_SCOPE.module_id,
+        payload,
+        model_level=TAPPED_SCOPE.model_level,
     )
-    trace = build_report_trace("bolt_tapped_axial", payload)
     date_str = trace.generated_at
 
     # 1. Header bar
@@ -68,9 +73,11 @@ def generate_tapped_axial_report(
     elems.extend(_trace_block(styles, trace_kv_rows(trace)))
 
     # 2. Verdict（三态：pass / fail / incomplete）
-    scope = result.get("scope_note", "")
-    elems.append(_verdict_block(styles, overall_status, scope))
+    elems.append(_verdict_block(styles, overall_status, view.verdict_subtitle_zh))
     elems.append(Spacer(1, 8))
+    elems.append(_section_title(styles, "模型范围"))
+    elems.append(_kv_table(styles, scope_kv_rows(view.model_scope), 0.28))
+    elems.append(Spacer(1, 10))
 
     # 3. Metric cards
     asm = result.get("assembly", {})
@@ -87,7 +94,9 @@ def generate_tapped_axial_report(
 
     # 4. Check pills
     refs = result.get("references", {})
-    elems.append(_check_pills(styles, checks, CHECK_LABELS, refs))
+    check_states = {item.id: _check_pill_state(item.status) for item in view.checks}
+    check_labels = {item.id: item.label_zh for item in view.checks}
+    elems.append(_check_pills(styles, check_states, check_labels, refs))
     elems.append(Spacer(1, 10))
 
     # 5. Input summary
@@ -184,18 +193,16 @@ def generate_tapped_axial_report(
         ]))
 
     # 10. Warnings
-    warnings = result.get("warnings", [])
-    if warnings:
+    if view.warnings:
         elems.append(_section_title(styles, "警告信息"))
-        for msg in warnings:
+        for msg in view.warnings:
             elems.append(Paragraph(f"- {msg}", styles["body"]))
         elems.append(Spacer(1, 8))
 
     # 11. Recommendations
-    recs = result.get("recommendations", [])
-    if recs:
+    if view.recommendations:
         elems.append(_section_title(styles, "优化建议"))
-        for msg in recs:
+        for msg in view.recommendations:
             elems.append(Paragraph(f"- {msg}", styles["body"]))
         elems.append(Spacer(1, 8))
 

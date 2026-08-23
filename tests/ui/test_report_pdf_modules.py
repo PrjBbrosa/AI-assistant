@@ -114,6 +114,43 @@ def _buffer_result(payload=None):
     return calculate_buffer_energy(payload or _buffer_payload())
 
 
+def _tapped_payload(*, with_strip: bool = False):
+    payload = {
+        "fastener": {"d": 10.0, "p": 1.5, "Rp02": 640.0, "grade": "8.8"},
+        "assembly": {
+            "F_preload_min": 12000.0,
+            "alpha_A": 1.6,
+            "mu_thread": 0.12,
+            "mu_bearing": 0.14,
+            "bearing_d_inner": 11.0,
+            "bearing_d_outer": 18.0,
+            "prevailing_torque": 0.0,
+            "thread_flank_angle_deg": 60.0,
+            "tightening_method": "torque",
+            "utilization": 0.9,
+        },
+        "service": {"FA_min": 0.0, "FA_max": 500.0},
+        "fatigue": {"load_cycles": 1_000_000.0, "surface_treatment": "rolled"},
+        "thread_strip": {"safety_required": 1.5},
+        "checks": {"yield_safety_operating": 1.15},
+        "options": {"report_mode": "full"},
+    }
+    if with_strip:
+        payload["thread_strip"] = {
+            "m_eff": 12.0,
+            "tau_BM": 350.0,
+            "tau_BS": 400.0,
+            "safety_required": 1.5,
+        }
+    return payload
+
+
+def _tapped_result(payload=None):
+    from core.bolt.tapped_axial_joint import calculate_tapped_axial_joint
+
+    return calculate_tapped_axial_joint(payload or _tapped_payload())
+
+
 class TestHertzPdfReport:
     def test_creates_nonempty_pdf(self, tmp_path):
         from app.ui.report_pdf_hertz import generate_hertz_report
@@ -277,6 +314,193 @@ class TestBufferPdfReport:
             page._on_save_report()
 
         generate.assert_called_once()
+
+    def test_pdf_includes_report_trace(self, tmp_path, monkeypatch):
+        from app.ui import report_pdf_buffer
+        from app.ui.model_scope import BUFFER_SCOPE
+        from app.ui.report_pdf_buffer import generate_buffer_report
+
+        captured: list[list[tuple[str, str]]] = []
+        original = report_pdf_buffer._trace_block
+
+        def capture_trace(styles, rows):
+            captured.append(list(rows))
+            return original(styles, rows)
+
+        monkeypatch.setattr(report_pdf_buffer, "_trace_block", capture_trace)
+        payload = _buffer_payload()
+        generate_buffer_report(tmp_path / "buffer_trace.pdf", payload, _buffer_result(payload))
+
+        assert captured
+        kv = dict(captured[0])
+        assert "软件版本" in kv
+        assert kv["软件版本"]
+        assert kv.get("模块") == BUFFER_SCOPE.module_id
+        assert kv.get("模型等级") == BUFFER_SCOPE.model_level
+        assert str(kv.get("输入摘要哈希", "")).startswith("sha256:")
+
+    def test_pdf_includes_model_level(self, tmp_path, monkeypatch):
+        from app.ui import report_pdf_buffer
+        from app.ui.model_scope import MODEL_LEVEL_QUICK
+        from app.ui.report_pdf_buffer import generate_buffer_report
+
+        subtitles: list[str] = []
+        titles: list[str] = []
+        original_verdict = report_pdf_buffer._verdict_block
+        original_title = report_pdf_buffer._section_title
+
+        def capture_verdict(styles, overall, subtitle):
+            subtitles.append(subtitle)
+            return original_verdict(styles, overall, subtitle)
+
+        def capture_title(styles, title):
+            titles.append(title)
+            return original_title(styles, title)
+
+        monkeypatch.setattr(report_pdf_buffer, "_verdict_block", capture_verdict)
+        monkeypatch.setattr(report_pdf_buffer, "_section_title", capture_title)
+
+        payload = _buffer_payload()
+        generate_buffer_report(tmp_path / "buffer_model_level.pdf", payload, _buffer_result(payload))
+        assert any(MODEL_LEVEL_QUICK in text for text in subtitles)
+        assert "模型范围" in titles
+
+    def test_pdf_verdict_matches_result_view_model(self, tmp_path, monkeypatch):
+        from app.ui import report_pdf_buffer
+        from app.ui.report_pdf_buffer import generate_buffer_report
+        from app.ui.result_contract import from_buffer
+
+        overalls: list[object] = []
+        original_verdict = report_pdf_buffer._verdict_block
+
+        def capture_verdict(styles, overall, subtitle):
+            overalls.append(overall)
+            return original_verdict(styles, overall, subtitle)
+
+        monkeypatch.setattr(report_pdf_buffer, "_verdict_block", capture_verdict)
+        payload = _buffer_payload()
+        result = _buffer_result(payload)
+        view = from_buffer(result, payload)
+        generate_buffer_report(tmp_path / "buffer_verdict.pdf", payload, result)
+
+        assert overalls
+        assert overalls[0] == view.overall_status
+        assert view.overall_status in ("pass", "fail")
+        assert view.title_zh.startswith("校核通过" if view.overall_status == "pass" else "校核不通过")
+
+
+class TestTappedAxialPdfReport:
+    def test_creates_nonempty_pdf(self, tmp_path):
+        from app.ui.report_pdf_tapped_axial import generate_tapped_axial_report
+
+        out = tmp_path / "tapped_report.pdf"
+        payload = _tapped_payload()
+        generate_tapped_axial_report(out, payload, _tapped_result(payload))
+        assert out.exists()
+        assert out.stat().st_size > 1000
+
+    def test_pdf_includes_report_trace(self, tmp_path, monkeypatch):
+        from app.ui import report_pdf_tapped_axial
+        from app.ui.model_scope import TAPPED_SCOPE
+        from app.ui.report_pdf_tapped_axial import generate_tapped_axial_report
+
+        captured: list[list[tuple[str, str]]] = []
+        original = report_pdf_tapped_axial._trace_block
+
+        def capture_trace(styles, rows):
+            captured.append(list(rows))
+            return original(styles, rows)
+
+        monkeypatch.setattr(report_pdf_tapped_axial, "_trace_block", capture_trace)
+        payload = _tapped_payload()
+        generate_tapped_axial_report(
+            tmp_path / "tapped_trace.pdf", payload, _tapped_result(payload)
+        )
+
+        assert captured
+        kv = dict(captured[0])
+        assert "软件版本" in kv
+        assert kv["软件版本"]
+        assert kv.get("模块") == TAPPED_SCOPE.module_id
+        assert kv.get("模型等级") == TAPPED_SCOPE.model_level
+        assert str(kv.get("输入摘要哈希", "")).startswith("sha256:")
+
+    def test_pdf_includes_model_level(self, tmp_path, monkeypatch):
+        from app.ui import report_pdf_tapped_axial
+        from app.ui.model_scope import MODEL_LEVEL_FORMAL_SUBSET
+        from app.ui.report_pdf_tapped_axial import generate_tapped_axial_report
+
+        subtitles: list[str] = []
+        titles: list[str] = []
+        original_verdict = report_pdf_tapped_axial._verdict_block
+        original_title = report_pdf_tapped_axial._section_title
+
+        def capture_verdict(styles, overall, subtitle):
+            subtitles.append(subtitle)
+            return original_verdict(styles, overall, subtitle)
+
+        def capture_title(styles, title):
+            titles.append(title)
+            return original_title(styles, title)
+
+        monkeypatch.setattr(report_pdf_tapped_axial, "_verdict_block", capture_verdict)
+        monkeypatch.setattr(report_pdf_tapped_axial, "_section_title", capture_title)
+
+        payload = _tapped_payload()
+        generate_tapped_axial_report(
+            tmp_path / "tapped_model_level.pdf", payload, _tapped_result(payload)
+        )
+        assert any(MODEL_LEVEL_FORMAL_SUBSET in text for text in subtitles)
+        assert "模型范围" in titles
+
+    def test_pdf_verdict_matches_result_view_model(self, tmp_path, monkeypatch):
+        from app.ui import report_pdf_tapped_axial
+        from app.ui.report_pdf_tapped_axial import generate_tapped_axial_report
+        from app.ui.result_contract import from_tapped_axial
+
+        overalls: list[object] = []
+        original_verdict = report_pdf_tapped_axial._verdict_block
+
+        def capture_verdict(styles, overall, subtitle):
+            overalls.append(overall)
+            return original_verdict(styles, overall, subtitle)
+
+        monkeypatch.setattr(report_pdf_tapped_axial, "_verdict_block", capture_verdict)
+        payload = _tapped_payload()
+        result = _tapped_result(payload)
+        view = from_tapped_axial(result, payload)
+        generate_tapped_axial_report(tmp_path / "tapped_verdict.pdf", payload, result)
+
+        assert overalls
+        assert overalls[0] == view.overall_status
+        assert view.overall_status == "incomplete"
+        assert "校核不完整" in view.title_zh
+        assert view.checks[-1].id == "thread_strip_ok"
+        assert view.checks[-1].status == "not_checked"
+
+    def test_incomplete_when_strip_not_checked(self, tmp_path, monkeypatch):
+        from app.ui import report_pdf_tapped_axial
+        from app.ui.report_pdf_tapped_axial import generate_tapped_axial_report
+        from app.ui.result_contract import from_tapped_axial
+
+        overalls: list[object] = []
+        original_verdict = report_pdf_tapped_axial._verdict_block
+
+        def capture_verdict(styles, overall, subtitle):
+            overalls.append(overall)
+            return original_verdict(styles, overall, subtitle)
+
+        monkeypatch.setattr(report_pdf_tapped_axial, "_verdict_block", capture_verdict)
+        payload = _tapped_payload(with_strip=False)
+        result = _tapped_result(payload)
+        view = from_tapped_axial(result, payload)
+        generate_tapped_axial_report(tmp_path / "tapped_incomplete.pdf", payload, result)
+
+        assert result["overall_status"] == "incomplete"
+        assert result["checks"]["thread_strip_ok"] is None
+        assert view.overall_status == "incomplete"
+        assert "校核不完整" in view.title_zh
+        assert overalls[0] == "incomplete"
 
 
 class TestInterferencePdfReport:

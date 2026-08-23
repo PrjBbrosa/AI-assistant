@@ -8,6 +8,7 @@ from xml.sax.saxutils import escape
 
 from reportlab.platypus import KeepTogether, Paragraph, Spacer
 
+from app.ui.model_scope import BUFFER_SCOPE, scope_kv_rows
 from app.ui.report_pdf_common import (
     _build_styles,
     _check_pills,
@@ -24,6 +25,7 @@ from app.ui.report_pdf_common import (
     build_pdf,
 )
 from app.ui.report_trace import build_report_trace, trace_kv_rows
+from app.ui.result_contract import from_buffer, status_label_zh
 
 
 DISCLAIMER_TEXT = (
@@ -31,11 +33,12 @@ DISCLAIMER_TEXT = (
     "不含应变率效应，不能替代真实时域仿真。"
 )
 
-CHECK_LABELS = {
-    "stroke_ok": "行程校核",
-    "peak_force_ok": "峰值力校核",
-    "energy_capacity_ok": "曲线能量容量校核",
-}
+def _check_pill_state(status: str) -> bool | None:
+    if status == "pass":
+        return True
+    if status == "fail":
+        return False
+    return None
 
 
 def _append_row(
@@ -60,6 +63,16 @@ def _check_text(value: Any) -> str:
     if value is False:
         return "不通过"
     return "不可判定"
+
+
+def _buffer_check_text(check: Any, raw: Any) -> str:
+    if check is not None and getattr(check, "status", None) == "not_checked":
+        return "不可判定"
+    if check is not None:
+        status = getattr(check, "status", "")
+        if status in ("pass", "fail"):
+            return status_label_zh(status)
+    return _check_text(raw)
 
 
 def _peak_force_text(value: Any) -> str:
@@ -134,18 +147,8 @@ def _build_impact_rows(result: dict) -> list[tuple[str, str]]:
 
 
 def _build_recommendations(result: dict) -> list[str]:
-    impact = result.get("impact", {}) if isinstance(result.get("impact", {}), dict) else {}
-    checks = result.get("checks", {}) if isinstance(result.get("checks", {}), dict) else {}
-    recs: list[str] = []
-    if impact.get("bottom_out") or checks.get("energy_capacity_ok") is False:
-        recs.append("输入动能超过可用行程内吸能容量：需增大可用行程、换用更高容量缓冲块或降低冲击能量。")
-    if checks.get("peak_force_ok") is False:
-        recs.append("峰值力超过允许值：需降低缓冲块刚度峰值、增大行程或提高安装结构承载能力。")
-    if checks.get("stroke_ok") is False:
-        recs.append("最大压缩量超过可用行程：需增加机械行程或选择更短压缩量方案。")
-    if not recs:
-        recs.append("当前工况满足行程、峰值力和曲线能量容量校核。")
-    return recs
+    """Build recommendation strings from the shared buffer view model."""
+    return list(from_buffer(result).recommendations)
 
 
 def generate_buffer_report(out_path: Path, payload: dict, result: dict) -> None:
@@ -153,21 +156,26 @@ def generate_buffer_report(out_path: Path, payload: dict, result: dict) -> None:
     _register_fonts()
     styles = _build_styles()
     elems: list[Any] = []
+    view = from_buffer(result, payload)
 
     impact = result.get("impact", {}) if isinstance(result.get("impact", {}), dict) else {}
     checks = result.get("checks", {}) if isinstance(result.get("checks", {}), dict) else {}
-    overall = bool(result.get("overall_pass", False))
-    trace = build_report_trace("buffer_energy", payload)
+    overall = view.overall_status
+    trace = build_report_trace(
+        BUFFER_SCOPE.module_id,
+        payload,
+        model_level=BUFFER_SCOPE.model_level,
+    )
     date_str = trace.generated_at
 
     elems.append(_header_bar(styles, "缓冲块吸能仿真报告", date_str))
     elems.append(Spacer(1, 8))
     elems.extend(_trace_block(styles, trace_kv_rows(trace)))
-    subtitle = "单次冲击能量法"
-    if impact.get("bottom_out"):
-        subtitle += " - 触底 / 峰值未知"
-    elems.append(_verdict_block(styles, overall, subtitle))
+    elems.append(_verdict_block(styles, overall, view.verdict_subtitle_zh))
     elems.append(Spacer(1, 8))
+    elems.append(_section_title(styles, "模型范围"))
+    elems.append(_kv_table(styles, scope_kv_rows(view.model_scope), 0.28))
+    elems.append(Spacer(1, 10))
 
     metrics = [
         ("E0 (J)", _fmt(impact.get("initial_energy_j"), 3)),
@@ -177,7 +185,9 @@ def generate_buffer_report(out_path: Path, payload: dict, result: dict) -> None:
     ]
     elems.append(_metric_cards(styles, metrics))
     elems.append(Spacer(1, 8))
-    elems.append(_check_pills(styles, checks, CHECK_LABELS, {}))
+    check_states = {item.id: _check_pill_state(item.status) for item in view.checks}
+    check_labels = {item.id: item.label_zh for item in view.checks}
+    elems.append(_check_pills(styles, check_states, check_labels, {}))
     elems.append(Spacer(1, 12))
 
     input_rows = _build_input_rows(payload, result)
@@ -198,36 +208,35 @@ def generate_buffer_report(out_path: Path, payload: dict, result: dict) -> None:
         elems.append(_kv_table(styles, impact_rows, 0.45))
         elems.append(Spacer(1, 10))
 
+    check_by_id = {item.id: item for item in view.checks}
     check_values = [
-        f"行程: {_check_text(checks.get('stroke_ok'))}",
-        f"峰值力: {_check_text(checks.get('peak_force_ok'))}",
-        f"曲线能量容量: {_check_text(checks.get('energy_capacity_ok'))}",
-        f"整体结论: {'通过' if overall else '不通过'}",
+        f"行程: {_buffer_check_text(check_by_id.get('stroke_ok'), checks.get('stroke_ok'))}",
+        f"峰值力: {_buffer_check_text(check_by_id.get('peak_force_ok'), checks.get('peak_force_ok'))}",
+        f"曲线能量容量: {_buffer_check_text(check_by_id.get('energy_capacity_ok'), checks.get('energy_capacity_ok'))}",
+        f"整体结论: {view.title_zh}",
     ]
     elems.append(KeepTogether([
         _rstep_card(
             styles,
             "校核结论",
             check_values,
-            passed=overall,
+            passed=view.overall_status == "pass",
             note="触底时峰值力为不可判定，整体结论按不通过处理。",
         ),
         Spacer(1, 8),
     ]))
 
     elems.append(_section_title(styles, "建议"))
-    for rec in _build_recommendations(result):
+    for rec in view.recommendations:
         elems.append(_paragraph(styles, f"- {rec}"))
     elems.append(Spacer(1, 8))
 
     elems.append(_section_title(styles, "免责与边界"))
-    boundary = [DISCLAIMER_TEXT]
+    boundary = [DISCLAIMER_TEXT, *view.source_notes]
     assumptions = result.get("assumptions", [])
     if isinstance(assumptions, list):
         boundary.extend(str(item) for item in assumptions)
-    warnings = result.get("warnings", [])
-    if isinstance(warnings, list):
-        boundary.extend(str(item) for item in warnings)
+    boundary.extend(view.warnings)
     for note in boundary:
         elems.append(_paragraph(styles, f"- {note}"))
 

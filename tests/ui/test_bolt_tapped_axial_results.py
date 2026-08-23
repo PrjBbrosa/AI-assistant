@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QApplication
 
 from app.ui.main_window import MainWindow
 from app.ui.pages.bolt_tapped_axial_page import BoltTappedAxialPage
+from app.ui.result_contract import from_tapped_axial
 
 
 class BoltTappedAxialResultsTests(unittest.TestCase):
@@ -20,7 +21,10 @@ class BoltTappedAxialResultsTests(unittest.TestCase):
         page._field_widgets["service.FA_max"].setText("2000")
         page._run_calculation()
         self.assertIsNotNone(page._last_result)
-        self.assertEqual(page.result_title.text(), "校核不完整")
+        view = from_tapped_axial(page._last_result, page._last_payload)
+        self.assertEqual(page.result_title.text(), view.title_zh)
+        self.assertIn("校核不完整", page.result_title.text())
+        self.assertEqual(view.overall_status, "incomplete")
         self.assertIn("预紧力范围", page.metrics_text.text())
         self.assertIn("未提供 m_eff", page.metrics_text.text())
         self.assertNotIn("FK_residual", page.metrics_text.text())

@@ -114,11 +114,58 @@ INTERFERENCE_SCOPE = ModuleScope(
     ),
 )
 
+TAPPED_SCOPE = ModuleScope(
+    module_id="bolt_tapped_axial",
+    model_level=MODEL_LEVEL_FORMAL_SUBSET,
+    covered=(
+        "无被夹件内螺纹连接的纯轴向拉载荷校核",
+        "装配 / 服役 von Mises 强度",
+        "交变轴向疲劳（Goodman 折减，无人为下限）",
+        "可选螺纹脱扣（需提供有效啮合长度 m_eff）",
+    ),
+    not_covered=(
+        "横向力 / 剪切",
+        "弯矩 / 偏心载荷",
+        "多螺栓并联",
+        "压向载荷",
+        "VDI 2230 夹紧连接主链（残余夹紧力 / Φ_N）",
+        "完整螺纹脱扣与完整疲劳谱（FKN 法）",
+    ),
+    applicability=(
+        "仅适用于螺栓拧入螺纹对手件、中间无被夹件、纯轴向拉载荷。"
+        "螺纹脱扣未提供 m_eff 时该项为未校核，总体结论为校核不完整，不会给出虚假通过。"
+        "本模型是正式子集风格的工程校核，不是完整 VDI 2230 夹紧连接签发结果。"
+    ),
+)
+
+BUFFER_SCOPE = ModuleScope(
+    module_id="buffer_energy",
+    model_level=MODEL_LEVEL_QUICK,
+    covered=(
+        "准静态 F-x 曲线的单次冲击能量法",
+        "行程 / 峰值力 / 曲线能量容量快速估算",
+        "回弹速度与时域响应反推估算",
+    ),
+    not_covered=(
+        "应变率效应",
+        "真实时域动力学仿真",
+        "粘性阻尼识别",
+        "完整缓冲器 / 阻尼器认证试验",
+        "垂直跌落重力做功自动计入",
+    ),
+    applicability=(
+        "当前结论仅为快速估算，不能替代完整缓冲器认证或真实时域仿真。"
+        "触底后峰值力不可判定，整体按不通过处理。"
+    ),
+)
+
 MODULE_SCOPES: dict[str, ModuleScope] = {
     HERTZ_SCOPE.module_id: HERTZ_SCOPE,
     SPLINE_SCOPE.module_id: SPLINE_SCOPE,
     WORM_SCOPE.module_id: WORM_SCOPE,
     INTERFERENCE_SCOPE.module_id: INTERFERENCE_SCOPE,
+    TAPPED_SCOPE.module_id: TAPPED_SCOPE,
+    BUFFER_SCOPE.module_id: BUFFER_SCOPE,
 }
 
 

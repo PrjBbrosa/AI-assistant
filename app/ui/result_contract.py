@@ -6,11 +6,13 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from app.ui.model_scope import (
+    BUFFER_SCOPE,
     HERTZ_ALLOWABLE_SOURCE_NOTE,
     HERTZ_SCOPE,
     INTERFERENCE_SCOPE,
     MODEL_LEVEL_REFERENCE,
     SPLINE_SCOPE,
+    TAPPED_SCOPE,
     WORM_SCOPE,
     ModuleScope,
 )
@@ -77,6 +79,19 @@ INTERFERENCE_STRESS_CHECK_IDS: tuple[str, ...] = (
     "shaft_stress_ok",
     "hub_stress_ok",
 )
+
+TAPPED_CHECK_LABELS: dict[str, str] = {
+    "assembly_von_mises_ok": "装配 von Mises 强度",
+    "service_von_mises_ok": "服役最大 von Mises 强度",
+    "fatigue_ok": "交变轴向疲劳",
+    "thread_strip_ok": "螺纹脱扣",
+}
+
+BUFFER_CHECK_LABELS: dict[str, str] = {
+    "stroke_ok": "行程校核",
+    "peak_force_ok": "峰值力校核",
+    "energy_capacity_ok": "曲线能量容量校核",
+}
 
 _SPLINE_OVERALL_TITLE_ZH: dict[str, str] = {
     "pass": "预校核通过",
@@ -1136,3 +1151,358 @@ def _interference_recommendations(result: dict[str, Any]) -> tuple[str, ...]:
     if not recs:
         recs.append("所有校核均通过，当前设计满足 DIN 7190 风格核心要求。")
     return tuple(recs)
+
+def from_tapped_axial(
+    result: dict[str, Any],
+    payload: dict[str, Any] | None = None,
+) -> ResultViewModel:
+    """Build the tapped-axial UI/PDF view model from calculator output."""
+    del payload
+    raw_status = result.get("overall_status")
+    if raw_status in ("pass", "fail", "incomplete"):
+        overall_status: OverallStatus = raw_status
+    else:
+        overall_status = "pass" if result.get("overall_pass") else "fail"
+    model_level = TAPPED_SCOPE.model_level
+    title = overall_title_zh(overall_status, model_level)
+    if overall_status == "pass":
+        summary = "该工况满足全部校核要求。"
+    elif overall_status == "incomplete":
+        summary = (
+            "部分分项尚未校核（常见为螺纹脱扣未填啮合长度）。"
+            "请补齐输入后重新计算再给出结论。"
+        )
+    else:
+        summary = "存在不满足校核要求的项目，请查看分项结果与建议。"
+    summary = f"{summary}{TAPPED_SCOPE.applicability}"
+
+    checks_raw = result.get("checks")
+    if not isinstance(checks_raw, dict):
+        checks_raw = {}
+    checks = tuple(
+        _tapped_check_view(check_id, label, checks_raw.get(check_id), result, model_level)
+        for check_id, label in TAPPED_CHECK_LABELS.items()
+    )
+    metrics = _tapped_metrics(result)
+    warnings = tuple(
+        str(msg) for msg in result.get("warnings", []) if msg is not None
+    )
+    recs = result.get("recommendations")
+    recommendations = (
+        tuple(str(msg) for msg in recs if msg is not None)
+        if isinstance(recs, list)
+        else ()
+    )
+    scope_note = result.get("scope_note")
+    source_notes = (str(scope_note),) if scope_note else (TAPPED_SCOPE.applicability,)
+    return ResultViewModel(
+        overall_status=overall_status,
+        title_zh=title,
+        summary_zh=summary,
+        checks=checks,
+        metrics=metrics,
+        warnings=warnings,
+        model_scope=TAPPED_SCOPE,
+        source_notes=source_notes,
+        recommendations=recommendations,
+        verdict_subtitle_zh=f"模型等级: {model_level}",
+    )
+
+
+def from_buffer(
+    result: dict[str, Any],
+    payload: dict[str, Any] | None = None,
+) -> ResultViewModel:
+    """Build the buffer-energy UI/PDF view model from calculator output."""
+    del payload
+    impact = result.get("impact")
+    if not isinstance(impact, dict):
+        impact = {}
+    curve_summary = result.get("curve_summary")
+    if not isinstance(curve_summary, dict):
+        curve_summary = {}
+    checks_raw = result.get("checks")
+    if not isinstance(checks_raw, dict):
+        checks_raw = {}
+    overall_status: OverallStatus = (
+        "pass" if bool(result.get("overall_pass")) else "fail"
+    )
+    model_level = BUFFER_SCOPE.model_level
+    title = overall_title_zh(overall_status, model_level)
+    bottom_out = bool(impact.get("bottom_out"))
+    if overall_status == "pass":
+        summary = "当前工况满足行程、峰值力和曲线能量容量校核。"
+    elif bottom_out:
+        summary = (
+            "触底 / 峰值未知，当前曲线不能外推触底刚化峰值。整体按不通过处理。"
+        )
+    else:
+        summary = "存在不满足校核要求的项目，请调整行程、刚度和冲击能量。"
+    summary = f"{summary}{BUFFER_SCOPE.applicability}"
+
+    checks = tuple(
+        CheckView(
+            id=check_id,
+            label_zh=label,
+            status=_check_status_from_raw(checks_raw.get(check_id)),
+            model_level=model_level,
+            message=(
+                "触底，不可判定"
+                if check_id == "peak_force_ok" and checks_raw.get(check_id) is None
+                else ""
+            ),
+        )
+        for check_id, label in BUFFER_CHECK_LABELS.items()
+    )
+    metrics = _buffer_metrics(impact, curve_summary, result)
+    warnings = tuple(
+        str(msg) for msg in result.get("warnings", []) if msg is not None
+    )
+    return ResultViewModel(
+        overall_status=overall_status,
+        title_zh=title,
+        summary_zh=summary,
+        checks=checks,
+        metrics=metrics,
+        warnings=warnings,
+        model_scope=BUFFER_SCOPE,
+        source_notes=(BUFFER_SCOPE.applicability,),
+        recommendations=_buffer_recommendations(result, impact, checks_raw),
+        verdict_subtitle_zh=_buffer_verdict_subtitle(model_level, bottom_out),
+    )
+
+
+def _check_status_from_raw(value: Any) -> CheckStatus:
+    if value is True:
+        return "pass"
+    if value is False:
+        return "fail"
+    return "not_checked"
+
+
+def _tapped_check_view(
+    check_id: str,
+    label: str,
+    raw: Any,
+    result: dict[str, Any],
+    model_level: str,
+) -> CheckView:
+    stresses = result.get("stresses_mpa")
+    if not isinstance(stresses, dict):
+        stresses = {}
+    fatigue = result.get("fatigue")
+    if not isinstance(fatigue, dict):
+        fatigue = {}
+    trace = result.get("trace")
+    intermediate = (
+        trace.get("intermediate") if isinstance(trace, dict) else None
+    )
+    if not isinstance(intermediate, dict):
+        intermediate = {}
+    thread_strip = result.get("thread_strip")
+    if not isinstance(thread_strip, dict):
+        thread_strip = {}
+
+    actual: float | None = None
+    limit: float | None = None
+    unit = ""
+    if check_id == "assembly_von_mises_ok":
+        actual = _as_float(stresses.get("sigma_vm_assembly"))
+        limit = _as_float(intermediate.get("sigma_allow_assembly"))
+        unit = "MPa"
+    elif check_id == "service_von_mises_ok":
+        actual = _as_float(stresses.get("sigma_vm_service_max"))
+        limit = _as_float(intermediate.get("sigma_allow_service"))
+        unit = "MPa"
+    elif check_id == "fatigue_ok":
+        actual = _as_float(stresses.get("sigma_a_fatigue"))
+        limit = _as_float(fatigue.get("sigma_a_allow"))
+        unit = "MPa"
+    elif check_id == "thread_strip_ok":
+        actual = _as_float(thread_strip.get("strip_safety"))
+        limit = _as_float(thread_strip.get("strip_safety_required"))
+    message = ""
+    if check_id == "thread_strip_ok" and raw is None:
+        message = str(thread_strip.get("note") or "未提供 m_eff，未执行螺纹脱扣校核。")
+    return CheckView(
+        id=check_id,
+        label_zh=label,
+        status=_check_status_from_raw(raw),
+        actual=actual,
+        limit=limit,
+        unit=unit,
+        model_level=model_level,
+        message=message,
+        source_kind="user",
+    )
+
+
+def _tapped_metrics(result: dict[str, Any]) -> tuple[MetricView, ...]:
+    assembly = result.get("assembly")
+    if not isinstance(assembly, dict):
+        assembly = {}
+    stresses = result.get("stresses_mpa")
+    if not isinstance(stresses, dict):
+        stresses = {}
+    fatigue = result.get("fatigue")
+    if not isinstance(fatigue, dict):
+        fatigue = {}
+    trace = result.get("trace")
+    intermediate = (
+        trace.get("intermediate") if isinstance(trace, dict) else None
+    )
+    if not isinstance(intermediate, dict):
+        intermediate = {}
+    thread_strip = result.get("thread_strip")
+    if not isinstance(thread_strip, dict):
+        thread_strip = {}
+
+    f_min = assembly.get("F_preload_min_N", 0)
+    f_max = assembly.get("F_preload_max_N", 0)
+    ma_min = assembly.get("MA_min_Nm", 0)
+    ma_max = assembly.get("MA_max_Nm", 0)
+    metrics: list[MetricView] = [
+        MetricView(
+            "预紧力范围",
+            f"F_min = {_fmt_metric(f_min, 0)} N  /  F_max = {_fmt_metric(f_max, 0)} N",
+        ),
+        MetricView(
+            "装配扭矩范围",
+            f"MA_min = {_fmt_metric(ma_min, 2)} N·m"
+            f"  /  MA_max = {_fmt_metric(ma_max, 2)} N·m",
+        ),
+        MetricView(
+            "装配 von Mises",
+            f"sigma_vm = {_fmt_metric(stresses.get('sigma_vm_assembly', 0), 1)} MPa"
+            f"  (许用: {_fmt_metric(intermediate.get('sigma_allow_assembly', 0), 1)} MPa)",
+        ),
+        MetricView(
+            "服役最大 von Mises",
+            f"sigma_vm = {_fmt_metric(stresses.get('sigma_vm_service_max', 0), 1)} MPa"
+            f"  (许用: {_fmt_metric(intermediate.get('sigma_allow_service', 0), 1)} MPa)",
+        ),
+        MetricView(
+            "疲劳应力幅",
+            f"sigma_a = {_fmt_metric(stresses.get('sigma_a_fatigue', 0), 2)} MPa"
+            f"  (许用: {_fmt_metric(fatigue.get('sigma_a_allow', 0), 2)} MPa)",
+        ),
+        MetricView(
+            "疲劳平均应力",
+            f"sigma_m = {_fmt_metric(stresses.get('sigma_m_fatigue', 0), 1)} MPa",
+        ),
+        MetricView(
+            "Goodman 折减系数",
+            _fmt_metric(fatigue.get("goodman_factor", 0), 3),
+        ),
+    ]
+    if thread_strip.get("active"):
+        metrics.append(
+            MetricView(
+                "螺纹脱扣安全系数",
+                f"S = {_fmt_metric(thread_strip.get('strip_safety', 0), 2)}"
+                f"  (要求: >= {_fmt_metric(thread_strip.get('strip_safety_required', 0), 2)})",
+            )
+        )
+        note = thread_strip.get("note")
+        if note:
+            metrics.append(MetricView("临界侧", str(note)))
+    else:
+        metrics.append(
+            MetricView("螺纹脱扣", str(thread_strip.get("note", "")))
+        )
+    return tuple(metrics)
+
+
+def _buffer_metrics(
+    impact: dict[str, Any],
+    curve_summary: dict[str, Any],
+    result: dict[str, Any],
+) -> tuple[MetricView, ...]:
+    response = result.get("time_response")
+    if not isinstance(response, dict):
+        response = {}
+    peak = impact.get("peak_force_n")
+    if peak is None:
+        peak_metric = MetricView("峰值输出力", "触底，未知")
+    else:
+        peak_metric = MetricView("峰值输出力", _fmt_metric(peak, 1), "N")
+    duration_s = response.get("duration_s", 0.0)
+    try:
+        duration_ms = float(duration_s) * 1000.0
+    except (TypeError, ValueError):
+        duration_ms = 0.0
+    metrics: list[MetricView] = [
+        *_optional_metric("初始动能", impact.get("initial_energy_j"), "J", 3),
+        *_optional_metric("可用吸能容量", impact.get("available_energy_capacity_j"), "J", 3),
+        *_optional_metric("有效行程", impact.get("effective_stroke_mm"), "mm", 3),
+        *_optional_metric("最大压缩", impact.get("max_compression_mm"), "mm", 3),
+        peak_metric,
+        *_optional_metric("平均反力", impact.get("average_force_n"), "N", 1),
+        *_optional_metric("吸收能量", impact.get("absorbed_energy_j"), "J", 3),
+        *_optional_metric(
+            "工况耗散能量", impact.get("impact_dissipated_energy_j"), "J", 3
+        ),
+        *_optional_metric("回弹能量", impact.get("rebound_energy_j"), "J", 3),
+        *_optional_metric(
+            "估算回弹速度", impact.get("estimated_rebound_velocity_m_s"), "m/s", 3
+        ),
+        MetricView("接触时长", f"{duration_ms:.2f}", "ms"),
+        MetricView("是否触底", "是" if impact.get("bottom_out") else "否"),
+        *_optional_metric("测试曲线最大行程", curve_summary.get("max_stroke_mm"), "mm", 2),
+        *_optional_metric(
+            "测试曲线峰值力", curve_summary.get("peak_loading_force_n"), "N", 1
+        ),
+        *_optional_metric("加载能量", curve_summary.get("loading_energy_j"), "J", 3),
+        *_optional_metric("卸载能量", curve_summary.get("unloading_energy_j"), "J", 3),
+        *_optional_metric(
+            "测试曲线滞回能量", curve_summary.get("curve_hysteresis_energy_j"), "J", 3
+        ),
+    ]
+    ratio = curve_summary.get("energy_absorption_ratio")
+    if isinstance(ratio, (int, float)) and not isinstance(ratio, bool):
+        metrics.append(MetricView("吸能比例", f"{float(ratio) * 100.0:.1f}", "%"))
+    metrics.extend(
+        _optional_metric(
+            "等效刚度", curve_summary.get("equivalent_stiffness_n_per_mm"), "N/mm", 1
+        )
+    )
+    return tuple(metrics)
+
+
+def _buffer_recommendations(
+    result: dict[str, Any],
+    impact: dict[str, Any],
+    checks: dict[str, Any],
+) -> tuple[str, ...]:
+    recs: list[str] = []
+    if impact.get("bottom_out") or checks.get("energy_capacity_ok") is False:
+        recs.append(
+            "输入动能超过可用行程内吸能容量：需增大可用行程、换用更高容量缓冲块或降低冲击能量。"
+        )
+    if checks.get("peak_force_ok") is False:
+        recs.append(
+            "峰值力超过允许值：需降低缓冲块刚度峰值、增大行程或提高安装结构承载能力。"
+        )
+    if checks.get("stroke_ok") is False:
+        recs.append(
+            "最大压缩量超过可用行程：需增加机械行程或选择更短压缩量方案。"
+        )
+    if not recs:
+        recs.append("当前工况满足行程、峰值力和曲线能量容量校核。")
+    return tuple(recs)
+
+
+def _buffer_verdict_subtitle(model_level: str, bottom_out: bool) -> str:
+    subtitle = f"模型等级: {model_level} | 单次冲击能量法"
+    if bottom_out:
+        subtitle += " - 触底 / 峰值未知"
+    return subtitle
+
+
+def _fmt_metric(value: Any, digits: int) -> str:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return str(value)
+    return f"{float(value):.{digits}f}"

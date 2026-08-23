@@ -39,9 +39,15 @@ from app.ui.input_condition_store import (
     validate_snapshot,
     write_input_conditions,
 )
+from app.ui.model_scope import TAPPED_SCOPE, make_scope_banner, scope_report_lines
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, export_report_lines
 from app.ui.report_trace import build_report_trace, trace_report_lines
+from app.ui.result_contract import (
+    TAPPED_CHECK_LABELS as CHECK_LABELS,
+    from_tapped_axial,
+    status_label_zh,
+)
 from app.ui.theme import mark_input_field_label_wrap, mark_input_field_surface
 from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.help_button import HelpButton
@@ -67,13 +73,6 @@ SAVED_INPUTS_DIR = build_saved_inputs_dir(PROJECT_ROOT)
 EXAMPLES_DIR = PROJECT_ROOT / "examples"
 MODULE_ID = "bolt_tapped_axial"
 
-
-CHECK_LABELS: dict[str, str] = {
-    "assembly_von_mises_ok": "装配 von Mises 强度",
-    "service_von_mises_ok": "服役最大 von Mises 强度",
-    "fatigue_ok": "交变轴向疲劳",
-    "thread_strip_ok": "螺纹脱扣",
-}
 
 CHAPTERS: list[dict[str, Any]] = [
     {
@@ -419,6 +418,9 @@ class BoltTappedAxialPage(BaseChapterPage):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(10)
+
+        self.model_scope_banner = make_scope_banner(page, TAPPED_SCOPE)
+        layout.addWidget(self.model_scope_banner)
 
         # --- 摘要卡片 ---
         summary_card = QFrame(page)
@@ -901,74 +903,26 @@ class BoltTappedAxialPage(BaseChapterPage):
         self.set_current_chapter(self.chapter_list.count() - 1)
 
     def _render_result(self, result: dict[str, Any]) -> None:
-        # Codex §3.3：三态结论 pass / fail / incomplete
-        overall_status = result.get("overall_status", "fail" if not result.get("overall_pass") else "pass")
-        if overall_status == "pass":
-            self.result_title.setText("校核通过")
-            self.result_summary.setText("该工况满足全部校核要求。")
-        elif overall_status == "incomplete":
-            self.result_title.setText("校核不完整")
-            self.result_summary.setText(
-                "部分分项尚未校核（常见为螺纹脱扣未填啮合长度）。"
-                "请补齐输入后重新计算再给出结论。"
-            )
-        else:
-            self.result_title.setText("校核不通过")
-            self.result_summary.setText("存在不满足校核要求的项目，请查看分项结果与建议。")
+        # Codex §3.3：三态结论 pass / fail / incomplete，标题与徽章走 ResultViewModel。
+        view = from_tapped_axial(result, self._last_payload)
+        self.result_title.setText(view.title_zh)
+        self.result_summary.setText(view.summary_zh)
 
-        for key, badge in self._check_badges.items():
-            raw = result.get("checks", {}).get(key)
-            if raw is None:
-                self._set_badge(badge, "未校核", "wait")
-            elif raw:
-                self._set_badge(badge, "通过", "pass")
-            else:
-                self._set_badge(badge, "不通过", "fail")
+        for check in view.checks:
+            badge = self._check_badges.get(check.id)
+            if badge is None:
+                continue
+            self._set_badge(badge, status_label_zh(check.status), check.status)
 
-        asm = result.get("assembly", {})
-        stresses = result.get("stresses_mpa", {})
-        fatigue = result.get("fatigue", {})
-        ts = result.get("thread_strip", {})
-        trace = result.get("trace", {}).get("intermediate", {})
-
-        lines = [
-            f"预紧力范围: F_min = {asm.get('F_preload_min_N', 0):.0f} N"
-            f"  /  F_max = {asm.get('F_preload_max_N', 0):.0f} N",
-            f"装配扭矩范围: MA_min = {asm.get('MA_min_Nm', 0):.2f} N·m"
-            f"  /  MA_max = {asm.get('MA_max_Nm', 0):.2f} N·m",
-            "",
-            f"装配 von Mises: sigma_vm = {stresses.get('sigma_vm_assembly', 0):.1f} MPa"
-            f"  (许用: {trace.get('sigma_allow_assembly', 0):.1f} MPa)",
-            f"服役最大 von Mises: sigma_vm = {stresses.get('sigma_vm_service_max', 0):.1f} MPa"
-            f"  (许用: {trace.get('sigma_allow_service', 0):.1f} MPa)",
-            "",
-            f"疲劳应力幅: sigma_a = {stresses.get('sigma_a_fatigue', 0):.2f} MPa"
-            f"  (许用: {fatigue.get('sigma_a_allow', 0):.2f} MPa)",
-            f"疲劳平均应力: sigma_m = {stresses.get('sigma_m_fatigue', 0):.1f} MPa",
-            f"Goodman 折减系数: {fatigue.get('goodman_factor', 0):.3f}",
-        ]
-
-        if ts.get("active"):
-            lines.append("")
-            lines.append(
-                f"螺纹脱扣安全系数: S = {ts.get('strip_safety', 0):.2f}"
-                f"  (要求: >= {ts.get('strip_safety_required', 0):.2f})"
-            )
-            lines.append(f"临界侧: {ts.get('note', '')}")
-        else:
-            lines.append("")
-            lines.append(f"螺纹脱扣: {ts.get('note', '')}")
-
+        lines = []
+        for metric in view.metrics:
+            unit = f" {metric.unit}" if metric.unit else ""
+            lines.append(f"{metric.label}: {metric.value}{unit}")
         self.metrics_text.setText("\n".join(lines))
 
-        messages: list[str] = []
-        for w in result.get("warnings", []):
-            messages.append(f"[警告] {w}")
-        for r in result.get("recommendations", []):
-            messages.append(f"[建议] {r}")
-        scope = result.get("scope_note", "")
-        if scope:
-            messages.append(f"[说明] {scope}")
+        messages = [f"[警告] {msg}" for msg in view.warnings]
+        messages.extend(f"[建议] {msg}" for msg in view.recommendations)
+        messages.extend(f"[说明] {note}" for note in view.source_notes)
         self.message_box.setPlainText("\n".join(messages))
 
     def _build_report_lines(self) -> list[str]:
@@ -977,16 +931,26 @@ class BoltTappedAxialPage(BaseChapterPage):
 
         result = self._last_result
         payload = self._last_payload or {}
+        view = from_tapped_axial(result, payload)
         lines: list[str] = []
 
         lines.append("=" * 60)
         lines.append("轴向受力螺纹连接校核报告")
         lines.append("=" * 60)
-        lines.extend(trace_report_lines(build_report_trace(MODULE_ID, payload)))
+        lines.extend(
+            trace_report_lines(
+                build_report_trace(
+                    MODULE_ID,
+                    payload,
+                    model_level=TAPPED_SCOPE.model_level,
+                )
+            )
+        )
         lines.append("")
-
         lines.append("--- 适用范围 ---")
-        lines.append(result.get("scope_note", ""))
+        lines.extend(scope_report_lines(view.model_scope))
+        for note in view.source_notes:
+            lines.append(note)
         lines.append("")
 
         lines.append("--- 输入摘要 ---")
@@ -1009,30 +973,15 @@ class BoltTappedAxialPage(BaseChapterPage):
         lines.append("")
 
         lines.append("--- 分项校核结果 ---")
-        checks = result.get("checks", {})
-        for key, label in CHECK_LABELS.items():
-            raw = checks.get(key)
-            if raw is None:
-                text = "未校核"
-            elif raw:
-                text = "通过"
-            else:
-                text = "不通过"
-            lines.append(f"  {label}: {text}")
-        overall_status = result.get(
-            "overall_status",
-            "pass" if result.get("overall_pass") else "fail",
-        )
-        status_text = {
-            "pass": "通过",
-            "fail": "不通过",
-            "incomplete": "校核不完整",
-        }.get(overall_status, overall_status)
-        lines.append(f"  总体结论: {status_text}")
+        for check in view.checks:
+            lines.append(f"  {check.label_zh}: {status_label_zh(check.status)}")
+        lines.append(f"  总体结论: {view.title_zh}")
         lines.append("")
 
         lines.append("--- 关键数值 ---")
-        lines.append(self.metrics_text.text())
+        for metric in view.metrics:
+            unit = f" {metric.unit}" if metric.unit else ""
+            lines.append(f"{metric.label}: {metric.value}{unit}")
         lines.append("")
 
         lines.append("--- 螺纹脱扣 ---")
@@ -1046,14 +995,14 @@ class BoltTappedAxialPage(BaseChapterPage):
             lines.append(f"  {a}")
         lines.append("")
 
-        if result.get("warnings"):
+        if view.warnings:
             lines.append("--- 警告 ---")
-            for w in result["warnings"]:
+            for w in view.warnings:
                 lines.append(f"  {w}")
             lines.append("")
-        if result.get("recommendations"):
+        if view.recommendations:
             lines.append("--- 建议 ---")
-            for r in result["recommendations"]:
+            for r in view.recommendations:
                 lines.append(f"  {r}")
             lines.append("")
 

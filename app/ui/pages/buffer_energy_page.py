@@ -42,9 +42,11 @@ from app.ui.input_condition_store import (
     validate_snapshot,
     write_input_conditions,
 )
+from app.ui.model_scope import BUFFER_SCOPE, make_scope_banner, scope_report_lines
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, write_text_report
 from app.ui.report_trace import build_report_trace, trace_report_lines
+from app.ui.result_contract import from_buffer, status_label_zh
 from app.ui.theme import mark_input_field_surface
 from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.buffer_energy_curve import BufferEnergyCurveWidget
@@ -262,6 +264,8 @@ class BufferEnergyPage(BaseChapterPage):
 
     def _build_energy_result_chapter(self) -> None:
         page, body = self._chapter_shell("吸能结果", "方案 A 工作台总览：关键指标、F-x 曲线、总体结论、模型边界和参数对比摘要。")
+        self.model_scope_banner = make_scope_banner(page, BUFFER_SCOPE)
+        body.addWidget(self.model_scope_banner)
         scroll = QScrollArea(page)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -722,6 +726,7 @@ class BufferEnergyPage(BaseChapterPage):
         self.btn_save_report.setEnabled(True)
 
     def _render_result(self, result: dict[str, Any]) -> None:
+        view = from_buffer(result, self._last_payload)
         impact = result["impact"]
         summary = result["curve_summary"]
         response = result.get("time_response") or {}
@@ -738,21 +743,15 @@ class BufferEnergyPage(BaseChapterPage):
             f"接触时长 {duration_ms:.2f} ms"
         )
 
-        if impact.get("bottom_out"):
-            verdict = "总体结论: 触底 / 峰值未知"
-        elif result.get("overall_pass"):
-            verdict = "总体结论: 通过"
-        else:
-            verdict = "总体结论: 不通过"
-        self.overall_verdict_label.setText(verdict)
+        self.overall_verdict_label.setText(f"总体结论: {view.title_zh}")
 
-        boundary = [DISCLAIMER_TEXT]
+        boundary = [DISCLAIMER_TEXT, *view.source_notes]
         if impact.get("bottom_out"):
             boundary.append("触底后真实冲击峰值未知，当前曲线不能外推触底刚化峰值。")
-        boundary.extend(result.get("warnings", []))
+        boundary.extend(view.warnings)
         self.model_boundary_label.setText("\n".join(boundary))
 
-        lines = self._result_lines(result)
+        lines = self._result_lines(view)
         self.results_label.setPlainText("\n".join(lines))
         self.curve_metrics_label.setText(
             f"加载能量 {summary['loading_energy_j']:.3f} J · "
@@ -774,42 +773,31 @@ class BufferEnergyPage(BaseChapterPage):
 
         self.response_widget.set_response(result.get("time_response"))
         self.response_widget.set_variable(self.response_var_combo.currentData() or "x")
-        self._set_check_badge("stroke_ok", "行程", result["checks"]["stroke_ok"])
-        self._set_check_badge("peak_force_ok", "峰值力", result["checks"]["peak_force_ok"])
-        self._set_check_badge("energy_capacity_ok", "曲线能量容量", result["checks"]["energy_capacity_ok"])
+        short_names = {
+            "stroke_ok": "行程",
+            "peak_force_ok": "峰值力",
+            "energy_capacity_ok": "曲线能量容量",
+        }
+        for check in view.checks:
+            self._set_check_badge(check.id, short_names.get(check.id, check.label_zh), check.status)
         self._update_workbench_status(result)
         self.report_preview.setPlainText("\n".join(self._build_report_lines()))
 
-    def _result_lines(self, result: dict[str, Any]) -> list[str]:
-        impact = result["impact"]
-        summary = result["curve_summary"]
-        response = result.get("time_response") or {}
-        peak_text = "触底，未知" if impact.get("peak_force_n") is None else f"{impact['peak_force_n']:.1f} N"
-        lines = [
-            f"最大压缩 = {impact['max_compression_mm']:.3f} mm",
-            f"峰值输出力 = {peak_text}",
-            f"平均反力 = {impact['average_force_n']:.1f} N",
-            f"吸收能量 = {impact['absorbed_energy_j']:.3f} J",
-            f"工况耗散能量 = {impact['impact_dissipated_energy_j']:.3f} J",
-            f"回弹能量 = {impact['rebound_energy_j']:.3f} J",
-            f"估算回弹速度 = {impact['estimated_rebound_velocity_m_s']:.3f} m/s",
-            f"接触时长 = {float(response.get('duration_s', 0.0)) * 1000.0:.2f} ms",
-            "",
-            f"测试曲线最大行程 = {summary['max_stroke_mm']:.2f} mm",
-            f"测试曲线峰值力 = {summary['peak_loading_force_n']:.1f} N",
-            f"测试曲线滞回能量 = {summary['curve_hysteresis_energy_j']:.3f} J",
-        ]
-        warnings = result.get("warnings", [])
-        if warnings:
+    def _result_lines(self, view) -> list[str]:
+        lines: list[str] = []
+        for metric in view.metrics:
+            unit = f" {metric.unit}" if metric.unit else ""
+            lines.append(f"{metric.label} = {metric.value}{unit}".rstrip())
+        if view.warnings:
             lines.extend(["", "提示与建议:"])
-            lines.extend(f"- {item}" for item in warnings)
+            lines.extend(f"- {item}" for item in view.warnings)
         return lines
 
-    def _set_check_badge(self, key: str, name: str, value: Any) -> None:
+    def _set_check_badge(self, key: str, name: str, status: Any) -> None:
         badge = self.check_badges[key]
-        if value is True:
+        if status in (True, "pass"):
             text, obj = f"{name}: 通过", "PassBadge"
-        elif value is False:
+        elif status in (False, "fail"):
             text, obj = f"{name}: 不通过", "FailBadge"
         else:
             text, obj = f"{name}: 不可判定", "WaitBadge"
@@ -975,14 +963,23 @@ class BufferEnergyPage(BaseChapterPage):
         if self._last_result is None:
             return ["缓冲块吸能仿真报告", "", "尚未执行仿真。"]
         result = self._last_result
-        impact = result["impact"]
-        summary = result["curve_summary"]
-        response = result.get("time_response") or {}
-        peak_text = "触底，不可判定" if impact.get("peak_force_n") is None else f"{impact['peak_force_n']:.2f} N"
+        payload = self._last_payload or {}
+        view = from_buffer(result, payload)
+        checks = {item.id: item for item in view.checks}
         lines = [
             "缓冲块吸能仿真报告",
             "=" * 28,
-            *trace_report_lines(build_report_trace(MODULE_ID, self._last_payload or {})),
+            *trace_report_lines(
+                build_report_trace(
+                    MODULE_ID,
+                    payload,
+                    model_level=BUFFER_SCOPE.model_level,
+                )
+            ),
+            "",
+            *scope_report_lines(view.model_scope),
+            "",
+            f"总体结论: {view.title_zh}",
             "",
             "1. 输入条件",
             f"- 曲线文件: {self._curve_source.name if self._curve_source else '(未记录)'}",
@@ -991,38 +988,28 @@ class BufferEnergyPage(BaseChapterPage):
             f"- 可用行程: {self._read_field_float('impact.available_stroke_mm', 0.0):.2f} mm",
             f"- 允许峰值力: {self._read_field_float('impact.allowable_peak_force_n', 0.0):.0f} N",
             "",
-            "2. 曲线指标",
-            f"- 最大测试行程: {summary['max_stroke_mm']:.2f} mm",
-            f"- 最大加载力: {summary['peak_loading_force_n']:.1f} N",
-            f"- 加载能量: {summary['loading_energy_j']:.3f} J",
-            f"- 卸载能量: {summary['unloading_energy_j']:.3f} J",
-            f"- 滞回能量: {summary['curve_hysteresis_energy_j']:.3f} J",
-            f"- 吸能比例: {summary['energy_absorption_ratio'] * 100.0:.1f} %",
-            "",
-            "3. 单次冲击结果",
-            f"- 初始动能: {impact['initial_energy_j']:.3f} J",
-            f"- 最大压缩量: {impact['max_compression_mm']:.3f} mm",
-            f"- 峰值输出力: {peak_text}",
-            f"- 平均反力: {impact['average_force_n']:.1f} N",
-            f"- 吸收能量: {impact['absorbed_energy_j']:.3f} J",
-            f"- 工况耗散能量: {impact['impact_dissipated_energy_j']:.3f} J",
-            f"- 回弹能量: {impact['rebound_energy_j']:.3f} J",
-            f"- 估算回弹速度: {impact['estimated_rebound_velocity_m_s']:.3f} m/s",
-            f"- 接触时长: {float(response.get('duration_s', 0.0)) * 1000.0:.2f} ms",
-            f"- 是否触底: {'是' if impact.get('bottom_out') else '否'}",
-            "",
-            "4. 校核结论",
-            f"- 行程: {self._fmt_check(result['checks']['stroke_ok'])}",
-            f"- 峰值力: {self._fmt_check(result['checks']['peak_force_ok'])}",
-            f"- 曲线能量容量: {self._fmt_check(result['checks']['energy_capacity_ok'])}",
-            f"- 整体: {'通过' if result.get('overall_pass') else '不通过'}",
-            "",
-            "5. 模型边界与免责",
+            "2. 曲线指标与冲击结果",
         ]
+        for metric in view.metrics:
+            unit = f" {metric.unit}" if metric.unit else ""
+            lines.append(f"- {metric.label}: {metric.value}{unit}".rstrip())
+        lines.extend(
+            [
+                "",
+                "3. 校核结论",
+                f"- 行程: {self._buffer_status_text(checks.get('stroke_ok'))}",
+                f"- 峰值力: {self._buffer_status_text(checks.get('peak_force_ok'))}",
+                f"- 曲线能量容量: {self._buffer_status_text(checks.get('energy_capacity_ok'))}",
+                f"- 整体: {view.title_zh}",
+                "",
+                "5. 模型边界与免责",
+            ]
+        )
         for note in result.get("assumptions", []):
             lines.append(f"- {note}")
         lines.extend(
             [
+                f"- {DISCLAIMER_TEXT}",
                 "- 本工具基于加载 / 卸载 F-x 曲线的单次冲击能量法。",
                 "- 回弹速度为基于卸载曲线能量的估算值。",
                 "- 时域响应曲线为由能量守恒反推的近似映射，不含应变率效应，不能替代真实时域动力学仿真。",
@@ -1030,11 +1017,23 @@ class BufferEnergyPage(BaseChapterPage):
                 "- 卸载段简化假设：测试卸载曲线形状只与位移有关；浅压缩下真实卸载支路可能不同。",
             ]
         )
-        warnings = result.get("warnings", [])
-        if warnings:
+        for note in view.source_notes:
+            lines.append(f"- {note}")
+        if view.recommendations:
+            lines.extend(["", "建议"])
+            lines.extend(f"- {item}" for item in view.recommendations)
+        if view.warnings:
             lines.extend(["", "6. 提示"])
-            lines.extend(f"- {item}" for item in warnings)
+            lines.extend(f"- {item}" for item in view.warnings)
         return lines
+
+    @staticmethod
+    def _buffer_status_text(check) -> str:
+        if check is None:
+            return "不可判定"
+        if check.status == "not_checked":
+            return "不可判定"
+        return status_label_zh(check.status)
 
     @staticmethod
     def _fmt_check(value: Any) -> str:

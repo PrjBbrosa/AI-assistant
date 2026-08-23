@@ -11,8 +11,10 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QLabel, QMessageBox
 
+from app.ui.model_scope import BUFFER_SCOPE, MODEL_LEVEL_QUICK
+from app.ui.result_contract import from_buffer, status_label_zh
 from app.ui.widgets.buffer_energy_curve import BufferEnergyCurveWidget
 from app.ui.widgets.buffer_response_curve import BufferResponseCurveWidget
 
@@ -273,6 +275,9 @@ class BufferEnergyPageTests(unittest.TestCase):
             self.assertIn(keyword, text)
         self.assertNotIn("--", page.metric_labels["initial_energy"].text())
         self.assertIn("总体结论", page.overall_verdict_label.text())
+        view = from_buffer(page._last_result, page._last_payload)
+        self.assertEqual(page.overall_verdict_label.text(), f"总体结论: {view.title_zh}")
+        self.assertIn(view.title_zh, page.overall_verdict_label.text())
         self.assertIn("加载能量", page.energy_strip_label.text())
         self.assertIsNotNone(page.response_widget._response)
         self.assertTrue(page.btn_save_report.isEnabled())
@@ -359,6 +364,44 @@ class BufferEnergyPageTests(unittest.TestCase):
         for keyword in ("能量法", "应变率", "重力", "回弹", "卸载段简化假设"):
             self.assertIn(keyword, text)
         self.assertIn("缓冲块吸能仿真", page.report_preview.toPlainText())
+        self.assertIn(f"模型等级: {BUFFER_SCOPE.model_level}", text)
+        self.assertIn("覆盖工况:", text)
+        self.assertIn("未覆盖:", text)
+        view = from_buffer(page._last_result, page._last_payload)
+        self.assertIn(f"总体结论: {view.title_zh}", text)
+
+    def test_result_header_and_report_show_model_level(self) -> None:
+        page = self._make_page()
+        banner = page.findChild(QLabel, "ModelScopeBanner")
+        self.assertIsNotNone(banner)
+        self.assertIn(MODEL_LEVEL_QUICK, banner.text())
+        self.assertIn("覆盖工况", banner.text())
+        self.assertIn("未覆盖", banner.text())
+        self.assertIn("认证", banner.text())
+
+        page._curve_data = _sample_curve()
+        page._curve_source = Path("curve.csv")
+        page._calculate_buffer_energy = lambda _payload: _sample_result()
+        page._on_calculate()
+        view = from_buffer(page._last_result, page._last_payload)
+        self.assertEqual(page.overall_verdict_label.text(), f"总体结论: {view.title_zh}")
+        self.assertIn(MODEL_LEVEL_QUICK, view.title_zh)
+        self.assertEqual(view.overall_status, "pass")
+        self.assertEqual(
+            page.check_badges["stroke_ok"].text(),
+            f"行程: {status_label_zh(view.checks[0].status)}",
+        )
+
+    def test_result_view_model_overall_matches_ui_title(self) -> None:
+        page = self._make_page()
+        page._curve_data = _sample_curve()
+        page._calculate_buffer_energy = lambda _payload: _sample_result()
+        page._on_calculate()
+        view = from_buffer(page._last_result, page._last_payload)
+        self.assertEqual(page.overall_verdict_label.text(), f"总体结论: {view.title_zh}")
+        self.assertEqual(view.overall_status, "pass" if page._last_result["overall_pass"] else "fail")
+        report = "\n".join(page._build_report_lines())
+        self.assertIn(f"总体结论: {view.title_zh}", report)
 
     def test_save_load_input_conditions_roundtrip(self) -> None:
         page = self._make_page()

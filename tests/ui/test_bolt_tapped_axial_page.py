@@ -8,11 +8,13 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QLineEdit, QMessageBox
+from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QMessageBox
 
 from app.ui.field_schema import FieldSpec
+from app.ui.model_scope import MODEL_LEVEL_FORMAL_SUBSET, TAPPED_SCOPE
 from app.ui.pages.bolt_page import BOLT_GRADE_TABLE as PAGE_GRADE_TABLE
 from app.ui.pages.bolt_tapped_axial_page import BoltTappedAxialPage
+from app.ui.result_contract import from_tapped_axial, status_label_zh
 from core.bolt.grades import BOLT_GRADE_CUSTOM, BOLT_GRADE_TABLE, rp02_source_zh
 
 EXAMPLES_DIR = Path(__file__).resolve().parents[2] / "examples"
@@ -98,9 +100,11 @@ class BoltTappedAxialPageTests(unittest.TestCase):
         page._field_widgets["service.FA_max"].setText("2000")
         page._run_calculation()
         self.assertIsNotNone(page._last_result)
-        self.assertIn(
-            page.result_title.text(),
-            ("校核通过", "校核不通过", "校核不完整"),
+        self.assertTrue(
+            any(
+                token in page.result_title.text()
+                for token in ("校核通过", "校核不通过", "校核不完整")
+            )
         )
 
     def test_run_calculation_populates_check_badges(self) -> None:
@@ -119,8 +123,12 @@ class BoltTappedAxialPageTests(unittest.TestCase):
         strip_badge = page._check_badges["thread_strip_ok"]
         self.assertEqual(strip_badge.text(), "未校核")
         self.assertEqual(strip_badge.objectName(), "WaitBadge")
-        # 总体结论标题
-        self.assertEqual(page.result_title.text(), "校核不完整")
+        # 总体结论标题：脱扣未校核仍为「校核不完整」，不会给绿灯。
+        self.assertIn("校核不完整", page.result_title.text())
+        view = from_tapped_axial(page._last_result, page._last_payload)
+        self.assertEqual(page.result_title.text(), view.title_zh)
+        self.assertEqual(view.overall_status, "incomplete")
+        self.assertEqual(view.checks[-1].status, "not_checked")
         # _last_result 反映 overall_status
         self.assertEqual(page._last_result["overall_status"], "incomplete")  # type: ignore[index]
         self.assertFalse(page._last_result["overall_pass"])  # type: ignore[index]
@@ -159,6 +167,44 @@ class BoltTappedAxialPageTests(unittest.TestCase):
         self.assertIn("生成时间", report_text)
         self.assertIn("输入摘要哈希", report_text)
         self.assertIn("模块: bolt_tapped_axial", report_text)
+        self.assertIn(f"模型等级: {TAPPED_SCOPE.model_level}", report_text)
+        self.assertIn("覆盖工况:", report_text)
+        self.assertIn("未覆盖:", report_text)
+
+    def test_result_header_and_report_show_model_level(self) -> None:
+        page = BoltTappedAxialPage()
+        banner = page.findChild(QLabel, "ModelScopeBanner")
+        self.assertIsNotNone(banner)
+        self.assertIn(MODEL_LEVEL_FORMAL_SUBSET, banner.text())
+        self.assertIn("覆盖工况", banner.text())
+        self.assertIn("未覆盖", banner.text())
+        self.assertIn("横向力", banner.text())
+
+        page._field_widgets["service.FA_max"].setText("2000")
+        page._run_calculation()
+        view = from_tapped_axial(page._last_result, page._last_payload)
+        self.assertEqual(page.result_title.text(), view.title_zh)
+        self.assertIn(MODEL_LEVEL_FORMAL_SUBSET, view.title_zh)
+        self.assertIn("校核不完整", view.title_zh)
+        report = "\n".join(page._build_report_lines())
+        self.assertIn(f"总体结论: {view.title_zh}", report)
+        self.assertIn("软件版本", report)
+        self.assertIn("输入摘要哈希", report)
+
+    def test_result_view_model_overall_matches_ui_title(self) -> None:
+        page = BoltTappedAxialPage()
+        page._field_widgets["service.FA_max"].setText("2000")
+        page._run_calculation()
+        view = from_tapped_axial(page._last_result, page._last_payload)
+        self.assertEqual(page.result_title.text(), view.title_zh)
+        self.assertEqual(page.result_summary.text(), view.summary_zh)
+        self.assertEqual(view.overall_status, "incomplete")
+        strip = next(item for item in view.checks if item.id == "thread_strip_ok")
+        self.assertEqual(strip.status, "not_checked")
+        self.assertEqual(
+            page._check_badges["thread_strip_ok"].text(),
+            status_label_zh("not_checked"),
+        )
 
     # --- Codex §3.2 / §3.4：As/d2/d3 自动派生 + 缓存失效 ---
 
