@@ -1,6 +1,6 @@
 # Windows desktop smoke（手工，未自动化）
 
-本清单 **没有** 接入 GitHub Actions 的 Windows runner。仓库 CI 只在 Ubuntu + `QT_QPA_PLATFORM=offscreen` 下跑 `pytest` 与 `git diff --check`，**不声称** 本 smoke 已执行或已通过。
+本清单 **没有** 接入 GitHub Actions 的 Windows runner。仓库 CI 只在 Ubuntu + `QT_QPA_PLATFORM=offscreen` 下跑 `pytest` 与 `git diff --check`，**不声称** 本 smoke 已执行或已通过。七个计算页的 offscreen 工作流 smoke 见 `tests/ui/test_module_workflow_smoke.py`；Windows 打包 exe smoke 仍按本清单手工验收，不由该测试代替。
 
 在本机 Windows 上按下列步骤做一次手工验收，并记下日期、构建版本、git SHA 和结果。任一步失败都不要把本次构建当成可发布。
 
