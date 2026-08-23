@@ -17,6 +17,7 @@ from app.ui.pages.bolt_tapped_axial_page import CHAPTERS
 from app.ui.pages.buffer_energy_page import FIELD_SPECS as BUFFER_FIELD_SPECS
 from app.ui.pages.hertz_contact_page import CHAPTERS as HERTZ_CHAPTERS
 from app.ui.pages.hertz_contact_page import CONTACT_MODE_LINE
+from app.ui.pages.interference_fit_page import CHAPTERS as INTERFERENCE_CHAPTERS
 from app.ui.pages.spline_fit_page import CHAPTERS as SPLINE_CHAPTERS
 from app.ui.pages.spline_fit_page import SMOOTH_FIT_FIELD_IDS
 from core.bolt.grades import BOLT_GRADE_CUSTOM, bolt_grade_options
@@ -415,8 +416,93 @@ def test_buffer_field_schema_numeric_bounds() -> None:
     assert not ok_low
     assert parse_payload_value(samples, "200") == 200
 
+
+def _interference_specs() -> dict[str, FieldSchema]:
+    specs: dict[str, FieldSchema] = {}
+    for chapter in INTERFERENCE_CHAPTERS:
+        for spec in chapter["fields"]:
+            specs[spec.field_id] = spec
+    return specs
+
+
+def test_interference_field_schema_contract() -> None:
+    specs = _interference_specs()
+    for field_id in (
+        "checks.slip_safety_min",
+        "checks.stress_safety_min",
+        "loads.application_factor_ka",
+    ):
+        schema = specs[field_id]
+        assert isinstance(schema, FieldSchema)
+        assert schema.value_type == "float"
+        assert schema.finite is True
+        assert schema.min_value == 1.0
+        assert schema.min_inclusive is True
+        assert schema.required is True
+
+    ka = specs["loads.application_factor_ka"]
+    ok, message = validate_text(ka, "0.5")
+    assert not ok
+    assert ">= 1.0" in message
+    assert parse_payload_value(ka, "1.0") == 1.0
+
+    slip = specs["checks.slip_safety_min"]
+    ok, message = validate_text(slip, "0.5")
+    assert not ok
+    assert ">= 1.0" in message
+
+    curve = specs["options.curve_points"]
+    assert curve.value_type == "int"
+    assert curve.min_value == 11
+    assert curve.max_value == 201
+    ok_low, _ = validate_text(curve, "10")
+    assert not ok_low
+
+    assert specs["fit.mode"].mapping is None
+    assert specs["fit.preferred_fit_name"].visible_when == ("eq", "fit.mode", "优选配合")
+    assert specs["fit.shaft_upper_deviation_um"].visible_when == ("eq", "fit.mode", "偏差换算")
+    assert specs["fit.delta_min_um"].visible_when == ("eq", "fit.mode", "直接输入过盈量")
+    assert specs["fit.delta_max_um"].visible_when == ("eq", "fit.mode", "直接输入过盈量")
+    assert specs["assembly.mu_press_in"].visible_when == ("eq", "assembly.method", "force_fit")
+    assert specs["assembly.room_temperature_c"].visible_when == ("eq", "assembly.method", "shrink_fit")
+
     mapped = [spec for spec in specs.values() if spec.mapping is not None]
     assert mapped
     for spec in mapped:
         section, key = spec.mapping
         assert spec.field_id == f"{section}.{key}"
+
+
+def test_interference_build_payload_omits_unused_fit_fields() -> None:
+    specs = list(_interference_specs().values())
+    values = {spec.field_id: "" if spec.default is None else str(spec.default) for spec in specs}
+    values["fit.mode"] = "直接输入过盈量"
+    values["fit.shaft_upper_deviation_um"] = "35"
+    values["fit.shaft_lower_deviation_um"] = "20"
+    values["fit.hub_upper_deviation_um"] = "-10"
+    values["fit.hub_lower_deviation_um"] = "-20"
+    values["fit.preferred_fit_name"] = "H7/s6"
+
+    payload = build_payload(specs, values)
+    fit = payload.get("fit", {})
+    assert fit.get("delta_min_um") == 20.0
+    assert "shaft_upper_deviation_um" not in fit
+    assert "preferred_fit_name" not in fit
+    assert "mu_press_in" not in payload.get("assembly", {})
+    assert payload.get("assembly", {}).get("method") == "manual_only"
+
+    values["fit.mode"] = "优选配合"
+    preferred = build_payload(specs, values)
+    assert "delta_min_um" not in preferred.get("fit", {})
+    assert "shaft_upper_deviation_um" not in preferred.get("fit", {})
+
+    values["fit.mode"] = "偏差换算"
+    deviation = build_payload(specs, values)
+    assert "delta_min_um" not in deviation.get("fit", {})
+    assert "preferred_fit_name" not in deviation.get("fit", {})
+    hidden_ok, _ = validate_text(
+        _interference_specs()["fit.delta_min_um"],
+        "",
+        values=values,
+    )
+    assert hidden_ok

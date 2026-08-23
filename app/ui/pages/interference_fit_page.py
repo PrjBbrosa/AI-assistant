@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib
 import json
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +23,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.field_schema import (
+    FieldSchema,
+    FieldSpec,
+    build_payload,
+    validate_text,
+)
 from app.ui.input_condition_store import (
     InputConditionError,
     build_form_snapshot,
@@ -152,18 +157,30 @@ ROUGHNESS_BATCH_WARNING_TEXT = (
 )
 
 
-@dataclass(frozen=True)
-class FieldSpec:
-    field_id: str
-    label: str
-    unit: str
-    hint: str
-    mapping: tuple[str, str] | None = None
-    widget_type: str = "number"
-    options: tuple[str, ...] = ()
-    default: str = ""
-    placeholder: str = ""
-    help_ref: str = ""
+_POSITIVE_KW = dict(min_value=0.0, min_inclusive=False, finite=True)
+_NONNEG_KW = dict(min_value=0.0, min_inclusive=True, finite=True)
+_SAFETY_KW = dict(min_value=1.0, min_inclusive=True, finite=True)
+_NU_KW = dict(
+    min_value=0.0,
+    max_value=0.5,
+    min_inclusive=False,
+    max_inclusive=False,
+    finite=True,
+)
+_MU_KW = dict(
+    min_value=0.0,
+    max_value=1.0,
+    min_inclusive=False,
+    max_inclusive=False,
+    finite=True,
+)
+_K_KW = dict(min_value=0.0, max_value=1.0, min_inclusive=True, max_inclusive=True, finite=True)
+_FINITE_KW = dict(finite=True)
+_FIT_MANUAL = ("eq", "fit.mode", "直接输入过盈量")
+_FIT_PREFERRED = ("eq", "fit.mode", "优选配合")
+_FIT_DEVIATION = ("eq", "fit.mode", "偏差换算")
+_ASSEMBLY_SHRINK = ("eq", "assembly.method", "shrink_fit")
+_ASSEMBLY_FORCE = ("eq", "assembly.method", "force_fit")
 
 
 CHAPTERS: list[dict[str, Any]] = [
@@ -182,6 +199,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="1.20",
                 placeholder="建议 1.1~1.5",
                 help_ref="terms/interference_slip_safety",
+                **_SAFETY_KW,
             ),
             FieldSpec(
                 "checks.stress_safety_min",
@@ -192,6 +210,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="1.20",
                 placeholder="建议 1.1~1.8",
                 help_ref="terms/interference_stress_safety",
+                **_SAFETY_KW,
             ),
             FieldSpec(
                 "loads.application_factor_ka",
@@ -202,6 +221,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="1.20",
                 placeholder="建议 1.0~2.25",
                 help_ref="terms/interference_application_factor_ka",
+                **_SAFETY_KW,
             ),
             FieldSpec(
                 "options.curve_points",
@@ -209,6 +229,10 @@ CHAPTERS: list[dict[str, Any]] = [
                 "点",
                 "曲线图离散点数量；越大越平滑，计算耗时略增，仅影响曲线显示。",
                 mapping=("options", "curve_points"),
+                value_type="int",
+                min_value=11,
+                max_value=201,
+                finite=True,
                 default="41",
                 placeholder="11~201",
             ),
@@ -229,6 +253,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="40.0",
                 placeholder="例如 40",
                 help_ref="terms/interference_fit_diameter",
+                **_POSITIVE_KW,
             ),
             FieldSpec(
                 "geometry.shaft_inner_d_mm",
@@ -239,6 +264,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="0.0",
                 placeholder="实心轴填 0，例如 20",
                 help_ref="terms/interference_hollow_shaft_bore",
+                **_NONNEG_KW,
             ),
             FieldSpec(
                 "geometry.hub_outer_d_mm",
@@ -249,6 +275,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="80.0",
                 placeholder="例如 80",
                 help_ref="terms/interference_hub_outer_diameter",
+                **_POSITIVE_KW,
             ),
             FieldSpec(
                 "geometry.fit_length_mm",
@@ -259,6 +286,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="45.0",
                 placeholder="例如 45",
                 help_ref="terms/interference_fit_length",
+                **_POSITIVE_KW,
             ),
             FieldSpec(
                 "fit.mode",
@@ -268,6 +296,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("直接输入过盈量", "优选配合", "偏差换算"),
                 default="直接输入过盈量",
+                mapping=None,
                 help_ref="terms/interference_fit_mode",
             ),
             FieldSpec(
@@ -278,6 +307,8 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=PREFERRED_FIT_OPTIONS,
                 default="H7/s6",
+                mapping=None,
+                visible_when=_FIT_PREFERRED,
                 help_ref="terms/interference_preferred_fit",
             ),
             FieldSpec(
@@ -287,7 +318,10 @@ CHAPTERS: list[dict[str, Any]] = [
                 "偏差换算模式下使用；以名义尺寸为基准，正值表示大于名义尺寸。",
                 default="",
                 placeholder="例如 35",
+                mapping=None,
+                visible_when=_FIT_DEVIATION,
                 help_ref="terms/interference_iso286_deviations",
+                **_FINITE_KW,
             ),
             FieldSpec(
                 "fit.shaft_lower_deviation_um",
@@ -296,7 +330,10 @@ CHAPTERS: list[dict[str, Any]] = [
                 "偏差换算模式下使用；必须 <= 轴上偏差。",
                 default="",
                 placeholder="例如 20",
+                mapping=None,
+                visible_when=_FIT_DEVIATION,
                 help_ref="terms/interference_iso286_deviations",
+                **_FINITE_KW,
             ),
             FieldSpec(
                 "fit.hub_upper_deviation_um",
@@ -305,7 +342,10 @@ CHAPTERS: list[dict[str, Any]] = [
                 "偏差换算模式下使用；负值表示孔尺寸小于名义尺寸。",
                 default="",
                 placeholder="例如 -10",
+                mapping=None,
+                visible_when=_FIT_DEVIATION,
                 help_ref="terms/interference_iso286_deviations",
+                **_FINITE_KW,
             ),
             FieldSpec(
                 "fit.hub_lower_deviation_um",
@@ -314,7 +354,10 @@ CHAPTERS: list[dict[str, Any]] = [
                 "偏差换算模式下使用；必须 <= 孔上偏差。",
                 default="",
                 placeholder="例如 -20",
+                mapping=None,
+                visible_when=_FIT_DEVIATION,
                 help_ref="terms/interference_iso286_deviations",
+                **_FINITE_KW,
             ),
             FieldSpec(
                 "fit.delta_min_um",
@@ -324,7 +367,9 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("fit", "delta_min_um"),
                 default="20.0",
                 placeholder="例如 20",
+                visible_when=_FIT_MANUAL,
                 help_ref="terms/interference_delta_min",
+                **_NONNEG_KW,
             ),
             FieldSpec(
                 "fit.delta_max_um",
@@ -334,7 +379,9 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("fit", "delta_max_um"),
                 default="45.0",
                 placeholder="例如 45",
+                visible_when=_FIT_MANUAL,
                 help_ref="terms/interference_delta_max",
+                **_POSITIVE_KW,
             ),
         ],
     },
@@ -352,6 +399,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=MATERIAL_OPTIONS,
                 default="45钢",
+                mapping=None,
             ),
             FieldSpec(
                 "materials.shaft_e_mpa",
@@ -362,6 +410,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="210000",
                 placeholder="例如 210000",
                 help_ref="terms/elastic_modulus",
+                **_POSITIVE_KW,
             ),
             FieldSpec(
                 "materials.shaft_nu",
@@ -372,6 +421,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="0.30",
                 placeholder="0<nu<0.5",
                 help_ref="terms/poisson_ratio",
+                **_NU_KW,
             ),
             FieldSpec(
                 "materials.shaft_yield_mpa",
@@ -382,6 +432,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="600",
                 placeholder="例如 600",
                 help_ref="terms/interference_yield_strength",
+                **_POSITIVE_KW,
             ),
             FieldSpec(
                 "materials.hub_material",
@@ -391,6 +442,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=MATERIAL_OPTIONS,
                 default="45钢",
+                mapping=None,
             ),
             FieldSpec(
                 "materials.hub_e_mpa",
@@ -401,6 +453,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="210000",
                 placeholder="例如 210000",
                 help_ref="terms/elastic_modulus",
+                **_POSITIVE_KW,
             ),
             FieldSpec(
                 "materials.hub_nu",
@@ -411,6 +464,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="0.30",
                 placeholder="0<nu<0.5",
                 help_ref="terms/poisson_ratio",
+                **_NU_KW,
             ),
             FieldSpec(
                 "materials.hub_yield_mpa",
@@ -421,6 +475,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="320",
                 placeholder="例如 320",
                 help_ref="terms/interference_yield_strength",
+                **_POSITIVE_KW,
             ),
         ],
     },
@@ -439,6 +494,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="350",
                 placeholder="例如 350",
                 help_ref="terms/interference_torque_required",
+                **_NONNEG_KW,
             ),
             FieldSpec(
                 "loads.axial_force_required_n",
@@ -449,6 +505,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="0",
                 placeholder="例如 0",
                 help_ref="terms/interference_axial_force_required",
+                **_NONNEG_KW,
             ),
             FieldSpec(
                 "loads.radial_force_required_n",
@@ -459,6 +516,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="0",
                 placeholder="例如 0",
                 help_ref="terms/interference_radial_force",
+                **_NONNEG_KW,
             ),
             FieldSpec(
                 "loads.bending_moment_required_nm",
@@ -469,6 +527,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="0",
                 placeholder="例如 0",
                 help_ref="terms/interference_bending_moment",
+                **_NONNEG_KW,
             ),
         ],
     },
@@ -486,6 +545,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=SURFACE_CONDITIONS,
                 default="干摩擦",
+                mapping=None,
             ),
             FieldSpec(
                 "friction.mu_torque",
@@ -496,6 +556,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="0.14",
                 placeholder="建议 0.08~0.20",
                 help_ref="terms/interference_friction_coefficient",
+                **_MU_KW,
             ),
             FieldSpec(
                 "friction.mu_axial",
@@ -506,6 +567,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="0.14",
                 placeholder="建议 0.08~0.20",
                 help_ref="terms/interference_friction_coefficient",
+                **_MU_KW,
             ),
             FieldSpec(
                 "friction.mu_assembly",
@@ -516,6 +578,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="0.12",
                 placeholder="建议 0.06~0.18",
                 help_ref="terms/interference_assembly_mu",
+                **_MU_KW,
             ),
             FieldSpec(
                 "roughness.profile",
@@ -525,6 +588,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=ROUGHNESS_PROFILE_OPTIONS,
                 default="DIN 7190-1:2017（k=0.4）",
+                mapping=None,
                 help_ref="terms/interference_roughness_profile",
             ),
             FieldSpec(
@@ -536,6 +600,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="0.40",
                 placeholder="建议 0.4 或 0.8",
                 help_ref="terms/interference_smoothing_factor_k",
+                **_K_KW,
             ),
             FieldSpec(
                 "roughness.shaft_rz_um",
@@ -546,6 +611,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="6.3",
                 placeholder="例如 6.3",
                 help_ref="terms/interference_surface_roughness_rz",
+                **_NONNEG_KW,
             ),
             FieldSpec(
                 "roughness.hub_rz_um",
@@ -556,6 +622,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="6.3",
                 placeholder="例如 6.3",
                 help_ref="terms/interference_surface_roughness_rz",
+                **_NONNEG_KW,
             ),
         ],
     },
@@ -573,6 +640,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("manual_only", "shrink_fit", "force_fit"),
                 default="manual_only",
+                mapping=("assembly", "method"),
                 help_ref="terms/interference_assembly_method",
             ),
             FieldSpec(
@@ -583,6 +651,8 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("diameter_rule", "direct_value"),
                 default="diameter_rule",
+                mapping=("assembly", "clearance_mode"),
+                visible_when=_ASSEMBLY_SHRINK,
             ),
             FieldSpec(
                 "assembly.room_temperature_c",
@@ -592,6 +662,8 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("assembly", "room_temperature_c"),
                 default="20",
                 placeholder="例如 20",
+                visible_when=_ASSEMBLY_SHRINK,
+                **_FINITE_KW,
             ),
             FieldSpec(
                 "assembly.shaft_temperature_c",
@@ -601,6 +673,8 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("assembly", "shaft_temperature_c"),
                 default="20",
                 placeholder="例如 20 或 -78.4",
+                visible_when=_ASSEMBLY_SHRINK,
+                **_FINITE_KW,
             ),
             FieldSpec(
                 "assembly.clearance_um",
@@ -610,6 +684,8 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("assembly", "clearance_um"),
                 default="0",
                 placeholder="例如 25",
+                visible_when=_ASSEMBLY_SHRINK,
+                **_NONNEG_KW,
             ),
             FieldSpec(
                 "assembly.alpha_hub_1e6_per_c",
@@ -619,6 +695,8 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("assembly", "alpha_hub_1e6_per_c"),
                 default="11",
                 placeholder="例如 11",
+                visible_when=_ASSEMBLY_SHRINK,
+                **_POSITIVE_KW,
             ),
             FieldSpec(
                 "assembly.alpha_shaft_1e6_per_c",
@@ -628,6 +706,8 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("assembly", "alpha_shaft_1e6_per_c"),
                 default="11",
                 placeholder="例如 11",
+                visible_when=_ASSEMBLY_SHRINK,
+                **_POSITIVE_KW,
             ),
             FieldSpec(
                 "assembly.hub_temp_limit_c",
@@ -637,6 +717,8 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("assembly", "hub_temp_limit_c"),
                 default="250",
                 placeholder="例如 250 或 300",
+                visible_when=_ASSEMBLY_SHRINK,
+                **_FINITE_KW,
             ),
             FieldSpec(
                 "assembly.mu_press_in",
@@ -646,7 +728,9 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("assembly", "mu_press_in"),
                 default="0.08",
                 placeholder="例如 0.08",
+                visible_when=_ASSEMBLY_FORCE,
                 help_ref="terms/interference_assembly_mu",
+                **_MU_KW,
             ),
             FieldSpec(
                 "assembly.mu_press_out",
@@ -656,7 +740,9 @@ CHAPTERS: list[dict[str, Any]] = [
                 mapping=("assembly", "mu_press_out"),
                 default="0.06",
                 placeholder="例如 0.06",
+                visible_when=_ASSEMBLY_FORCE,
                 help_ref="terms/interference_assembly_mu",
+                **_MU_KW,
             ),
         ],
     },
@@ -674,6 +760,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("off", "on"),
                 default="off",
+                mapping=("fretting", "mode"),
                 help_ref="terms/interference_fretting_risk",
             ),
             FieldSpec(
@@ -684,6 +771,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("steady", "pulsating", "reversing"),
                 default="pulsating",
+                mapping=("fretting", "load_spectrum"),
             ),
             FieldSpec(
                 "fretting.duty_severity",
@@ -693,6 +781,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("light", "medium", "heavy"),
                 default="medium",
+                mapping=("fretting", "duty_severity"),
             ),
             FieldSpec(
                 "fretting.surface_condition",
@@ -702,6 +791,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("coated", "oiled", "dry"),
                 default="dry",
+                mapping=("fretting", "surface_condition"),
             ),
             FieldSpec(
                 "fretting.importance_level",
@@ -711,6 +801,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 widget_type="choice",
                 options=("general", "important", "critical"),
                 default="important",
+                mapping=("fretting", "importance_level"),
             ),
         ],
     },
@@ -782,9 +873,12 @@ class InterferenceFitPage(BaseChapterPage):
         self._last_payload: dict[str, Any] | None = None
         self._last_result: dict[str, Any] | None = None
         self._field_widgets: dict[str, QWidget] = {}
-        self._field_specs: dict[str, FieldSpec] = {}
+        self._field_specs: dict[str, FieldSchema] = {}
         self._field_cards: dict[str, QWidget] = {}
+        self._field_error_labels: dict[str, QLabel] = {}
+        self._field_chapter_index: dict[str, int] = {}
         self._widget_hints: dict[QWidget, str] = {}
+        self._suspend_live_feedback = False
         self._check_badges: dict[str, QLabel] = {}
         self.roughness_warning_box: QFrame | None = None
         self.roughness_warning_text: QLabel | None = None
@@ -857,18 +951,24 @@ class InterferenceFitPage(BaseChapterPage):
         self._register_fit_bindings()
         self._register_assembly_bindings()
         self._register_fretting_bindings()
+        self._suspend_live_feedback = True
         self._apply_defaults()
         self._sync_friction_from_material()
+        self._suspend_live_feedback = False
+
         def _deferred_sample_init():
+            self._suspend_live_feedback = True
             self._load_sample("interference_case_01.json")
             self._sync_material_inputs()
             self._sync_roughness_factor()
             self._sync_fit_mode_fields()
             self._sync_assembly_fields()
             self._sync_fretting_fields()
+            self._suspend_live_feedback = False
+            self._refresh_all_field_errors()
+            self._mark_results_dirty()
 
         QTimer.singleShot(0, _deferred_sample_init)
-        self._connect_dirty_signals()
         self._mark_results_dirty()
 
     def eventFilter(self, watched, event):  # noqa: N802
@@ -878,19 +978,22 @@ class InterferenceFitPage(BaseChapterPage):
 
     def _build_input_chapters(self) -> None:
         for chapter in CHAPTERS:
+            chapter_index = self.chapter_list.count()
             page = self._create_chapter_page(
                 chapter["title"],
                 chapter["subtitle"],
                 chapter["fields"],
                 help_ref=chapter.get("help_ref", ""),
             )
+            for spec in chapter["fields"]:
+                self._field_chapter_index[spec.field_id] = chapter_index
             self.add_chapter(chapter["title"], page)
 
     def _create_chapter_page(
         self,
         title: str,
         subtitle: str,
-        fields: list[FieldSpec],
+        fields: list[FieldSchema],
         help_ref: str = "",
     ) -> QWidget:
         page = QFrame(self)
@@ -966,16 +1069,21 @@ class InterferenceFitPage(BaseChapterPage):
             hint = QLabel(spec.hint, field_card)
             hint.setObjectName("SectionHint")
             hint.setWordWrap(True)
+            error_label = QLabel("", field_card)
+            error_label.setObjectName("FieldErrorLabel")
+            error_label.setWordWrap(True)
+            error_label.setVisible(False)
 
             row.addWidget(label, 0, 0)
             row.addWidget(editor, 0, 1)
             row.addWidget(unit, 0, 2)
             row.addWidget(hint, 1, 0, 1, 3)
+            row.addWidget(error_label, 2, 0, 1, 3)
             if spec.field_id in _FRICTION_MU_FIELDS:
                 ref_badge = QLabel("", field_card)
                 ref_badge.setObjectName("RefBadge")
                 ref_badge.setVisible(False)
-                row.addWidget(ref_badge, 2, 0, 1, 3)
+                row.addWidget(ref_badge, 3, 0, 1, 3)
                 self._ref_badges[spec.field_id] = ref_badge
             elif spec.field_id in _MATERIAL_E_NU_FIELDS or spec.field_id in _MATERIAL_YIELD_FIELDS:
                 source = QLabel("", field_card)
@@ -983,10 +1091,11 @@ class InterferenceFitPage(BaseChapterPage):
                 source.setWordWrap(True)
                 if spec.field_id in _MATERIAL_YIELD_FIELDS:
                     source.setText(INTERFERENCE_YIELD_SOURCE_NOTE)
-                row.addWidget(source, 2, 0, 1, 3)
+                row.addWidget(source, 3, 0, 1, 3)
                 self._source_labels[spec.field_id] = source
             form_layout.addWidget(field_card)
             self._field_cards[spec.field_id] = field_card
+            self._field_error_labels[spec.field_id] = error_label
 
         if title == "摩擦与粗糙度":
             form_layout.addWidget(self._build_roughness_warning_card(container))
@@ -1017,14 +1126,18 @@ class InterferenceFitPage(BaseChapterPage):
         self.roughness_warning_text = body
         return card
 
-    def _create_editor(self, spec: FieldSpec, parent: QWidget) -> QWidget:
-        if spec.widget_type == "choice":
+    def _create_editor(self, spec: FieldSchema, parent: QWidget) -> QWidget:
+        if spec.value_type in ("enum", "bool") or spec.widget_type == "choice":
             editor = AppComboBox(parent)
             editor.addItems(spec.options)
-            if spec.default:
-                idx = editor.findText(spec.default)
+            default_text = "" if spec.default is None else str(spec.default)
+            if default_text:
+                idx = editor.findText(default_text)
                 if idx >= 0:
                     editor.setCurrentIndex(idx)
+            editor.currentTextChanged.connect(
+                lambda _text, fid=spec.field_id: self._on_input_changed(fid)
+            )
         else:
             editor = QLineEdit(parent)
             editor.setObjectName("InputField")
@@ -1032,8 +1145,12 @@ class InterferenceFitPage(BaseChapterPage):
                 editor.setPlaceholderText(spec.placeholder)
             else:
                 editor.setPlaceholderText("请输入数值")
-            if spec.default:
-                editor.setText(spec.default)
+            default_text = "" if spec.default is None else str(spec.default)
+            if default_text:
+                editor.setText(default_text)
+            editor.textChanged.connect(
+                lambda _text, fid=spec.field_id: self._on_input_changed(fid)
+            )
 
         help_text = self._build_field_help(spec)
         editor.setToolTip(help_text)
@@ -1043,7 +1160,7 @@ class InterferenceFitPage(BaseChapterPage):
         self._field_specs[spec.field_id] = spec
         return editor
 
-    def _build_field_help(self, spec: FieldSpec) -> str:
+    def _build_field_help(self, spec: FieldSchema) -> str:
         unit_part = f"（单位：{spec.unit}）" if spec.unit and spec.unit != "-" else ""
         newbie = BEGINNER_GUIDES.get(spec.field_id, "建议先加载测试案例运行，再替换为实际数据。")
         return f"{spec.label}{unit_part}\n参数说明：{spec.hint}\n新手提示：{newbie}"
@@ -1511,27 +1628,91 @@ class InterferenceFitPage(BaseChapterPage):
         label.style().unpolish(label)
         label.style().polish(label)
 
-    def _read_widget_value(self, spec: FieldSpec) -> str:
+    def _read_widget_value(self, spec: FieldSchema) -> str:
         widget = self._field_widgets[spec.field_id]
         if spec.widget_type == "choice":
             return widget.currentText().strip()  # type: ignore[attr-defined]
         return widget.text().strip()  # type: ignore[attr-defined]
 
-    def _build_payload(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {}
-        for spec in self._field_specs.values():
-            if spec.mapping is None:
-                continue
-            raw = self._read_widget_value(spec)
-            if raw == "":
-                continue
-            try:
-                value = float(raw)
-            except ValueError as exc:
-                raise InputError(f"字段「{spec.label}」请输入数字，当前值: {raw}") from exc
-            sec, key = spec.mapping
-            payload.setdefault(sec, {})[key] = value
+    def _current_raw_values(self) -> dict[str, str]:
+        return {
+            field_id: self._read_widget_value(spec)
+            for field_id, spec in self._field_specs.items()
+        }
 
+    def _set_field_error(self, field_id: str, message: str | None) -> None:
+        widget = self._field_widgets.get(field_id)
+        label = self._field_error_labels.get(field_id)
+        invalid = bool(message)
+        if widget is not None:
+            widget.setProperty("fieldError", invalid)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+        if label is not None:
+            label.setText(message or "")
+            label.setVisible(invalid)
+
+    def _refresh_field_error(self, field_id: str, values: dict[str, str] | None = None) -> None:
+        spec = self._field_specs.get(field_id)
+        if spec is None:
+            return
+        raw_values = values if values is not None else self._current_raw_values()
+        ok, message = validate_text(spec, raw_values.get(field_id, ""), values=raw_values)
+        self._set_field_error(field_id, None if ok else message)
+
+    def _dependent_field_ids(self, field_id: str) -> list[str]:
+        dependents: list[str] = []
+        for spec in self._field_specs.values():
+            for condition in (spec.required_when, spec.visible_when):
+                if (
+                    isinstance(condition, tuple)
+                    and len(condition) >= 2
+                    and condition[1] == field_id
+                ):
+                    dependents.append(spec.field_id)
+                    break
+        return dependents
+
+    def _refresh_all_field_errors(self) -> None:
+        values = self._current_raw_values()
+        for field_id in self._field_specs:
+            self._refresh_field_error(field_id, values)
+
+    def _collect_field_errors(self, *, show: bool) -> list[str]:
+        values = self._current_raw_values()
+        invalid: list[str] = []
+        for field_id, spec in self._field_specs.items():
+            ok, message = validate_text(spec, values.get(field_id, ""), values=values)
+            if not ok:
+                invalid.append(field_id)
+            if show:
+                self._set_field_error(field_id, None if ok else message)
+        return invalid
+
+    def _focus_field(self, field_id: str) -> None:
+        chapter_index = self._field_chapter_index.get(field_id)
+        if chapter_index is not None:
+            self.set_current_chapter(chapter_index)
+        widget = self._field_widgets.get(field_id)
+        if widget is None:
+            return
+        widget.setFocus(Qt.FocusReason.OtherFocusReason)
+        parent = widget.parentWidget()
+        while parent is not None and not isinstance(parent, QScrollArea):
+            parent = parent.parentWidget()
+        if isinstance(parent, QScrollArea):
+            parent.ensureWidgetVisible(widget)
+
+    def _on_input_changed(self, field_id: str) -> None:
+        if self._suspend_live_feedback:
+            return
+        self._mark_results_dirty()
+        self._refresh_field_error(field_id)
+        for dependent_id in self._dependent_field_ids(field_id):
+            self._refresh_field_error(dependent_id)
+
+    def _build_payload(self) -> dict[str, Any]:
+        payload = build_payload(self._field_specs.values(), self._current_raw_values())
         fit_mode = self._read_widget_value(self._field_specs[self._fit_mode_field])
         if fit_mode == "偏差换算":
             derived = derive_interference_from_deviations(
@@ -1558,48 +1739,21 @@ class InterferenceFitPage(BaseChapterPage):
                 "delta_min_um": float(fit_data.get("delta_min_um", 0.0)),
                 "delta_max_um": float(fit_data.get("delta_max_um", 0.0)),
             }
-
-        assembly_mode = self._read_widget_value(self._field_specs[self._assembly_method_field]) or "manual_only"
-        assembly_payload = payload.get("assembly", {}).copy()
-        if assembly_mode == "manual_only":
-            payload["assembly"] = {"method": "manual_only"}
-        elif assembly_mode == "shrink_fit":
-            assembly_payload["method"] = "shrink_fit"
-            assembly_payload["clearance_mode"] = self._read_widget_value(
-                self._field_specs[self._assembly_clearance_mode_field]
-            )
-            assembly_payload.pop("mu_press_in", None)
-            assembly_payload.pop("mu_press_out", None)
-            payload["assembly"] = assembly_payload
-        else:
-            assembly_payload["method"] = "force_fit"
-            for key in (
-                "room_temperature_c",
-                "shaft_temperature_c",
-                "clearance_um",
-                "alpha_hub_1e6_per_c",
-                "alpha_shaft_1e6_per_c",
-                "hub_temp_limit_c",
-            ):
-                assembly_payload.pop(key, None)
-            assembly_payload.pop("clearance_mode", None)
-            payload["assembly"] = assembly_payload
-        payload["fretting"] = {
-            "mode": self._read_widget_value(self._field_specs[self._fretting_mode_field]) or "off",
-            "load_spectrum": self._read_widget_value(self._field_specs["fretting.load_spectrum"]) or "pulsating",
-            "duty_severity": self._read_widget_value(self._field_specs["fretting.duty_severity"]) or "medium",
-            "surface_condition": self._read_widget_value(self._field_specs["fretting.surface_condition"]) or "dry",
-            "importance_level": self._read_widget_value(self._field_specs["fretting.importance_level"]) or "important",
-        }
         return payload
 
     def _calculate(self) -> None:
+        invalid = self._collect_field_errors(show=True)
+        if invalid:
+            self._mark_results_dirty()
+            self._focus_field(invalid[0])
+            self.set_info(f"有 {len(invalid)} 个字段需要修正。")
+            return
         try:
             payload = self._build_payload()
             result = calculate_interference_fit(payload)
             self._render_result(result, payload)
             self.set_current_chapter(self.chapter_stack.count() - 1)
-        except InputError as exc:
+        except (InputError, ValueError) as exc:
             self._mark_results_dirty()
             QMessageBox.critical(self, "输入参数错误", str(exc))
             return
@@ -1863,115 +2017,123 @@ class InterferenceFitPage(BaseChapterPage):
         ui_state = ui_state_data if isinstance(ui_state_data, dict) else {}
         legacy_ui_repeated_mode = ui_state.get("advanced.repeated_load_mode")
 
-        self._clear()
-        # Default surface condition to "自定义" before restoring fields;
-        # will be overwritten if present in ui_state during the for-loop.
-        sc_widget = self._field_widgets.get("friction.surface_condition")
-        if isinstance(sc_widget, QComboBox):
-            sc_widget.setCurrentText("自定义")
-        legacy_repeated_mode = None
-        advanced_section = inputs.get("advanced")
-        if isinstance(advanced_section, dict):
-            legacy_repeated_mode = advanced_section.get("repeated_load_mode")
-        for spec in self._field_specs.values():
-            value: Any | None = None
-            if spec.field_id in ui_state:
-                value = ui_state[spec.field_id]
-            elif spec.field_id == "materials.shaft_material" and "materials.shaft_material" not in ui_state:
-                materials_section = inputs.get("materials")
-                if isinstance(materials_section, dict):
-                    value = self._infer_material_preset(
-                        materials_section.get("shaft_e_mpa"),
-                        materials_section.get("shaft_nu"),
-                    )
-            elif spec.field_id == "materials.hub_material" and "materials.hub_material" not in ui_state:
-                materials_section = inputs.get("materials")
-                if isinstance(materials_section, dict):
-                    value = self._infer_material_preset(
-                        materials_section.get("hub_e_mpa"),
-                        materials_section.get("hub_nu"),
-                    )
-            elif spec.field_id == "roughness.profile" and "roughness.profile" not in ui_state:
-                roughness_section = inputs.get("roughness")
-                if isinstance(roughness_section, dict):
-                    value = self._infer_roughness_profile(roughness_section.get("smoothing_factor"))
-            elif spec.field_id == "assembly.method" and "assembly.method" not in ui_state:
-                assembly_section = inputs.get("assembly")
-                if isinstance(assembly_section, dict) and "method" in assembly_section:
-                    value = assembly_section["method"]
-            elif spec.field_id == "assembly.clearance_mode" and "assembly.clearance_mode" not in ui_state:
-                assembly_section = inputs.get("assembly")
-                if isinstance(assembly_section, dict) and "clearance_mode" in assembly_section:
-                    value = assembly_section["clearance_mode"]
-            elif spec.field_id == "fit.mode" and "fit.mode" not in ui_state:
-                fit_selection_section = inputs.get("fit_selection")
-                if isinstance(fit_selection_section, dict):
-                    mode = str(fit_selection_section.get("mode", "")).strip()
-                    if mode == "preferred_fit":
-                        value = "优选配合"
-                    elif mode == "user_defined_deviations":
-                        value = "偏差换算"
-                    elif mode:
-                        value = "直接输入过盈量"
-            elif spec.field_id == "fit.preferred_fit_name" and "fit.preferred_fit_name" not in ui_state:
-                fit_selection_section = inputs.get("fit_selection")
-                if isinstance(fit_selection_section, dict) and "fit_name" in fit_selection_section:
-                    value = fit_selection_section["fit_name"]
-            elif spec.field_id.startswith("fit.") and "fit.mode" not in ui_state:
-                fit_selection_section = inputs.get("fit_selection")
-                if isinstance(fit_selection_section, dict) and str(fit_selection_section.get("mode", "")).strip() == "user_defined_deviations":
-                    deviations = fit_selection_section.get("deviations_um")
-                    if isinstance(deviations, dict):
-                        deviation_map = {
-                            "fit.shaft_upper_deviation_um": "shaft_upper_um",
-                            "fit.shaft_lower_deviation_um": "shaft_lower_um",
-                            "fit.hub_upper_deviation_um": "hub_upper_um",
-                            "fit.hub_lower_deviation_um": "hub_lower_um",
-                        }
-                        deviation_key = deviation_map.get(spec.field_id)
-                        if deviation_key and deviation_key in deviations:
-                            value = deviations[deviation_key]
-            elif spec.field_id == "fretting.mode" and "fretting.mode" not in ui_state:
-                fretting_section = inputs.get("fretting")
-                if isinstance(fretting_section, dict) and "mode" in fretting_section:
-                    value = fretting_section["mode"]
-                elif legacy_ui_repeated_mode is not None:
-                    value = legacy_ui_repeated_mode
-                elif legacy_repeated_mode is not None:
-                    value = legacy_repeated_mode
-            elif spec.field_id.startswith("fretting.") and "fretting.mode" not in ui_state:
-                fretting_section = inputs.get("fretting")
-                if isinstance(fretting_section, dict):
-                    key = spec.field_id.split(".", 1)[1]
-                    if key in fretting_section:
-                        value = fretting_section[key]
-            elif spec.mapping is not None:
-                sec, key = spec.mapping
-                section = inputs.get(sec)
-                if isinstance(section, dict) and key in section:
-                    value = section[key]
-                elif (
-                    sec == "friction"
-                    and key in {"mu_torque", "mu_axial"}
-                    and isinstance(section, dict)
-                    and "mu_static" in section
-                ):
-                    value = section["mu_static"]
-            if value is None:
-                continue
-            widget = self._field_widgets[spec.field_id]
-            text = str(value)
-            if spec.widget_type == "choice":
-                idx = widget.findText(text)  # type: ignore[attr-defined]
-                if idx >= 0:
-                    widget.setCurrentIndex(idx)  # type: ignore[attr-defined]
-            else:
-                widget.setText(text)  # type: ignore[attr-defined]
+        previous = self._suspend_live_feedback
+        self._suspend_live_feedback = True
+        try:
+            self._clear()
+            # Default surface condition to "自定义" before restoring fields;
+            # will be overwritten if present in ui_state during the for-loop.
+            sc_widget = self._field_widgets.get("friction.surface_condition")
+            if isinstance(sc_widget, QComboBox):
+                sc_widget.setCurrentText("自定义")
+            legacy_repeated_mode = None
+            advanced_section = inputs.get("advanced")
+            if isinstance(advanced_section, dict):
+                legacy_repeated_mode = advanced_section.get("repeated_load_mode")
+            for spec in self._field_specs.values():
+                value: Any | None = None
+                if spec.field_id in ui_state:
+                    value = ui_state[spec.field_id]
+                elif spec.field_id == "materials.shaft_material" and "materials.shaft_material" not in ui_state:
+                    materials_section = inputs.get("materials")
+                    if isinstance(materials_section, dict):
+                        value = self._infer_material_preset(
+                            materials_section.get("shaft_e_mpa"),
+                            materials_section.get("shaft_nu"),
+                        )
+                elif spec.field_id == "materials.hub_material" and "materials.hub_material" not in ui_state:
+                    materials_section = inputs.get("materials")
+                    if isinstance(materials_section, dict):
+                        value = self._infer_material_preset(
+                            materials_section.get("hub_e_mpa"),
+                            materials_section.get("hub_nu"),
+                        )
+                elif spec.field_id == "roughness.profile" and "roughness.profile" not in ui_state:
+                    roughness_section = inputs.get("roughness")
+                    if isinstance(roughness_section, dict):
+                        value = self._infer_roughness_profile(roughness_section.get("smoothing_factor"))
+                elif spec.field_id == "assembly.method" and "assembly.method" not in ui_state:
+                    assembly_section = inputs.get("assembly")
+                    if isinstance(assembly_section, dict) and "method" in assembly_section:
+                        value = assembly_section["method"]
+                elif spec.field_id == "assembly.clearance_mode" and "assembly.clearance_mode" not in ui_state:
+                    assembly_section = inputs.get("assembly")
+                    if isinstance(assembly_section, dict) and "clearance_mode" in assembly_section:
+                        value = assembly_section["clearance_mode"]
+                elif spec.field_id == "fit.mode" and "fit.mode" not in ui_state:
+                    fit_selection_section = inputs.get("fit_selection")
+                    if isinstance(fit_selection_section, dict):
+                        mode = str(fit_selection_section.get("mode", "")).strip()
+                        if mode == "preferred_fit":
+                            value = "优选配合"
+                        elif mode == "user_defined_deviations":
+                            value = "偏差换算"
+                        elif mode:
+                            value = "直接输入过盈量"
+                elif spec.field_id == "fit.preferred_fit_name" and "fit.preferred_fit_name" not in ui_state:
+                    fit_selection_section = inputs.get("fit_selection")
+                    if isinstance(fit_selection_section, dict) and "fit_name" in fit_selection_section:
+                        value = fit_selection_section["fit_name"]
+                elif spec.field_id.startswith("fit.") and "fit.mode" not in ui_state:
+                    fit_selection_section = inputs.get("fit_selection")
+                    if isinstance(fit_selection_section, dict) and str(fit_selection_section.get("mode", "")).strip() == "user_defined_deviations":
+                        deviations = fit_selection_section.get("deviations_um")
+                        if isinstance(deviations, dict):
+                            deviation_map = {
+                                "fit.shaft_upper_deviation_um": "shaft_upper_um",
+                                "fit.shaft_lower_deviation_um": "shaft_lower_um",
+                                "fit.hub_upper_deviation_um": "hub_upper_um",
+                                "fit.hub_lower_deviation_um": "hub_lower_um",
+                            }
+                            deviation_key = deviation_map.get(spec.field_id)
+                            if deviation_key and deviation_key in deviations:
+                                value = deviations[deviation_key]
+                elif spec.field_id == "fretting.mode" and "fretting.mode" not in ui_state:
+                    fretting_section = inputs.get("fretting")
+                    if isinstance(fretting_section, dict) and "mode" in fretting_section:
+                        value = fretting_section["mode"]
+                    elif legacy_ui_repeated_mode is not None:
+                        value = legacy_ui_repeated_mode
+                    elif legacy_repeated_mode is not None:
+                        value = legacy_repeated_mode
+                elif spec.field_id.startswith("fretting.") and "fretting.mode" not in ui_state:
+                    fretting_section = inputs.get("fretting")
+                    if isinstance(fretting_section, dict):
+                        key = spec.field_id.split(".", 1)[1]
+                        if key in fretting_section:
+                            value = fretting_section[key]
+                elif spec.mapping is not None:
+                    sec, key = spec.mapping
+                    section = inputs.get(sec)
+                    if isinstance(section, dict) and key in section:
+                        value = section[key]
+                    elif (
+                        sec == "friction"
+                        and key in {"mu_torque", "mu_axial"}
+                        and isinstance(section, dict)
+                        and "mu_static" in section
+                    ):
+                        value = section["mu_static"]
+                if value is None:
+                    continue
+                widget = self._field_widgets[spec.field_id]
+                text = str(value)
+                if spec.widget_type == "choice":
+                    idx = widget.findText(text)  # type: ignore[attr-defined]
+                    if idx >= 0:
+                        widget.setCurrentIndex(idx)  # type: ignore[attr-defined]
+                else:
+                    widget.setText(text)  # type: ignore[attr-defined]
 
-        self._sync_material_inputs()
-        self._sync_roughness_factor()
-        self._sync_fit_mode_fields()
-        self._sync_assembly_fields()
+            self._sync_material_inputs()
+            self._sync_roughness_factor()
+            self._sync_fit_mode_fields()
+            self._sync_assembly_fields()
+            self._sync_fretting_fields()
+        finally:
+            self._suspend_live_feedback = previous
+        if not previous:
+            self._refresh_all_field_errors()
         self._mark_results_dirty()
 
     def _load_sample(self, filename: str) -> None:
@@ -2033,13 +2195,20 @@ class InterferenceFitPage(BaseChapterPage):
         self.set_info(f"已加载输入条件：{in_path}")
 
     def _clear(self) -> None:
-        self._friction_ref_values.clear()
-        self._hide_all_ref_badges()
-        self._apply_defaults()
-        self._sync_friction_from_material()
-        self._last_payload = None
-        self._last_result = None
-        self._reset_result_display()
+        previous = self._suspend_live_feedback
+        self._suspend_live_feedback = True
+        try:
+            self._friction_ref_values.clear()
+            self._hide_all_ref_badges()
+            self._apply_defaults()
+            self._sync_friction_from_material()
+            self._last_payload = None
+            self._last_result = None
+            self._reset_result_display()
+        finally:
+            self._suspend_live_feedback = previous
+        if not previous:
+            self._refresh_all_field_errors()
         self.set_info("参数已重置为默认值。")
         self._mark_results_dirty()
 
@@ -2057,13 +2226,6 @@ class InterferenceFitPage(BaseChapterPage):
 
     def _mark_results_fresh(self) -> None:
         self.btn_save.setEnabled(True)
-
-    def _connect_dirty_signals(self) -> None:
-        for widget in self._field_widgets.values():
-            if isinstance(widget, QLineEdit):
-                widget.textEdited.connect(self._mark_results_dirty)
-            elif isinstance(widget, QComboBox):
-                widget.currentIndexChanged.connect(self._mark_results_dirty)
 
     def _save_report(self) -> None:
         if self._last_result is None or self._last_payload is None:

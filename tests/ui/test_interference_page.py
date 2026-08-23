@@ -1,9 +1,10 @@
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit
+from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QMessageBox
 
 from app.ui.pages.interference_fit_page import (
     INTERFERENCE_YIELD_SOURCE_NOTE,
@@ -529,6 +530,84 @@ class InterferenceFitPageTests(unittest.TestCase):
         self.assertEqual(page._field_widgets["friction.mu_torque"].text(), "0.11")
         self.assertEqual(page._field_widgets["friction.mu_axial"].text(), "0.08")
         self.assertEqual(page._field_widgets["friction.mu_assembly"].text(), "0.08")
+
+    def test_application_factor_ka_live_error_below_one(self) -> None:
+        page = InterferenceFitPage()
+        widget = page._field_widgets["loads.application_factor_ka"]
+        error = page._field_error_labels["loads.application_factor_ka"]
+        self.assertTrue(error.isHidden())
+
+        widget.setText("0.5")
+
+        self.assertFalse(error.isHidden())
+        self.assertIn(">= 1.0", error.text())
+        self.assertIn(widget.property("fieldError"), (True, "true"))
+        self.assertTrue(page.btn_calculate.isEnabled())
+
+        widget.setText("1.20")
+
+        self.assertTrue(error.isHidden())
+        self.assertIn(widget.property("fieldError"), (False, "false", None))
+
+    def test_slip_safety_min_live_error_below_one(self) -> None:
+        page = InterferenceFitPage()
+        widget = page._field_widgets["checks.slip_safety_min"]
+        error = page._field_error_labels["checks.slip_safety_min"]
+        self.assertTrue(error.isHidden())
+
+        widget.setText("0.5")
+
+        self.assertFalse(error.isHidden())
+        self.assertIn(">= 1.0", error.text())
+        self.assertIn(widget.property("fieldError"), (True, "true"))
+        self.assertTrue(page.btn_calculate.isEnabled())
+
+        widget.setText("1.20")
+
+        self.assertTrue(error.isHidden())
+        self.assertIn(widget.property("fieldError"), (False, "false", None))
+
+    def test_calculate_with_live_errors_focuses_first_field(self) -> None:
+        page = InterferenceFitPage()
+        page._field_widgets["checks.slip_safety_min"].setText("0.5")
+        page._field_widgets["loads.application_factor_ka"].setText("0.5")
+
+        with patch.object(QMessageBox, "critical", side_effect=AssertionError("no dialog")):
+            page._calculate()
+
+        self.assertIsNone(page._last_result)
+        self.assertFalse(page.btn_save.isEnabled())
+        self.assertTrue(page.btn_calculate.isEnabled())
+        self.assertFalse(page._field_error_labels["checks.slip_safety_min"].isHidden())
+        self.assertFalse(page._field_error_labels["loads.application_factor_ka"].isHidden())
+        self.assertEqual(page.chapter_list.currentRow(), 0)
+        self.assertIn("字段需要修正", page.info_label.text())
+
+    def test_preferred_fit_payload_omits_unused_deviation_fields(self) -> None:
+        page = InterferenceFitPage()
+        page._field_widgets["fit.shaft_upper_deviation_um"].setText("99")  # type: ignore[attr-defined]
+        page._field_widgets["fit.mode"].setCurrentText("优选配合")  # type: ignore[attr-defined]
+
+        payload = page._build_payload()
+        fit = payload.get("fit", {})
+
+        self.assertNotIn("shaft_upper_deviation_um", fit)
+        self.assertNotIn("preferred_fit_name", fit)
+        self.assertIn("delta_min_um", fit)
+        self.assertEqual(payload["fit_selection"]["mode"], "preferred_fit")
+
+    def test_manual_fit_payload_omits_unused_preferred_and_deviation_fields(self) -> None:
+        page = InterferenceFitPage()
+        page._field_widgets["fit.mode"].setCurrentText("直接输入过盈量")  # type: ignore[attr-defined]
+        page._field_widgets["fit.shaft_upper_deviation_um"].setText("99")  # type: ignore[attr-defined]
+
+        payload = page._build_payload()
+        fit = payload.get("fit", {})
+
+        self.assertNotIn("shaft_upper_deviation_um", fit)
+        self.assertNotIn("preferred_fit_name", fit)
+        self.assertEqual(fit["delta_min_um"], 20.0)
+        self.assertEqual(payload["fit_selection"]["mode"], "manual_interference")
 
 
 if __name__ == "__main__":
