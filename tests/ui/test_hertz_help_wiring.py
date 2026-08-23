@@ -137,6 +137,21 @@ def test_no_orphan_hertz_term_files():
     )
 
 
+def test_geometry_help_declares_outer_contact_scope():
+    """帮助消费者必须声明首版只支持外接触，避免继续把内接触折算写成产品功能。"""
+    geometry = (HELP_ROOT / "modules" / "hertz" / "_section_geometry.md").read_text(
+        encoding="utf-8"
+    )
+    overview = (HELP_ROOT / "modules" / "hertz" / "hertz_contact_overview.md").read_text(
+        encoding="utf-8"
+    )
+    radius = (HELP_ROOT / "terms" / "hertz_curvature_radius.md").read_text(encoding="utf-8")
+    for text in (geometry, overview, radius):
+        assert "外接触" in text
+        assert "内接触" in text
+        assert "不在本版范围" in text
+
+
 def test_page_renders_with_help_buttons(qapp):
     """实例化 hertz 页面并确认每个带 help_ref 的输入章节都渲染了至少一个 HelpButton。"""
     page = HertzContactPage()

@@ -33,7 +33,7 @@
 - **线接触**：p0 与 √q、√E' 成正比，与 √R' 成反比 → 载荷翻倍 p0 增 41%、E' 翻倍 p0 增 41%、R' 翻倍 p0 降 29%
 - **点接触**：p0 与 F^(1/3)、E'^(2/3) 成正比，与 R'^(2/3) 成反比 → 载荷翻倍 p0 增 26%、E' 翻倍 p0 增 59%、R' 翻倍 p0 降 37%
 
-**本工具实现**：`core/hertz/calculator.py:138-148` 计算 p0 并写入 `result["contact"]["p0_mpa"]`。后续 `safety_factor = allowable_p0 / p0`，`checks.contact_stress_ok = (p0 <= allowable_p0)`。
+**本工具实现**：`core/hertz/calculator.py:144-154` 计算 p0 并写入 `result["contact"]["p0_mpa"]`。后续 `safety_factor = allowable_p0 / p0`，`checks.contact_stress_ok = (p0 <= allowable_p0)`。
 
 **典型值**（工程经验 p0 允许范围）：
 

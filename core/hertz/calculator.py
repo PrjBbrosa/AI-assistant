@@ -19,6 +19,11 @@ class InputError(ValueError):
     """Raised when input data is incomplete or physically invalid."""
 
 
+OUTER_CONTACT_SCOPE_NOTE = (
+    "当前仅支持外接触（曲率半径 ≥ 0，两正曲率相加）；内接触/负曲率不在本版范围。"
+)
+
+
 def _require(section: Dict[str, Any], key: str, section_name: str) -> Any:
     if key not in section:
         raise InputError(f"缺少必填字段: {section_name}.{key}")
@@ -89,8 +94,9 @@ def calculate_hertz_contact(data: Dict[str, Any]) -> Dict[str, Any]:
             bool — True when ``p0_mpa <= allowable_p0_mpa``.
 
         ``warnings``
-            list of Chinese warning strings (edge effect, low SF, clamped
-            options).
+            list of Chinese warning strings. Always includes the outer-contact
+            model-scope note; may also include edge effect, low SF, and
+            clamped options.
 
         ``options``
             ``curve_points`` and ``curve_force_scale`` **effective** values
@@ -180,7 +186,7 @@ def calculate_hertz_contact(data: Dict[str, Any]) -> Dict[str, Any]:
             p_i = (3.0 * f_i) / (2.0 * math.pi * a_i * a_i)
         pressure_curve.append(p_i)
 
-    warnings: list[str] = []
+    warnings: list[str] = [OUTER_CONTACT_SCOPE_NOTE]
     if mode == "line" and length_mm < 5.0:
         warnings.append("接触长度较短，建议核查边缘效应和三维修正。")
     if safety_factor < 1.2:

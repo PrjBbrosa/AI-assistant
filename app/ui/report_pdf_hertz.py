@@ -9,6 +9,7 @@ from xml.sax.saxutils import escape
 
 from reportlab.platypus import KeepTogether, Paragraph, Spacer
 
+from core.hertz.calculator import OUTER_CONTACT_SCOPE_NOTE
 from app.ui.report_pdf_common import (
     _build_styles,
     _check_pills,
@@ -196,6 +197,7 @@ def generate_hertz_report(out_path: Path, payload: dict, result: dict) -> None:
 
     elems.append(_section_title(styles, "模型边界说明"))
     boundary = [
+        OUTER_CONTACT_SCOPE_NOTE,
         "当前基于标准赫兹弹性接触理论。",
         "未包含弹塑性、残余应力、表面粗糙度、润滑状态和边缘效应修正。",
         "冲击或动载工况需先折算为峰值法向载荷；疲劳寿命需另行校核。",

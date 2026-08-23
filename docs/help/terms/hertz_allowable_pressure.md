@@ -49,10 +49,10 @@ p0 >  [p0] →  FAIL
 
 **本工具实现**：
 
-- `core/hertz/calculator.py:120-123` 用 `_positive` 校验必须 > 0（未填入则走默认 1500）
-- `calculator.py:150` 计算安全系数 `safety_factor = allowable_p0 / p0`
-- `calculator.py:151` 布尔判据 `pass_contact = p0 <= allowable_p0`
-- `calculator.py:175-176` 安全系数 < 1.2 时追加 warning："接触应力安全系数偏低..."
+- `core/hertz/calculator.py:126-129` 用 `_positive` 校验必须 > 0（未填入则走默认 1500）
+- `calculator.py:156` 计算安全系数 `safety_factor = allowable_p0 / p0`
+- `calculator.py:157` 布尔判据 `pass_contact = p0 <= allowable_p0`
+- `calculator.py:181-182` 安全系数 < 1.2 时追加 warning："接触应力安全系数偏低..."
 
 **常见坑**：
 

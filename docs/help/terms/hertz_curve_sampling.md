@@ -11,7 +11,7 @@
 - **采样点数 `curve_points`**：在 `[0, F·scale]` 区间采样多少个等距点；有效范围 11–201，默认 41
 - **载荷上限倍率 `curve_force_scale`**：曲线终点载荷相对设计载荷 F 的比值；有效范围 1.05–2.0，默认 1.30
 
-**本工具实现** —— 钳位行为（`core/hertz/calculator.py:153-156`、`178-185`）：
+**本工具实现** —— 钳位行为（`core/hertz/calculator.py:159-162`、`184-191`）：
 
 ```python
 _curve_points_raw = int(float(options.get("curve_points", 41)))
@@ -29,7 +29,7 @@ force_scale = max(1.05, min(2.0, _force_scale_raw))
 
 被钳位的生效值回显在 `result["options"]` 中，UI / 报告据此展示曲线。
 
-**采样节点生成**（`calculator.py:159-162`）：
+**采样节点生成**（`calculator.py:165-168`）：
 
 ```python
 for i in range(curve_points):

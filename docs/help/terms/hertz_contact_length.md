@@ -21,7 +21,7 @@ p0 = 2·q / (π·b)                [q: N/mm, b: mm → p0: MPa]
 
 **本工具实现**：
 
-- 代码 `core/hertz/calculator.py:126-133`：
+- 代码 `core/hertz/calculator.py:132-139`：
   ```python
   if mode == "line":
       length_mm = _positive(float(geometry.get("length_mm", 10.0)), "geometry.length_mm")
@@ -31,7 +31,7 @@ p0 = 2·q / (π·b)                [q: N/mm, b: mm → p0: MPa]
 - 线接触时 L 必须 > 0，否则抛 `InputError`
 - 点接触时 L 完全忽略；UI 把该字段变灰只读
 
-**Warning 机制**：`calculator.py:173-174` 在线接触且 L < 5 mm 时追加 warning：
+**Warning 机制**：`calculator.py:179-180` 在线接触且 L < 5 mm 时追加 warning：
 
 ```
 "接触长度较短，建议核查边缘效应和三维修正。"

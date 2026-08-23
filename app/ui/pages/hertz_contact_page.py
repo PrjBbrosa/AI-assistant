@@ -41,7 +41,11 @@ from app.ui.report_export import ReportExportError
 from app.ui.theme import mark_input_field_label_wrap, mark_input_field_surface
 from app.ui.widgets.help_button import HelpButton
 from app.ui.widgets.hertz_input_diagram import HertzInputDiagramWidget
-from core.hertz.calculator import InputError, calculate_hertz_contact
+from core.hertz.calculator import (
+    OUTER_CONTACT_SCOPE_NOTE,
+    InputError,
+    calculate_hertz_contact,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES_DIR = PROJECT_ROOT / "examples"
@@ -116,14 +120,14 @@ CHAPTERS: list[dict[str, Any]] = [
     {
         "id": "geometry",
         "title": "接触模型与几何",
-        "subtitle": "选择线接触 / 点接触并填写两接触体的曲率半径：模式决定使用哪套赫兹公式，R1/R2 决定等效曲率 R'。",
+        "subtitle": "选择线接触 / 点接触并填写两接触体的曲率半径：本版仅支持外接触（曲率半径 ≥ 0，两正曲率相加）；内接触/负曲率不在本版范围。",
         "help_ref": "modules/hertz/_section_geometry",
         "fields": [
             FieldSpec(
                 "geometry.contact_mode",
                 "接触类型",
                 "-",
-                "线接触：圆柱-圆柱/圆柱-平面；点接触：球-球/球-平面。",
+                "外接触线接触：圆柱-圆柱/圆柱-平面；外接触点接触：球-球/球-平面。内接触不在本版范围。",
                 widget_type="choice",
                 options=CONTACT_MODE_OPTIONS,
                 default="线接触",
@@ -133,7 +137,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "geometry.r1_mm",
                 "曲率半径 R1",
                 "mm",
-                "第 1 接触体曲率半径。",
+                "第 1 接触体曲率半径。凸面填正值，平面填 0；负曲率/内接触不在本版范围。",
                 mapping=("geometry", "r1_mm"),
                 default="30.0",
                 placeholder="例如 30",
@@ -143,7 +147,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "geometry.r2_mm",
                 "曲率半径 R2",
                 "mm",
-                "第 2 接触体曲率半径；平面可填 0。",
+                "第 2 接触体曲率半径。凸面填正值，平面可填 0；负曲率/内接触不在本版范围。",
                 mapping=("geometry", "r2_mm"),
                 default="0.0",
                 placeholder="平面填 0",
@@ -248,7 +252,7 @@ CHECK_LABELS = {
 
 BEGINNER_GUIDES: dict[str, str] = {
     "geometry.contact_mode": "先选接触类型，再填对应几何参数。",
-    "geometry.r2_mm": "若为平面接触可输入 0，程序按无穷大半径处理。",
+    "geometry.r2_mm": "若为平面接触可输入 0，程序按无穷大半径处理。本版只接受 ≥ 0 的外接触半径。",
     "geometry.length_mm": "仅在线接触时用于把 F 转换为单位长度载荷 F'。",
     "checks.allowable_p0_mpa": "可按材料/热处理接触疲劳许用值设置。",
     "loads.normal_force_n": "取峰值载荷；冲击工况建议乘载荷系数后输入。",
@@ -261,7 +265,7 @@ class HertzContactPage(BaseChapterPage):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(
             title="赫兹应力 · 接触校核",
-            subtitle="线接触/点接触的赫兹最大接触应力计算。",
+            subtitle="线接触/点接触的赫兹最大接触应力计算。当前仅支持外接触（曲率半径 ≥ 0，两正曲率相加）；内接触/负曲率不在本版范围。",
             parent=parent,
         )
         self._last_payload: dict[str, Any] | None = None
@@ -503,7 +507,11 @@ class HertzContactPage(BaseChapterPage):
 
         title = QLabel("校核结果与消息", container)
         title.setObjectName("SectionTitle")
-        hint = QLabel("输出接触斑尺寸、最大接触应力和安全系数。", container)
+        hint = QLabel(
+            "输出接触斑尺寸、最大接触应力和安全系数。"
+            + OUTER_CONTACT_SCOPE_NOTE,
+            container,
+        )
         hint.setObjectName("SectionHint")
         hint.setWordWrap(True)
         content.addWidget(title)
@@ -975,6 +983,7 @@ class HertzContactPage(BaseChapterPage):
             "赫兹接触应力校核报告（本地版）",
             f"生成时间: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             f"接触模型: {'线接触' if result['mode'] == 'line' else '点接触'}",
+            f"模型范围: {OUTER_CONTACT_SCOPE_NOTE}",
             "",
             f"总体结论: {'通过' if result['overall_pass'] else '不通过'}",
             "",

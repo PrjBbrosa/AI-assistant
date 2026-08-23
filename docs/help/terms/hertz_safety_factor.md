@@ -10,7 +10,7 @@ S = [p0] / p0            [MPa / MPa = 无量纲]
 
 - **S ≥ 1**：PASS，`contact_stress_ok = True`
 - **S < 1**：FAIL，实际应力超过许用值
-- **S < 1.2**：工具追加 warning："接触应力安全系数偏低，建议提高材料或优化接触半径/载荷。"（`core/hertz/calculator.py:175-176`）
+- **S < 1.2**：工具追加 warning："接触应力安全系数偏低，建议提高材料或优化接触半径/载荷。"（`core/hertz/calculator.py:181-182`）
 
 这里的 S **不等于** 线性校核里的"安全系数"概念。因为 p0 与 F 的关系不是线性：
 - 线接触 p0 ∝ √F → 想让 p0 降低 20%，需要 F 降 36%
@@ -37,7 +37,7 @@ S = [p0] / p0            [MPa / MPa = 无量纲]
 **本工具实现**：
 
 ```python
-# core/hertz/calculator.py:150
+# core/hertz/calculator.py:156
 safety_factor = allowable_p0 / p0 if p0 > 0 else math.inf
 pass_contact = p0 <= allowable_p0
 ```

@@ -15,9 +15,10 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLabel
 
 from app.ui.pages.hertz_contact_page import HertzContactPage
+from core.hertz.calculator import OUTER_CONTACT_SCOPE_NOTE
 
 
 class HertzPageSmokeTests(unittest.TestCase):
@@ -150,6 +151,25 @@ class HertzPageSmokeTests(unittest.TestCase):
         self.assertTrue(
             any(warning_text in line for line in lines),
             msg=f"Expected warning '{warning_text}' in report lines, got:\n{lines}",
+        )
+
+    def test_outer_contact_scope_visible_on_page_and_report(self) -> None:
+        page = self._make_page()
+        labels = [widget.text() for widget in page.findChildren(QLabel)]
+        self.assertTrue(
+            any(OUTER_CONTACT_SCOPE_NOTE in text for text in labels),
+            msg="Expected outer-contact scope note on Hertz page labels",
+        )
+
+        page._calculate()
+        self.__class__.app.processEvents()
+        self.assertIsNotNone(page._last_result)
+        self.assertIn(OUTER_CONTACT_SCOPE_NOTE, page._last_result["warnings"])
+        self.assertIn(OUTER_CONTACT_SCOPE_NOTE, page.message_box.toPlainText())
+        lines = page._build_report_lines()
+        self.assertTrue(
+            any(OUTER_CONTACT_SCOPE_NOTE in line for line in lines),
+            msg=f"Expected outer-contact scope note in report lines, got:\n{lines}",
         )
 
 

@@ -1,6 +1,10 @@
 import unittest
 
-from core.hertz.calculator import InputError, calculate_hertz_contact
+from core.hertz.calculator import (
+    OUTER_CONTACT_SCOPE_NOTE,
+    InputError,
+    calculate_hertz_contact,
+)
 
 
 class HertzContactCalculatorTests(unittest.TestCase):
@@ -156,6 +160,18 @@ def test_safety_factor_value():
     allowable = result["check"]["allowable_p0_mpa"]
     sf = result["check"]["safety_factor"]
     assert sf == pytest.approx(allowable / p0, rel=1e-3)
+
+
+def test_outer_contact_scope_warning_always_present():
+    result = calculate_hertz_contact(_base_line_input())
+    assert OUTER_CONTACT_SCOPE_NOTE in result["warnings"]
+
+
+def test_negative_radius_is_rejected_inner_contact_out_of_scope():
+    data = _base_line_input()
+    data["geometry"]["r2_mm"] = -40.0
+    with pytest.raises(InputError):
+        calculate_hertz_contact(data)
 
 
 def test_warning_short_length():
