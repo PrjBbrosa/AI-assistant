@@ -22,7 +22,10 @@ class PlaceholderPage(QWidget):
 
         title = QLabel(module_name, card)
         title.setObjectName("SectionTitle")
-        hint = QLabel("模块框架已预留，当前版本未实现详细计算流程。", card)
+        hint = QLabel(
+            "当前版本尚未实现该模块。此入口仅为占位，不能查询材料、标准或进行计算。",
+            card,
+        )
         hint.setObjectName("SectionHint")
         hint.setWordWrap(True)
 

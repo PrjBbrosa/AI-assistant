@@ -8,14 +8,19 @@ from PySide6.QtWidgets import QToolButton, QWidget
 
 
 class HelpButton(QToolButton):
-    """16x16 的 '?' 按钮，objectName='HelpButton' 由 theme.py 提供样式。"""
+    """32x32 hit-area '?' 按钮；字形约 14px。objectName='HelpButton' 由 theme.py 提供样式。"""
+
+    _HIT_SIZE = 32
 
     def __init__(self, help_ref: str, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setObjectName("HelpButton")
         self.setText("?")
+        self.setFixedSize(self._HIT_SIZE, self._HIT_SIZE)
         self.setCursor(Qt.PointingHandCursor)
         self.setToolTip("点击查看帮助")
+        self.setAccessibleName("帮助")
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._help_ref = help_ref
         self.clicked.connect(self._on_click)
 

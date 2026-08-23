@@ -65,7 +65,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Local Engineering Assistant")
         self.resize(1400, 860)
-        self.setMinimumSize(900, 620)
+        self.setMinimumSize(1180, 720)
 
         root = QWidget(self)
         root_layout = QHBoxLayout(root)
@@ -99,7 +99,7 @@ class MainWindow(QMainWindow):
             ("蜗轮蜗杆设计", self._make_worm_gear_page),
             ("赫兹应力", self._make_hertz_contact_page),
             ("缓冲块吸能仿真", self._make_buffer_energy_page),
-            ("材料与标准库", self._make_placeholder_page),
+            ("材料与标准库（即将推出）", self._make_placeholder_page),
         ]
 
         # _pages[i] is None until the page has been constructed
@@ -209,7 +209,7 @@ class MainWindow(QMainWindow):
 
     def _make_placeholder_page(self) -> QWidget:
         from app.ui.pages.placeholder_page import PlaceholderPage
-        return PlaceholderPage("材料与标准库", self)
+        return PlaceholderPage("材料与标准库（即将推出）", self)
 
     # ------------------------------------------------------------------
     # Sidebar

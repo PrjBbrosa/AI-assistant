@@ -764,13 +764,14 @@ def apply_theme(app: QApplication) -> None:
         QToolButton#HelpButton {
             background: #E3E3DE;
             color: #5F5E5B;
-            border: none;
-            border-radius: 8px;
+            border: 1px solid transparent;
+            border-radius: 16px;
             font-weight: bold;
-            min-width: 16px;
-            max-width: 16px;
-            min-height: 16px;
-            max-height: 16px;
+            font-size: 14px;
+            min-width: 32px;
+            max-width: 32px;
+            min-height: 32px;
+            max-height: 32px;
             padding: 0;
             margin-left: 4px;
         }

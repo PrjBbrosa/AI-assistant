@@ -53,6 +53,23 @@ def test_help_button_objectname(app):
     assert btn.help_ref == "terms/_sample"
 
 
+def test_help_button_hit_area_at_least_28px(app):
+    from app.ui.theme import apply_theme
+
+    apply_theme(app)
+    btn = HelpButton("terms/_sample")
+    btn.show()
+    app.processEvents()
+    hint = btn.sizeHint()
+    assert hint.width() >= 28
+    assert hint.height() >= 28
+    assert btn.width() >= 28
+    assert btn.height() >= 28
+    assert btn.accessibleName() == "帮助"
+    assert btn.focusPolicy() == Qt.FocusPolicy.StrongFocus
+    btn.close()
+
+
 def test_show_for_with_destroyed_anchor_does_not_crash(app, tmp_path, monkeypatch):
     """If the anchor widget's C++ object has been destroyed, show_for must
     degrade to cursor-position fallback instead of raising RuntimeError.
