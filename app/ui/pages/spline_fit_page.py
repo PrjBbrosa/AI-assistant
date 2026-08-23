@@ -37,6 +37,7 @@ from app.ui.input_condition_store import (
     validate_snapshot,
     write_input_conditions,
 )
+from app.ui.model_scope import SPLINE_SCOPE, make_scope_banner, scope_report_lines
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, write_text_report
 from app.ui.theme import mark_input_field_label_wrap, mark_input_field_surface
@@ -585,6 +586,8 @@ class SplineFitPage(BaseChapterPage):
         return card
 
     def _build_result_chapter(self, layout: QVBoxLayout) -> None:
+        self.model_scope_banner = make_scope_banner(layout.parentWidget(), SPLINE_SCOPE)
+        layout.addWidget(self.model_scope_banner)
         disclaimer = QLabel(SPLINE_SCOPE_DISCLAIMER)
         disclaimer.setObjectName("SectionHint")
         disclaimer.setWordWrap(True)
@@ -1031,10 +1034,18 @@ class SplineFitPage(BaseChapterPage):
             self.curve_widget.setVisible(False)
 
         if result["overall_pass"]:
-            status_text = "PRECHECK PASS" if result.get("overall_verdict_level") == "simplified_precheck" else "ALL PASS"
+            status_text = (
+                "预校核通过"
+                if result.get("overall_verdict_level") == "simplified_precheck"
+                else "通过"
+            )
             self.set_overall_status(status_text, "pass")
         else:
-            status_text = "PRECHECK FAIL" if result.get("overall_verdict_level") == "simplified_precheck" else "FAIL"
+            status_text = (
+                "预校核不通过"
+                if result.get("overall_verdict_level") == "simplified_precheck"
+                else "不通过"
+            )
             self.set_overall_status(status_text, "fail")
 
         msgs = result.get("messages", [])
@@ -1082,8 +1093,8 @@ class SplineFitPage(BaseChapterPage):
             "花键连接校核报告",
             f"生成时间: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             f"模式: {result.get('mode', 'spline_only')}",
-            f"总体结论: {'通过' if result['overall_pass'] else '不通过'}",
-            f"结果级别: {result.get('overall_verdict_level', '')}",
+            f"总体结论: {'预校核通过' if result['overall_pass'] else '预校核不通过'}",
+            *scope_report_lines(SPLINE_SCOPE),
             "",
             "=== 场景 A: 花键齿面承压 ===",
             f"参考直径 d_B = {a['geometry']['reference_diameter_mm']:.2f} mm",

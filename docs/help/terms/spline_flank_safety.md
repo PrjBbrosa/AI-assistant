@@ -24,7 +24,7 @@ flank_ok     = (flank_safety >= flank_safety_min)
 - 许用 p_zul 按"固定 / 脉动 × 调质 / 渗碳"四档查表，不包含硬度具体数值、表面处理细节、温度修正。
 - 不包含齿根弯曲、剪切、胀裂、寿命 / 磨损（见 `calculator.py:102` 的 `not_covered_checks` 列表）。
 
-因此这个 `flank_safety` 不是"DIN 6892 合规的 S_H"，只是"在简化预校核口径下的保守判据"。UI 显示 "PRECHECK PASS"、`overall_verdict_level = simplified_precheck` 就是这个意思。
+因此这个 `flank_safety` 不是"DIN 6892 合规的 S_H"，只是"在简化预校核口径下的保守判据"。UI 显示「预校核通过」、`overall_verdict_level = simplified_precheck` 就是这个意思。
 
 **典型值 / 场景**：
 

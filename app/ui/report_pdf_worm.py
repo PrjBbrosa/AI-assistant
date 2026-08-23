@@ -21,6 +21,7 @@ from reportlab.platypus import (
     Spacer,
 )
 
+from app.ui.model_scope import WORM_SCOPE, scope_kv_rows
 from app.ui.report_pdf_common import (
     C_PRIMARY,
     _build_styles,
@@ -81,13 +82,16 @@ def generate_worm_report(
 
     # 2. Verdict block
     if overall is not None:
-        subtitle = lc.get("status", "")
+        subtitle = f"模型等级: {WORM_SCOPE.model_level} | {lc.get('status', '')}"
         elems.append(_verdict_block(styles, overall, subtitle))
     else:
         # Geometry-only mode: show primary accent, no pass/fail
-        subtitle = "几何与性能设计"
+        subtitle = f"模型等级: {WORM_SCOPE.model_level} | 几何与性能设计"
         elems.append(_rstep_card(styles, subtitle, [], passed=None))
     elems.append(Spacer(1, 8))
+    elems.append(_section_title(styles, "模型范围"))
+    elems.append(_kv_table(styles, scope_kv_rows(WORM_SCOPE), 0.28))
+    elems.append(Spacer(1, 10))
 
     # 3. Metric cards
     metrics = [

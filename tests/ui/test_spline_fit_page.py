@@ -2,6 +2,7 @@ import pytest
 from PySide6.QtWidgets import QApplication, QLabel
 
 from app.ui.main_window import MainWindow
+from app.ui.model_scope import MODEL_LEVEL_PRECHECK, SPLINE_SCOPE
 from app.ui.pages.spline_fit_page import SMOOTH_FIT_FIELD_IDS, SplineFitPage
 
 
@@ -258,3 +259,22 @@ class TestSplineFitPage:
         assert payload["mode"] == "combined"
         assert "smooth_fit" in payload
         assert "smooth_materials" in payload
+
+    def test_result_header_and_report_show_model_level(self, app):
+        page = SplineFitPage()
+        banner = page.findChild(QLabel, "ModelScopeBanner")
+        assert banner is not None
+        assert MODEL_LEVEL_PRECHECK in banner.text()
+        assert "覆盖工况" in banner.text()
+        assert "未覆盖" in banner.text()
+
+        page._on_calculate()
+        app.processEvents()
+        assert page.overall_badge.text() in ("预校核通过", "预校核不通过")
+        lines = page._build_report_lines()
+        joined = "\n".join(lines)
+        assert f"模型等级: {SPLINE_SCOPE.model_level}" in joined
+        assert "覆盖工况:" in joined
+        assert "未覆盖:" in joined
+        assert "PRECHECK PASS" not in joined
+        assert "PRECHECK FAIL" not in joined

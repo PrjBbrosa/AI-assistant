@@ -45,7 +45,7 @@
 - 近似模式：在仅有模数 m 与齿数 z 时，**使用 DIN 5480-2:2015 catalog 最小 h_w/m = 0.5 作保守下限** → `d_a1 = d - 0.5·m`、`d_a2 = d - 1.5·m`、`d_f1 = d - 2.0·m`。不同规格的实际 h_w/m 在 0.5~1.08 范围内波动，近似偏差方向始终让 p_flank 偏**高**（保守），避免假 PASS。
 - 联合模式：花键 + 光滑过盈段同时校核；光滑段走 DIN 7190 Lamé 公式，设计扭矩已在入口预乘 K_A，委托调用里传 `ka = 1.0` 避免重复放大（见 `calculator.py:174` 注释）。
 - 扭矩容量 `T_cap` 与扭矩视角安全系数 `torque_capacity_sf = T_cap / T_design`。**`torque_capacity_sf` 与齿面 `flank_safety` 数学等价**（都是 `p_zul / p_flank`），只是换算视角，不是两个独立判据。
-- 结果级别 `overall_verdict_level = "simplified_precheck"`：UI 显示"PRECHECK PASS/FAIL"，提示用户这只是预校核。
+- 结果级别 `overall_verdict_level = "simplified_precheck"`：UI 显示「预校核通过 / 预校核不通过」，提示用户这只是预校核。
 
 **未实现**（显式列为 `not_covered_checks` 返回给 UI）：
 - 齿根弯曲强度

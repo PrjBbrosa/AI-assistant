@@ -28,7 +28,7 @@
 | `仅花键` | 执行 | **跳过** | `simplified_precheck` |
 | `联合` | 执行 | 执行 | `simplified_precheck` |
 
-**不论哪种模式，`overall_verdict_level` 始终为 `simplified_precheck`**。UI 显示 "PRECHECK PASS / FAIL"，意在提示用户：场景 A 只是"齿面平均承压"的预校核，不包含齿根弯曲、剪切、胀裂、磨损、寿命、完整公差链；场景 B 虽然走 DIN 7190 Lamé 解析解，但也只校核防滑与屈服，不替代完整的 DIN 6892 花键连接承载能力评估。
+**不论哪种模式，`overall_verdict_level` 始终为 `simplified_precheck`**。UI 显示「预校核通过 / 预校核不通过」，意在提示用户：场景 A 只是"齿面平均承压"的预校核，不包含齿根弯曲、剪切、胀裂、磨损、寿命、完整公差链；场景 B 虽然走 DIN 7190 Lamé 解析解，但也只校核防滑与屈服，不替代完整的 DIN 6892 花键连接承载能力评估。
 
 ## 常见坑
 

@@ -9,7 +9,11 @@ from xml.sax.saxutils import escape
 
 from reportlab.platypus import KeepTogether, Paragraph, Spacer
 
-from core.hertz.calculator import OUTER_CONTACT_SCOPE_NOTE
+from app.ui.model_scope import (
+    HERTZ_ALLOWABLE_SOURCE_NOTE,
+    HERTZ_SCOPE,
+    scope_kv_rows,
+)
 from app.ui.report_pdf_common import (
     _build_styles,
     _check_pills,
@@ -76,6 +80,7 @@ def _build_input_rows(payload: dict, result: dict) -> list[tuple[str, str]]:
     _append_row(rows, "接触体 2 泊松比 nu2", materials.get("nu2"), 3)
     _append_row(rows, "法向载荷 F", loads.get("normal_force_n"), 1, "N")
     _append_row(rows, "允许最大接触应力 [p0]", checks.get("allowable_p0_mpa"), 1, "MPa")
+    rows.append(("许用接触应力来源", HERTZ_ALLOWABLE_SOURCE_NOTE))
     _append_row(rows, "曲线采样点数", options.get("curve_points"), 0)
     _append_row(rows, "曲线载荷上限倍率", options.get("curve_force_scale"), 2)
     return rows
@@ -103,6 +108,7 @@ def _build_contact_rows(result: dict) -> list[tuple[str, str]]:
     _append_row(rows, "接触面积 A", contact.get("contact_area_mm2"), 5, "mm^2")
     _append_row(rows, "法向载荷 F", contact.get("normal_force_n"), 1, "N")
     _append_row(rows, "许用接触应力 [p0]", check.get("allowable_p0_mpa"), 2, "MPa")
+    rows.append(("许用接触应力来源", HERTZ_ALLOWABLE_SOURCE_NOTE))
     _append_row(rows, "安全系数 S", check.get("safety_factor"), 3)
     return rows
 
@@ -136,7 +142,13 @@ def generate_hertz_report(out_path: Path, payload: dict, result: dict) -> None:
 
     elems.append(_header_bar(styles, "赫兹接触应力校核报告", date_str))
     elems.append(Spacer(1, 8))
-    elems.append(_verdict_block(styles, overall, f"模型: {_mode_text(mode)}"))
+    elems.append(
+        _verdict_block(
+            styles,
+            overall,
+            f"模型等级: {HERTZ_SCOPE.model_level} | 模型: {_mode_text(mode)}",
+        )
+    )
     elems.append(Spacer(1, 8))
 
     patch_label = "b (mm)" if mode == "line" else "a (mm)"
@@ -195,14 +207,9 @@ def generate_hertz_report(out_path: Path, payload: dict, result: dict) -> None:
         elems.append(_paragraph(styles, f"- {rec}"))
     elems.append(Spacer(1, 8))
 
-    elems.append(_section_title(styles, "模型边界说明"))
-    boundary = [
-        OUTER_CONTACT_SCOPE_NOTE,
-        "当前基于标准赫兹弹性接触理论。",
-        "未包含弹塑性、残余应力、表面粗糙度、润滑状态和边缘效应修正。",
-        "冲击或动载工况需先折算为峰值法向载荷；疲劳寿命需另行校核。",
-    ]
-    for note in boundary:
-        elems.append(_paragraph(styles, f"- {note}"))
+    elems.append(_section_title(styles, "模型范围"))
+    elems.append(_kv_table(styles, scope_kv_rows(HERTZ_SCOPE), 0.28))
+    elems.append(Spacer(1, 4))
+    elems.append(_paragraph(styles, HERTZ_ALLOWABLE_SOURCE_NOTE))
 
     build_pdf(out_path, elems, "赫兹接触应力校核")

@@ -44,6 +44,7 @@ from app.ui.input_condition_store import (
     validate_snapshot,
     write_input_conditions,
 )
+from app.ui.model_scope import WORM_SCOPE, make_scope_banner, scope_report_lines
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, write_text_report
 from app.ui.theme import mark_input_field_surface
@@ -89,7 +90,7 @@ BASIC_SETTINGS_FIELDS = [
     FieldSpec("meta.note", "项目备注", "-", "当前计算任务简述。", widget_type="text", default="Method B 最小子集"),
     FieldSpec(
         "load_capacity.enabled",
-        "启用 Load Capacity 页",
+        "启用负载能力 (Load Capacity) 页",
         "-",
         "是否显示负载能力骨架状态。",
         widget_type="choice",
@@ -613,15 +614,16 @@ class WormGearPage(BaseChapterPage):
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(10)
 
-        title = QLabel("Load Capacity", page)
+        title = QLabel("负载能力 (Load Capacity)", page)
         title.setObjectName("SectionTitle")
-        hint = QLabel("齿面/齿根负载能力校核的参数：许用应力、动载系数 Kv、载荷分配系数 KHα/KHβ 以及目标安全系数（基于 DIN 3996 Method B / ISO 14521）。对齿面和齿根分别算出 SH/SF 后与目标值对比判断通过/不通过。", page)
+        hint = QLabel("齿面/齿根负载能力校核的参数：许用应力、动载系数 Kv、载荷分配系数 KHα/KHβ 以及目标安全系数（基于 DIN 3996 Method B 风格最小子集）。对齿面和齿根分别算出 SH/SF 后与目标值对比判断通过/不通过。", page)
         hint.setObjectName("SectionHint")
         hint.setWordWrap(True)
         self.load_capacity_status = QLabel("DIN 3996 校核尚未开始", page)
         self.load_capacity_status.setObjectName("WaitBadge")
+        self.load_capacity_scope_banner = make_scope_banner(page, WORM_SCOPE)
         self.load_capacity_note = QLabel(
-            "当前版本输出 Method B 最小子集结果，不替代完整标准实现；所有简化假设都会在结果区显式说明。",
+            "当前版本输出 Method B 风格最小子集结果，不替代完整 DIN 3996 / ISO/TS 14521；所有简化假设都会在结果区显式说明。",
             page,
         )
         self.load_capacity_note.setObjectName("SectionHint")
@@ -629,7 +631,7 @@ class WormGearPage(BaseChapterPage):
         self.load_capacity_metrics = QPlainTextEdit(page)
         self.load_capacity_metrics.setReadOnly(True)
         self.load_capacity_metrics.setMinimumHeight(240)
-        self.load_capacity_metrics.setPlainText("尚无 Load Capacity 结果。")
+        self.load_capacity_metrics.setPlainText("尚无负载能力结果。")
 
         self._check_badges: dict[str, tuple[QLabel, QLabel]] = {}
         badges_card = QFrame(page)
@@ -673,6 +675,7 @@ class WormGearPage(BaseChapterPage):
         layout.addWidget(title)
         layout.addWidget(hint)
         layout.addWidget(self.load_capacity_status, 0, Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self.load_capacity_scope_banner)
         layout.addWidget(self.load_capacity_note)
         self._lc_params_card = self._create_group_input_card("Method B 最小子集参数", LOAD_CAPACITY_PARAMETER_FIELDS, page)
         layout.addWidget(self._lc_params_card)
@@ -727,9 +730,13 @@ class WormGearPage(BaseChapterPage):
 
         title = QLabel("结果与报告", page)
         title.setObjectName("SectionTitle")
+        self.model_scope_banner = make_scope_banner(page, WORM_SCOPE)
         self.result_title = QLabel("尚未执行计算", page)
         self.result_title.setObjectName("SubSectionTitle")
-        self.result_summary = QLabel("执行计算后显示 DIN 3975 几何结果、基础性能和 Load Capacity 延后状态。", page)
+        self.result_summary = QLabel(
+            "执行计算后显示 DIN 3975 几何结果、基础性能和负载能力（Load Capacity）状态。",
+            page,
+        )
         self.result_summary.setObjectName("SectionHint")
         self.result_summary.setWordWrap(True)
         self.result_metrics = QPlainTextEdit(page)
@@ -789,6 +796,7 @@ class WormGearPage(BaseChapterPage):
         self._life_card.setVisible(False)
 
         layout.addWidget(title)
+        layout.addWidget(self.model_scope_banner)
         layout.addWidget(self.result_title)
         layout.addWidget(self.result_summary)
         layout.addWidget(self.result_metrics)
@@ -1161,8 +1169,13 @@ class WormGearPage(BaseChapterPage):
         checks = load_capacity.get("checks", {})
         lc_enabled = bool(load_capacity.get("enabled", len(checks) > 0))
 
-        self.result_title.setText("已完成蜗杆副几何、基础性能与 Method B 最小校核")
-        self.result_summary.setText("当前版本已输出几何结果、效率估算、齿面应力、齿根应力和扭矩波动摘要。")
+        self.result_title.setText(
+            f"已完成蜗杆副几何、基础性能与 Method B 最小校核（{WORM_SCOPE.model_level}）"
+        )
+        self.result_summary.setText(
+            "当前版本已输出几何结果、效率估算、齿面应力、齿根应力和扭矩波动摘要。"
+            "负载能力（Load Capacity）为正式子集，不是完整 DIN 3996 签发。"
+        )
 
         # W-03: 当 LC 未启用时，应力/力/扭矩显示"未启用"而非 0.000
         if lc_enabled:
@@ -1248,7 +1261,7 @@ class WormGearPage(BaseChapterPage):
         else:
             lc_metrics_lines = [
                 "负载能力校核：未启用",
-                "如需校核齿面/齿根安全系数，请在【基本设置】中启用 Load Capacity 页。",
+                "如需校核齿面/齿根安全系数，请在【基本设置】中启用负载能力（Load Capacity）页。",
                 *[f"warning: {msg}" for msg in warnings],
             ]
 
@@ -1268,15 +1281,15 @@ class WormGearPage(BaseChapterPage):
                 "pass" if overall_lc_ok else "fail",
             )
             if overall_lc_ok:
-                self.set_overall_status("Load Capacity 通过", "pass")
+                self.set_overall_status("负载能力通过", "pass")
             else:
-                self.set_overall_status("Load Capacity 需复核", "wait")
+                self.set_overall_status("负载能力需复核", "wait")
         else:
             # LC 未启用：徽章显示"未启用"，整体状态为等待
             for _key, (_, badge) in self._check_badges.items():
                 self._set_badge(badge, "未启用", "wait")
             self._set_badge(self._overall_lc_badge, "未启用", "wait")
-            self.set_overall_status("Load Capacity 未启用", "wait")
+            self.set_overall_status("负载能力未启用", "wait")
         # Step 4: 效率与自锁副标题
         lead_angle_calc_deg = geometry.get("lead_angle_calc_deg", geometry.get("lead_angle_deg", 0.0))
         friction_mu = performance.get("friction_mu", 0.0)
@@ -1348,12 +1361,24 @@ class WormGearPage(BaseChapterPage):
             return
         self.set_info(f"报告已导出: {out_path}")
 
-    def _write_text_report(self, path: Path) -> None:
+    def _build_report_lines(self) -> list[str]:
         from datetime import datetime
-        note = self._last_result.get("inputs_echo", {}).get("meta", {}).get("note", "")
-        header = f"蜗杆副计算报告 -- {note}\n生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n{'=' * 60}\n\n"
-        body = self.result_metrics.toPlainText() + "\n\n" + self.load_capacity_metrics.toPlainText()
-        write_text_report(path, header + body)
+
+        result = self._last_result or {}
+        note = result.get("inputs_echo", {}).get("meta", {}).get("note", "")
+        return [
+            f"蜗杆副计算报告 -- {note}",
+            f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            "",
+            *scope_report_lines(WORM_SCOPE),
+            "",
+            self.result_metrics.toPlainText(),
+            "",
+            self.load_capacity_metrics.toPlainText(),
+        ]
+
+    def _write_text_report(self, path: Path) -> None:
+        write_text_report(path, "\n".join(self._build_report_lines()))
 
     def _save_input_conditions(self) -> None:
         out_path = choose_save_input_conditions_path(
@@ -1415,7 +1440,9 @@ class WormGearPage(BaseChapterPage):
 
     def _reset_result_panels(self) -> None:
         self.result_title.setText("尚未执行计算")
-        self.result_summary.setText("执行计算后显示几何、基础性能以及 Method B 最小子集结果。")
+        self.result_summary.setText(
+            "执行计算后显示几何、基础性能以及 Method B 风格最小负载能力子集结果。"
+        )
         self.result_metrics.setPlainText("尚无结果。")
         self.performance_curve.set_curves(
             load_factor=[],
@@ -1432,7 +1459,7 @@ class WormGearPage(BaseChapterPage):
         self.load_capacity_status.setObjectName("WaitBadge")
         self.load_capacity_status.style().unpolish(self.load_capacity_status)
         self.load_capacity_status.style().polish(self.load_capacity_status)
-        self.load_capacity_metrics.setPlainText("尚无 Load Capacity 结果。")
+        self.load_capacity_metrics.setPlainText("尚无负载能力结果。")
         for _key, (_name, badge) in self._check_badges.items():
             self._set_badge(badge, "待计算", "wait")
         self._set_badge(self._overall_lc_badge, "待计算", "wait")

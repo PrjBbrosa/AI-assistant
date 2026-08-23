@@ -36,16 +36,21 @@ from app.ui.input_condition_store import (
     write_input_conditions,
 )
 from app.ui.fonts import make_ui_font
+from app.ui.model_scope import (
+    HERTZ_ALLOWABLE_SOURCE_NOTE,
+    HERTZ_SCOPE,
+    SOURCE_RECOMMENDED,
+    SOURCE_USER,
+    format_source_label,
+    make_scope_banner,
+    scope_report_lines,
+)
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, write_text_report
 from app.ui.theme import mark_input_field_label_wrap, mark_input_field_surface
 from app.ui.widgets.help_button import HelpButton
 from app.ui.widgets.hertz_input_diagram import HertzInputDiagramWidget
-from core.hertz.calculator import (
-    OUTER_CONTACT_SCOPE_NOTE,
-    InputError,
-    calculate_hertz_contact,
-)
+from core.hertz.calculator import InputError, calculate_hertz_contact
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES_DIR = PROJECT_ROOT / "examples"
@@ -89,7 +94,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "checks.allowable_p0_mpa",
                 "允许最大接触应力 [p0]",
                 "MPa",
-                "与材料接触疲劳极限或规范限值对应。",
+                "用户输入的许用值，用于 p0 判据。材料下拉只提供 E/ν 建议值，不会把牌号自动写成权威 [p0]。",
                 mapping=("checks", "allowable_p0_mpa"),
                 default="1500",
                 placeholder="例如 1500",
@@ -175,7 +180,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "materials.body1_material",
                 "接触体 1 材料",
                 "-",
-                "选择后自动带出 E1/nu1；可切到自定义。",
+                "选择后带出 E1/nu1 建议值（可切自定义覆盖）；不会据此生成权威 [p0]。",
                 widget_type="choice",
                 options=MATERIAL_OPTIONS,
                 default="42CrMo",
@@ -184,7 +189,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "materials.e1_mpa",
                 "弹性模量 E1",
                 "MPa",
-                "接触体 1 弹性模量。",
+                "接触体 1 弹性模量。预设材料为建议值，自定义为用户输入。",
                 mapping=("materials", "e1_mpa"),
                 default="210000",
                 help_ref="terms/elastic_modulus",
@@ -193,7 +198,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "materials.nu1",
                 "泊松比 nu1",
                 "-",
-                "接触体 1 泊松比。",
+                "接触体 1 泊松比。预设材料为建议值，自定义为用户输入。",
                 mapping=("materials", "nu1"),
                 default="0.29",
                 help_ref="terms/poisson_ratio",
@@ -202,7 +207,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "materials.body2_material",
                 "接触体 2 材料",
                 "-",
-                "选择后自动带出 E2/nu2；可切到自定义。",
+                "选择后带出 E2/nu2 建议值（可切自定义覆盖）；不会据此生成权威 [p0]。",
                 widget_type="choice",
                 options=MATERIAL_OPTIONS,
                 default="45钢",
@@ -211,7 +216,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "materials.e2_mpa",
                 "弹性模量 E2",
                 "MPa",
-                "接触体 2 弹性模量。",
+                "接触体 2 弹性模量。预设材料为建议值，自定义为用户输入。",
                 mapping=("materials", "e2_mpa"),
                 default="210000",
                 help_ref="terms/elastic_modulus",
@@ -220,7 +225,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "materials.nu2",
                 "泊松比 nu2",
                 "-",
-                "接触体 2 泊松比。",
+                "接触体 2 泊松比。预设材料为建议值，自定义为用户输入。",
                 mapping=("materials", "nu2"),
                 default="0.30",
                 help_ref="terms/poisson_ratio",
@@ -254,7 +259,7 @@ BEGINNER_GUIDES: dict[str, str] = {
     "geometry.contact_mode": "先选接触类型，再填对应几何参数。",
     "geometry.r2_mm": "若为平面接触可输入 0，程序按无穷大半径处理。本版只接受 ≥ 0 的外接触半径。",
     "geometry.length_mm": "仅在线接触时用于把 F 转换为单位长度载荷 F'。",
-    "checks.allowable_p0_mpa": "可按材料/热处理接触疲劳许用值设置。",
+    "checks.allowable_p0_mpa": "来源为用户输入。材料牌号不会自动生成权威许用接触应力；可按材料/热处理手册自行折算后填入。",
     "loads.normal_force_n": "取峰值载荷；冲击工况建议乘载荷系数后输入。",
 }
 
@@ -273,6 +278,7 @@ class HertzContactPage(BaseChapterPage):
         self._field_widgets: dict[str, QWidget] = {}
         self._field_specs: dict[str, FieldSpec] = {}
         self._field_cards: dict[str, QWidget] = {}
+        self._source_labels: dict[str, QLabel] = {}
         self._widget_hints: dict[QWidget, str] = {}
         self._check_badges: dict[str, QLabel] = {}
 
@@ -417,6 +423,20 @@ class HertzContactPage(BaseChapterPage):
             row.addWidget(editor, 0, 1)
             row.addWidget(unit, 0, 2)
             row.addWidget(hint, 1, 0, 1, 3)
+            if spec.field_id in {
+                "checks.allowable_p0_mpa",
+                "materials.e1_mpa",
+                "materials.nu1",
+                "materials.e2_mpa",
+                "materials.nu2",
+            }:
+                source = QLabel("", field_card)
+                source.setObjectName("SectionHint")
+                source.setWordWrap(True)
+                if spec.field_id == "checks.allowable_p0_mpa":
+                    source.setText(HERTZ_ALLOWABLE_SOURCE_NOTE)
+                row.addWidget(source, 2, 0, 1, 3)
+                self._source_labels[spec.field_id] = source
             form_layout.addWidget(field_card)
             self._field_cards[spec.field_id] = field_card
 
@@ -507,15 +527,13 @@ class HertzContactPage(BaseChapterPage):
 
         title = QLabel("校核结果与消息", container)
         title.setObjectName("SectionTitle")
-        hint = QLabel(
-            "输出接触斑尺寸、最大接触应力和安全系数。"
-            + OUTER_CONTACT_SCOPE_NOTE,
-            container,
-        )
+        hint = QLabel("输出接触斑尺寸、最大接触应力和安全系数。", container)
         hint.setObjectName("SectionHint")
         hint.setWordWrap(True)
+        self.model_scope_banner = make_scope_banner(container, HERTZ_SCOPE)
         content.addWidget(title)
         content.addWidget(hint)
+        content.addWidget(self.model_scope_banner)
 
         summary_card = QFrame(container)
         summary_card.setObjectName("SubCard")
@@ -606,13 +624,23 @@ class HertzContactPage(BaseChapterPage):
         nu_widget = self._field_widgets.get(nu_id)
         if not isinstance(e_widget, QLineEdit) or not isinstance(nu_widget, QLineEdit):
             return
-        material = MATERIAL_LIBRARY.get(selector.currentText().strip())
+        material_name = selector.currentText().strip()
+        material = MATERIAL_LIBRARY.get(material_name)
         is_custom = material is None
-        e_widget.setReadOnly(not is_custom)
-        nu_widget.setReadOnly(not is_custom)
+        self._set_card_disabled(e_id, not is_custom)
+        self._set_card_disabled(nu_id, not is_custom)
         if material is not None:
             e_widget.setText(f"{material['e_mpa']:.0f}")
             nu_widget.setText(f"{material['nu']:.2f}")
+            source_text = format_source_label(
+                SOURCE_RECOMMENDED, f"{material_name} 材料库典型值，可切自定义覆盖"
+            )
+        else:
+            source_text = format_source_label(SOURCE_USER)
+        for field_id in (e_id, nu_id):
+            source_label = self._source_labels.get(field_id)
+            if source_label is not None:
+                source_label.setText(source_text)
 
     def _sync_material_inputs(self) -> None:
         for selector_id in self._material_links:
@@ -751,12 +779,18 @@ class HertzContactPage(BaseChapterPage):
     def _render_result(self, result: dict[str, Any]) -> None:
         overall = bool(result.get("overall_pass"))
         if overall:
-            self.result_title.setText("校核通过")
-            self.result_summary.setText("该工况满足允许接触应力要求。")
+            self.result_title.setText(f"校核通过（{HERTZ_SCOPE.model_level}）")
+            self.result_summary.setText(
+                "该工况满足允许接触应力要求。"
+                f"{HERTZ_ALLOWABLE_SOURCE_NOTE}。"
+            )
             self.set_overall_status("总体通过", "pass")
         else:
-            self.result_title.setText("校核不通过")
-            self.result_summary.setText("最大接触应力超过允许值，请调整几何/材料/载荷。")
+            self.result_title.setText(f"校核不通过（{HERTZ_SCOPE.model_level}）")
+            self.result_summary.setText(
+                "最大接触应力超过允许值，请调整几何/材料/载荷。"
+                f"{HERTZ_ALLOWABLE_SOURCE_NOTE}。"
+            )
             self.set_overall_status("总体不通过", "fail")
 
         for key, badge in self._check_badges.items():
@@ -778,7 +812,8 @@ class HertzContactPage(BaseChapterPage):
             patch_line,
             f"• 最大接触应力: p0 = {contact['p0_mpa']:.2f} MPa",
             f"• 平均接触应力: p_mean = {contact['p_mean_mpa']:.2f} MPa",
-            f"• 允许应力与安全系数: [p0]={check['allowable_p0_mpa']:.2f} MPa, S={check['safety_factor']:.3f}",
+            f"• 允许应力与安全系数: [p0]={check['allowable_p0_mpa']:.2f} MPa"
+            f"（{HERTZ_ALLOWABLE_SOURCE_NOTE}）, S={check['safety_factor']:.3f}",
             f"• 接触面积: A = {result['contact']['contact_area_mm2']:.4f} mm\u00b2",
         ]
         self.metrics_text.setText("\n".join(lines))
@@ -983,7 +1018,8 @@ class HertzContactPage(BaseChapterPage):
             "赫兹接触应力校核报告（本地版）",
             f"生成时间: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             f"接触模型: {'线接触' if result['mode'] == 'line' else '点接触'}",
-            f"模型范围: {OUTER_CONTACT_SCOPE_NOTE}",
+            "",
+            *scope_report_lines(HERTZ_SCOPE),
             "",
             f"总体结论: {'通过' if result['overall_pass'] else '不通过'}",
             "",
@@ -992,7 +1028,7 @@ class HertzContactPage(BaseChapterPage):
             f"- R': {derived['r_eq_mm']:.6f} mm",
             f"- p0: {contact['p0_mpa']:.3f} MPa",
             f"- p_mean: {contact['p_mean_mpa']:.3f} MPa",
-            f"- [p0]: {check['allowable_p0_mpa']:.3f} MPa",
+            f"- [p0]: {check['allowable_p0_mpa']:.3f} MPa（{HERTZ_ALLOWABLE_SOURCE_NOTE}）",
             f"- Safety: {check['safety_factor']:.3f}",
             f"- 接触面积: {result['contact']['contact_area_mm2']:.6f} mm\u00b2",
         ]

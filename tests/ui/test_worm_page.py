@@ -3,11 +3,10 @@ import unittest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
-
-from PySide6.QtWidgets import QFrame
+from PySide6.QtWidgets import QApplication, QFrame, QLabel
 
 from app.ui.main_window import MainWindow
+from app.ui.model_scope import MODEL_LEVEL_FORMAL_SUBSET, WORM_SCOPE
 from app.ui.pages.worm_gear_page import WormGearPage, LOAD_CAPACITY_OPTIONS
 from app.ui.widgets.worm_geometry_overview import WormGeometryOverviewWidget
 from app.ui.widgets.worm_performance_curve import WormPerformanceCurveWidget
@@ -525,6 +524,24 @@ class WormGearPageTests(unittest.TestCase):
             parent = parent.parent()
         self.assertIsNotNone(parent)
         self.assertEqual(parent.objectName(), "AutoCalcCard")
+
+    def test_result_header_and_report_show_model_level(self) -> None:
+        page = WormGearPage()
+        banners = page.findChildren(QLabel, "ModelScopeBanner")
+        self.assertGreaterEqual(len(banners), 1)
+        self.assertTrue(all(MODEL_LEVEL_FORMAL_SUBSET in banner.text() for banner in banners))
+        self.assertTrue(any("覆盖工况" in banner.text() for banner in banners))
+        self.assertTrue(any("未覆盖" in banner.text() for banner in banners))
+        self.assertTrue(any("负载能力" in banner.text() for banner in banners))
+
+        page._calculate()
+        self.app.processEvents()
+        self.assertIn(MODEL_LEVEL_FORMAL_SUBSET, page.result_title.text())
+        lines = page._build_report_lines()
+        joined = "\n".join(lines)
+        self.assertIn(f"模型等级: {WORM_SCOPE.model_level}", joined)
+        self.assertIn("覆盖工况:", joined)
+        self.assertIn("未覆盖:", joined)
 
 
 class MainWindowWormModuleTests(unittest.TestCase):

@@ -158,6 +158,32 @@ class TestHertzPdfReport:
 
         generate.assert_called_once()
 
+    def test_pdf_includes_model_level(self, tmp_path, monkeypatch):
+        from app.ui import report_pdf_hertz
+        from app.ui.model_scope import MODEL_LEVEL_QUICK
+        from app.ui.report_pdf_hertz import generate_hertz_report
+
+        subtitles: list[str] = []
+        titles: list[str] = []
+        original_verdict = report_pdf_hertz._verdict_block
+        original_title = report_pdf_hertz._section_title
+
+        def capture_verdict(styles, overall, subtitle):
+            subtitles.append(subtitle)
+            return original_verdict(styles, overall, subtitle)
+
+        def capture_title(styles, title):
+            titles.append(title)
+            return original_title(styles, title)
+
+        monkeypatch.setattr(report_pdf_hertz, "_verdict_block", capture_verdict)
+        monkeypatch.setattr(report_pdf_hertz, "_section_title", capture_title)
+
+        out = tmp_path / "hertz_model_level.pdf"
+        generate_hertz_report(out, _hertz_payload(), _hertz_result())
+        assert any(MODEL_LEVEL_QUICK in text for text in subtitles)
+        assert "模型范围" in titles
+
 
 class TestBufferPdfReport:
     def test_creates_nonempty_pdf(self, tmp_path):
@@ -367,6 +393,32 @@ class TestSplinePdfReport:
         generate_spline_report(out, _spline_only_payload(), result)
         assert out.exists() and out.stat().st_size > 1000
 
+    def test_pdf_includes_model_level(self, tmp_path, monkeypatch):
+        from app.ui import report_pdf_spline
+        from app.ui.model_scope import MODEL_LEVEL_PRECHECK
+        from app.ui.report_pdf_spline import generate_spline_report
+
+        subtitles: list[str] = []
+        titles: list[str] = []
+        original_verdict = report_pdf_spline._verdict_block
+        original_title = report_pdf_spline._section_title
+
+        def capture_verdict(styles, overall, subtitle):
+            subtitles.append(subtitle)
+            return original_verdict(styles, overall, subtitle)
+
+        def capture_title(styles, title):
+            titles.append(title)
+            return original_title(styles, title)
+
+        monkeypatch.setattr(report_pdf_spline, "_verdict_block", capture_verdict)
+        monkeypatch.setattr(report_pdf_spline, "_section_title", capture_title)
+
+        out = tmp_path / "spline_model_level.pdf"
+        generate_spline_report(out, _spline_only_payload(), _spline_only_result())
+        assert any(MODEL_LEVEL_PRECHECK in text for text in subtitles)
+        assert "模型范围" in titles
+
 
 class TestSplineRecommendations:
     def test_all_pass(self):
@@ -474,6 +526,62 @@ class TestWormPdfReport:
         out = tmp_path / "worm_lc.pdf"
         generate_worm_report(out, payload, result)
         assert out.exists() and out.stat().st_size > 1000
+
+    def test_pdf_includes_model_level(self, tmp_path, monkeypatch):
+        from app.ui import report_pdf_worm
+        from app.ui.model_scope import MODEL_LEVEL_FORMAL_SUBSET
+        from app.ui.report_pdf_worm import generate_worm_report
+
+        subtitles: list[str] = []
+        titles: list[str] = []
+        original_verdict = report_pdf_worm._verdict_block
+        original_title = report_pdf_worm._section_title
+
+        def capture_verdict(styles, overall, subtitle):
+            subtitles.append(subtitle)
+            return original_verdict(styles, overall, subtitle)
+
+        def capture_title(styles, title):
+            titles.append(title)
+            return original_title(styles, title)
+
+        monkeypatch.setattr(report_pdf_worm, "_verdict_block", capture_verdict)
+        monkeypatch.setattr(report_pdf_worm, "_section_title", capture_title)
+
+        payload = {"geometry": {"module_mm": 4, "tooth_count_worm": 2, "tooth_count_wheel": 41},
+                   "operating": {"worm_speed_rpm": 1500, "input_power_kw": 1.5}}
+        result = {
+            "geometry": {
+                "ratio": 20.5, "module_mm": 4, "center_distance_mm": 86,
+                "theoretical_center_distance_mm": 86, "lead_angle_deg": 5.6,
+                "worm_dimensions": {"pitch_diameter_mm": 32, "tip_diameter_mm": 40,
+                    "root_diameter_mm": 22.4, "lead_mm": 25.1, "axial_pitch_mm": 12.6,
+                    "pitch_line_speed_mps": 2.51, "face_width_mm": 50},
+                "wheel_dimensions": {"pitch_diameter_mm": 164, "tip_diameter_mm": 172,
+                    "root_diameter_mm": 154.4, "pitch_line_speed_mps": 0.63,
+                    "tooth_height_mm": 8.8, "face_width_mm": 35},
+                "mesh_dimensions": {"ratio": 20.5, "center_distance_mm": 86,
+                    "worm_speed_rpm": 1500, "wheel_speed_rpm": 73.2,
+                    "input_torque_nm": 9.55, "output_torque_nm": 156.3},
+                "consistency": {"warnings": []},
+            },
+            "performance": {"input_power_kw": 1.5, "output_power_kw": 1.2,
+                "input_torque_nm": 9.55, "worm_pitch_line_speed_mps": 2.51,
+                "efficiency_estimate": 0.80, "power_loss_kw": 0.3,
+                "thermal_capacity_kw": 0.5, "output_torque_nm": 156.3,
+                "friction_mu": 0.08, "application_factor": 1.0},
+            "load_capacity": {
+                "enabled": True, "method": "DIN 3996 Method B", "status": "通过",
+                "overall_pass": True,
+                "checks": {"geometry_consistent": True, "contact_ok": True, "root_ok": True},
+                "forces": {}, "contact": {}, "root": {}, "factors": {},
+                "torque_ripple": {}, "warnings": [], "assumptions": [],
+            },
+        }
+        out = tmp_path / "worm_model_level.pdf"
+        generate_worm_report(out, payload, result)
+        assert any(MODEL_LEVEL_FORMAL_SUBSET in text for text in subtitles)
+        assert "模型范围" in titles
 
     def test_missing_overall_pass_does_not_fallback_to_checks_pass(self, tmp_path, monkeypatch):
         from reportlab.platypus import Spacer

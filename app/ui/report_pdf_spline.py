@@ -18,6 +18,7 @@ from reportlab.platypus import (
     Spacer,
 )
 
+from app.ui.model_scope import SPLINE_SCOPE, scope_kv_rows
 from app.ui.report_pdf_common import (
     _build_styles,
     _fmt,
@@ -106,7 +107,12 @@ def generate_spline_report(
         mode_desc = "联合模式 (花键齿面 + 光滑段过盈)"
     else:
         mode_desc = "仅花键齿面承压"
-    subtitle = f"{mode_desc} | {verdict_level}"
+    level_text = (
+        SPLINE_SCOPE.model_level
+        if verdict_level == "simplified_precheck" or not verdict_level
+        else str(verdict_level)
+    )
+    subtitle = f"{mode_desc} | 模型等级: {level_text}"
 
     # 1. Header bar
     elems.append(_header_bar(styles, "花键连接校核报告", date_str))
@@ -115,6 +121,9 @@ def generate_spline_report(
     # 2. Verdict block
     elems.append(_verdict_block(styles, overall, subtitle))
     elems.append(Spacer(1, 8))
+    elems.append(_section_title(styles, "模型范围"))
+    elems.append(_kv_table(styles, scope_kv_rows(SPLINE_SCOPE), 0.28))
+    elems.append(Spacer(1, 10))
 
     # 3. Metric cards
     metrics = [

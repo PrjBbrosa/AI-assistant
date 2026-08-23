@@ -17,6 +17,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QLabel
 
+from app.ui.model_scope import HERTZ_ALLOWABLE_SOURCE_NOTE, HERTZ_SCOPE, MODEL_LEVEL_QUICK
 from app.ui.pages.hertz_contact_page import HertzContactPage
 from core.hertz.calculator import OUTER_CONTACT_SCOPE_NOTE
 
@@ -171,6 +172,52 @@ class HertzPageSmokeTests(unittest.TestCase):
             any(OUTER_CONTACT_SCOPE_NOTE in line for line in lines),
             msg=f"Expected outer-contact scope note in report lines, got:\n{lines}",
         )
+
+    def test_result_header_and_report_show_model_level(self) -> None:
+        page = self._make_page()
+        banner = page.findChild(QLabel, "ModelScopeBanner")
+        self.assertIsNotNone(banner)
+        self.assertIn(MODEL_LEVEL_QUICK, banner.text())
+        self.assertIn("覆盖工况", banner.text())
+        self.assertIn("未覆盖", banner.text())
+        self.assertIn(OUTER_CONTACT_SCOPE_NOTE, banner.text())
+
+        page._calculate()
+        self.__class__.app.processEvents()
+        self.assertIn(MODEL_LEVEL_QUICK, page.result_title.text())
+        lines = page._build_report_lines()
+        joined = "\n".join(lines)
+        self.assertIn(f"模型等级: {HERTZ_SCOPE.model_level}", joined)
+        self.assertIn("覆盖工况:", joined)
+        self.assertIn("未覆盖:", joined)
+        self.assertIn(HERTZ_ALLOWABLE_SOURCE_NOTE, joined)
+        self.assertIn(HERTZ_ALLOWABLE_SOURCE_NOTE, page.metrics_text.text())
+
+    def test_material_change_does_not_overwrite_allowable_p0(self) -> None:
+        from PySide6.QtWidgets import QComboBox, QLineEdit
+
+        page = self._make_page()
+        allowable = page._field_widgets["checks.allowable_p0_mpa"]
+        self.assertIsInstance(allowable, QLineEdit)
+        allowable.setText("1234")
+
+        body1 = page._field_widgets["materials.body1_material"]
+        self.assertIsInstance(body1, QComboBox)
+        body1.setCurrentText("GCr15")
+        self.__class__.app.processEvents()
+
+        self.assertEqual(allowable.text(), "1234")
+        self.assertEqual(page._field_widgets["materials.e1_mpa"].text(), "208000")
+        self.assertIn("用户输入", page._source_labels["checks.allowable_p0_mpa"].text())
+        self.assertIn("建议值", page._source_labels["materials.e1_mpa"].text())
+        self.assertIn("GCr15", page._source_labels["materials.e1_mpa"].text())
+        self.assertEqual(page._field_cards["materials.e1_mpa"].objectName(), "AutoCalcCard")
+
+        body1.setCurrentText("自定义")
+        self.__class__.app.processEvents()
+        self.assertEqual(allowable.text(), "1234")
+        self.assertIn("用户输入", page._source_labels["materials.e1_mpa"].text())
+        self.assertEqual(page._field_cards["materials.e1_mpa"].objectName(), "SubCard")
 
 
 if __name__ == "__main__":
