@@ -21,8 +21,8 @@ class WormStressCurveWidget(QWidget):
         self._sigma_h_nominal: float = 0.0
         self._sigma_f_nominal: float = 0.0
 
-        # Deferred matplotlib import: only loaded when the worm stress widget is
-        # first constructed (i.e., when the user navigates to the worm page).
+        # Deferred matplotlib import: only loaded when this canvas is first
+        # constructed (graphics chapter visit or first result with curve data).
         # FigureCanvasQTAgg must be created on the GUI main thread — this __init__
         # is always called from the main thread, so the constraint is satisfied.
         import matplotlib

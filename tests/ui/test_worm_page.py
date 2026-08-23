@@ -498,9 +498,16 @@ class WormGearPageTests(unittest.TestCase):
         self.assertTrue(any("Method B" in o for o in options))
         self.assertTrue(any("Method C" in o for o in options))
 
-    def test_stress_curve_widget_exists_in_graphics_step(self) -> None:
+    def test_stress_curve_widget_is_deferred_until_ensure(self) -> None:
         page = WormGearPage()
         self.assertTrue(hasattr(page, "stress_curve"))
+        self.assertNotIsInstance(page.stress_curve, WormStressCurveWidget)
+        self.assertGreaterEqual(page.stress_curve.minimumHeight(), 350)
+
+        page._ensure_stress_curve()
+        self.assertIsInstance(page.stress_curve, WormStressCurveWidget)
+
+        page._ensure_stress_curve()
         self.assertIsInstance(page.stress_curve, WormStressCurveWidget)
 
     def test_input_field_is_torque_not_power(self) -> None:

@@ -291,6 +291,7 @@ class WormGearPage(BaseChapterPage):
             if isinstance(w, QLineEdit):
                 w.editingFinished.connect(lambda: self._on_material_changed())
         self.set_current_chapter(0)
+        self.chapter_list.currentRowChanged.connect(self._on_chapter_row_changed)
         self.btn_save_inputs.clicked.connect(self._save_input_conditions)
         self.btn_load_inputs.clicked.connect(self._load_input_conditions)
         self.btn_calculate.clicked.connect(self._calculate)
@@ -559,15 +560,50 @@ class WormGearPage(BaseChapterPage):
 
         self.geometry_overview = WormGeometryOverviewWidget(container)
         self.performance_curve = WormPerformanceCurveWidget(container)
-        self.stress_curve = WormStressCurveWidget(container)
+        # Defer WormStressCurveWidget (and matplotlib) until the graphics
+        # chapter is shown or the first result actually has curve data.
+        self._stress_curve_host = QWidget(container)
+        host_layout = QVBoxLayout(self._stress_curve_host)
+        host_layout.setContentsMargins(0, 0, 0, 0)
+        host_layout.setSpacing(0)
+        placeholder = QWidget(self._stress_curve_host)
+        placeholder.setObjectName("WormStressCurvePlaceholder")
+        placeholder.setMinimumHeight(350)
+        host_layout.addWidget(placeholder)
+        self._stress_curve_placeholder = placeholder
+        self._stress_curve_ready = False
+        self.stress_curve = placeholder
         body.addWidget(self.geometry_overview)
         body.addWidget(self.performance_curve)
-        body.addWidget(self.stress_curve)
+        body.addWidget(self._stress_curve_host)
         body.addStretch(1)
 
         self.graphics_scroll_area.setWidget(container)
         layout.addWidget(self.graphics_scroll_area)
-        self.add_chapter("图形与曲线", page)
+        self._graphics_chapter_index = self.add_chapter("图形与曲线", page)
+
+    def _on_chapter_row_changed(self, index: int) -> None:
+        if index == getattr(self, "_graphics_chapter_index", -1):
+            self._ensure_stress_curve()
+
+    def _ensure_stress_curve(self) -> WormStressCurveWidget:
+        if getattr(self, "_stress_curve_ready", False):
+            return self.stress_curve
+
+        host = self._stress_curve_host
+        widget = WormStressCurveWidget(host)
+        layout = host.layout()
+        placeholder = getattr(self, "_stress_curve_placeholder", None)
+        if layout is not None and placeholder is not None:
+            layout.replaceWidget(placeholder, widget)
+            placeholder.setParent(None)
+            placeholder.deleteLater()
+            self._stress_curve_placeholder = None
+        elif layout is not None:
+            layout.addWidget(widget)
+        self.stress_curve = widget
+        self._stress_curve_ready = True
+        return widget
 
     def _build_load_capacity_step(self) -> None:
         # content widget：承载全部 Load Capacity 内容，高度由内容决定，不受 viewport 限制
@@ -1168,7 +1204,7 @@ class WormGearPage(BaseChapterPage):
         )
         stress_curve_data = load_capacity.get("stress_curve", {})
         if stress_curve_data and stress_curve_data.get("theta_deg"):
-            self.stress_curve.set_curves(
+            self._ensure_stress_curve().set_curves(
                 theta_deg=stress_curve_data["theta_deg"],
                 sigma_h_mpa=stress_curve_data["sigma_h_mpa"],
                 sigma_f_mpa=stress_curve_data["sigma_f_mpa"],
@@ -1388,7 +1424,8 @@ class WormGearPage(BaseChapterPage):
             temperature_rise_k=[],
             current_index=-1,
         )
-        self.stress_curve.clear()
+        if getattr(self, "_stress_curve_ready", False):
+            self.stress_curve.clear()
         self.geometry_overview.reset_geometry_state()
         self.geometry_overview.set_display_state("几何总览", "按 DIN 3975 展示蜗杆、蜗轮、中心距与导程角关系。")
         self.load_capacity_status.setText("DIN 3996 校核尚未开始")
