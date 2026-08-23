@@ -8,8 +8,9 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QLineEdit
+from PySide6.QtWidgets import QApplication, QLineEdit, QMessageBox
 
+from app.ui.field_schema import FieldSpec
 from app.ui.pages.bolt_page import BOLT_GRADE_TABLE as PAGE_GRADE_TABLE
 from app.ui.pages.bolt_tapped_axial_page import BoltTappedAxialPage
 from core.bolt.grades import BOLT_GRADE_CUSTOM, BOLT_GRADE_TABLE, rp02_source_zh
@@ -403,6 +404,66 @@ class BoltTappedAxialPageTests(unittest.TestCase):
         custom_text = "\n".join(page._build_report_lines())
         self.assertIn("用户值", custom_text)
         self.assertIn(f"强度等级: {BOLT_GRADE_CUSTOM}", custom_text)
+
+    def test_safety_required_live_error_for_value_below_one(self) -> None:
+        page = BoltTappedAxialPage()
+        widget = page._field_widgets["thread_strip.safety_required"]
+        error = page._field_error_labels["thread_strip.safety_required"]
+        self.assertTrue(error.isHidden())
+
+        widget.setText("0.5")
+
+        self.assertFalse(error.isHidden())
+        self.assertIn(">= 1.0", error.text())
+        self.assertIn(widget.property("fieldError"), (True, "true"))
+        self.assertTrue(page.btn_calculate.isEnabled())
+
+        widget.setText("1.5")
+
+        self.assertTrue(error.isHidden())
+        self.assertIn(widget.property("fieldError"), (False, "false", None))
+
+    def test_calculate_with_invalid_safety_shows_errors_and_skips_result(self) -> None:
+        page = BoltTappedAxialPage()
+        page._field_widgets["thread_strip.safety_required"].setText("0.5")
+        page._field_widgets["service.FA_max"].setText("abc")
+
+        with patch.object(QMessageBox, "critical", side_effect=AssertionError("no dialog")):
+            page._run_calculation()
+
+        self.assertIsNone(page._last_result)
+        self.assertFalse(page.btn_export_pdf.isEnabled())
+        self.assertTrue(page.btn_calculate.isEnabled())
+        safety_error = page._field_error_labels["thread_strip.safety_required"]
+        fa_error = page._field_error_labels["service.FA_max"]
+        self.assertFalse(safety_error.isHidden())
+        self.assertFalse(fa_error.isHidden())
+        self.assertEqual(page.chapter_list.currentRow(), 3)
+        self.assertIn("字段需要修正", page.info_label.text())
+
+    def test_payload_omits_mapping_none_fields(self) -> None:
+        page = BoltTappedAxialPage()
+        spec = FieldSpec(
+            "notes",
+            "备注",
+            "-",
+            "",
+            mapping=None,
+            value_type="text",
+            required=False,
+            default="should-not-land",
+        )
+        editor = QLineEdit(page)
+        editor.setText("should-not-land")
+        page._field_specs[spec.field_id] = spec
+        page._field_widgets[spec.field_id] = editor
+
+        payload = page._build_payload()
+
+        self.assertNotIn("notes", payload)
+        dumped = json.dumps(payload, ensure_ascii=False)
+        self.assertNotIn("should-not-land", dumped)
+        self.assertIn("fastener", payload)
 
 
 if __name__ == "__main__":

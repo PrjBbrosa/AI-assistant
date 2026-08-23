@@ -336,10 +336,21 @@ def apply_theme(app: QApplication) -> None:
         QLineEdit#InputField:focus {
             border: 1px solid #D97757;
         }
+        QLineEdit#InputField[fieldError="true"] {
+            border: 1px solid #B42318;
+        }
+        QLineEdit#InputField[fieldError="true"]:focus {
+            border: 1px solid #B42318;
+        }
         QLineEdit#InputField:disabled, QLineEdit#InputField:read-only {
             background-color: #F0EDE8;
             color: #6B665E;
             border-color: #E3D8C8;
+        }
+        QLabel#FieldErrorLabel {
+            color: #B42318;
+            font-size: 12px;
+            background: transparent;
         }
         QComboBox {
             background-color: #FCFBF8;
@@ -353,6 +364,9 @@ def apply_theme(app: QApplication) -> None:
         }
         QComboBox:focus, QComboBox:on {
             border: 1px solid #D97757;
+        }
+        QComboBox[fieldError="true"] {
+            border: 1px solid #B42318;
         }
         QComboBox:disabled {
             background-color: #F0EDE8;

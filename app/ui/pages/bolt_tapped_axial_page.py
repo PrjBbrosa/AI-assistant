@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +22,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.field_schema import (
+    FieldSchema,
+    FieldSpec,
+    build_payload,
+    validate_text,
+)
 from app.ui.input_condition_store import (
     InputConditionError,
     build_form_snapshot,
@@ -60,25 +64,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SAVED_INPUTS_DIR = build_saved_inputs_dir(PROJECT_ROOT)
 EXAMPLES_DIR = PROJECT_ROOT / "examples"
 MODULE_ID = "bolt_tapped_axial"
-_NUMBER_RE = re.compile(r"^-?\d+(\.\d+)?([eE][+-]?\d+)?$", flags=re.ASCII)
-
-
-@dataclass(frozen=True)
-class FieldSpec:
-    field_id: str
-    label: str
-    unit: str
-    hint: str
-    widget_type: str = "number"
-    options: tuple[str, ...] = ()
-    default: str = ""
-    help_ref: str = ""
-
-    @property
-    def mapping(self) -> tuple[str, str] | None:
-        if "." not in self.field_id:
-            return None
-        return tuple(self.field_id.split(".", 1))  # type: ignore[return-value]
 
 
 CHECK_LABELS: dict[str, str] = {
@@ -108,9 +93,9 @@ CHAPTERS: list[dict[str, Any]] = [
         "fields": [
             FieldSpec("fastener.d", "公称直径 d", "mm", "螺栓公称直径，按实际螺纹规格填写。", default="10.0", help_ref="terms/bolt_thread_nominal"),
             FieldSpec("fastener.p", "螺距 p", "mm", "螺纹螺距。", default="1.5", help_ref="terms/bolt_thread_pitch"),
-            FieldSpec("fastener.d2", "中径 d2", "mm", "由 d/p 自动派生。", default="", help_ref="terms/bolt_stress_area"),
-            FieldSpec("fastener.d3", "小径 d3", "mm", "由 d/p 自动派生。", default="", help_ref="terms/bolt_stress_area"),
-            FieldSpec("fastener.As", "应力截面积 As", "mm²", "由 d/p 自动派生。", default="", help_ref="terms/bolt_stress_area"),
+            FieldSpec("fastener.d2", "中径 d2", "mm", "由 d/p 自动派生。", default="", required=False, source_kind="derived", help_ref="terms/bolt_stress_area"),
+            FieldSpec("fastener.d3", "小径 d3", "mm", "由 d/p 自动派生。", default="", required=False, source_kind="derived", help_ref="terms/bolt_stress_area"),
+            FieldSpec("fastener.As", "应力截面积 As", "mm²", "由 d/p 自动派生。", default="", required=False, source_kind="derived", help_ref="terms/bolt_stress_area"),
             FieldSpec(
                 "fastener.grade",
                 "强度等级",
@@ -127,6 +112,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 "MPa",
                 "由强度等级自动填入。自定义模式可手动输入。",
                 default="640",
+                source_kind="preset",
                 help_ref="terms/bolt_yield_strength",
             ),
             FieldSpec("fastener.E_bolt", "螺栓弹性模量 E_bolt", "MPa", "螺栓弹性模量。", default="210000.0", help_ref="terms/elastic_modulus"),
@@ -175,10 +161,27 @@ CHAPTERS: list[dict[str, Any]] = [
         "subtitle": "校核螺纹是否会被剪断（尤其重要：螺栓旋入铝/铸铁壳体）。留空 m_eff 会让整体结论判为「校核不完整」，不会给绿灯。",
         "help_ref": "modules/bolt_tapped_axial/_section_thread_strip",
         "fields": [
-            FieldSpec("thread_strip.m_eff", "有效啮合长度 m_eff", "mm", "螺栓实际旋入内螺纹的承载长度。留空跳过 R8 并判 incomplete。", default="", help_ref="terms/bolt_thread_engagement"),
-            FieldSpec("thread_strip.tau_BM", "母材许用剪应力 tau_BM", "MPa", "内螺纹对手件的剪切强度；典型 0.6·Rp0.2。启用 R8 时必填。", default="", help_ref="terms/bolt_thread_strip_tau"),
-            FieldSpec("thread_strip.tau_BS", "螺栓许用剪应力 tau_BS", "MPa", "外螺纹剪切强度；留空默认 0.6·Rp0.2。", default="", help_ref="terms/bolt_thread_strip_tau"),
-            FieldSpec("thread_strip.safety_required", "脱扣目标安全系数", "-", "设计要求的最小 S_strip。典型 1.25–1.5。", default="1.5", help_ref="terms/bolt_tapped_axial_strip_safety_required"),
+            FieldSpec("thread_strip.m_eff", "有效啮合长度 m_eff", "mm", "螺栓实际旋入内螺纹的承载长度。留空跳过 R8 并判 incomplete。", default="", required=False, help_ref="terms/bolt_thread_engagement"),
+            FieldSpec(
+                "thread_strip.tau_BM",
+                "母材许用剪应力 tau_BM",
+                "MPa",
+                "内螺纹对手件的剪切强度；典型 0.6·Rp0.2。启用 R8 时必填。",
+                default="",
+                required=False,
+                required_when=("neq", "thread_strip.m_eff", ""),
+                help_ref="terms/bolt_thread_strip_tau",
+            ),
+            FieldSpec("thread_strip.tau_BS", "螺栓许用剪应力 tau_BS", "MPa", "外螺纹剪切强度；留空默认 0.6·Rp0.2。", default="", required=False, help_ref="terms/bolt_thread_strip_tau"),
+            FieldSpec(
+                "thread_strip.safety_required",
+                "脱扣目标安全系数",
+                "-",
+                "设计要求的最小 S_strip。典型 1.25–1.5。",
+                default="1.5",
+                min_value=1.0,
+                help_ref="terms/bolt_tapped_axial_strip_safety_required",
+            ),
         ],
     },
     {
@@ -198,7 +201,15 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="rolled",
                 help_ref="terms/bolt_tapped_axial_surface_treatment",
             ),
-            FieldSpec("checks.yield_safety_operating", "服役屈服安全系数 yield_safety_operating", "-", "服役 von Mises 许用 = Rp0.2 / S_yield。", default="1.15", help_ref="terms/bolt_yield_safety"),
+            FieldSpec(
+                "checks.yield_safety_operating",
+                "服役屈服安全系数 yield_safety_operating",
+                "-",
+                "服役 von Mises 许用 = Rp0.2 / S_yield。",
+                default="1.15",
+                min_value=1.0,
+                help_ref="terms/bolt_yield_safety",
+            ),
             FieldSpec(
                 "options.report_mode",
                 "报告模式 report_mode",
@@ -223,8 +234,10 @@ class BoltTappedAxialPage(BaseChapterPage):
             parent=parent,
         )
         self._field_widgets: dict[str, QWidget] = {}
-        self._field_specs: dict[str, FieldSpec] = {}
+        self._field_specs: dict[str, FieldSchema] = {}
         self._field_cards: dict[str, QWidget] = {}
+        self._field_error_labels: dict[str, QLabel] = {}
+        self._field_chapter_index: dict[str, int] = {}
         self._last_payload: dict[str, Any] | None = None
         self._last_result: dict[str, Any] | None = None
         self._suspend_live_feedback = False
@@ -260,6 +273,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         self._refresh_thread_section()
         self._on_grade_changed(self._current_grade())
         self._suspend_live_feedback = False
+        self._refresh_all_field_errors()
 
         self._invalidate_cache()  # 初始禁用导出按钮
         self.set_overall_status("等待计算", "wait")
@@ -267,6 +281,7 @@ class BoltTappedAxialPage(BaseChapterPage):
 
     def _build_input_chapters(self) -> None:
         for chapter in CHAPTERS:
+            chapter_index = self.chapter_list.count()
             page = self._create_chapter_page(
                 chapter["title"],
                 chapter["subtitle"],
@@ -274,13 +289,15 @@ class BoltTappedAxialPage(BaseChapterPage):
                 chapter.get("notes", []),
                 help_ref=chapter.get("help_ref", ""),
             )
+            for spec in chapter["fields"]:
+                self._field_chapter_index[spec.field_id] = chapter_index
             self.add_chapter(chapter["title"], page)
 
     def _create_chapter_page(
         self,
         title: str,
         subtitle: str,
-        fields: list[FieldSpec],
+        fields: list[FieldSchema],
         notes: list[str],
         help_ref: str = "",
     ) -> QWidget:
@@ -371,12 +388,19 @@ class BoltTappedAxialPage(BaseChapterPage):
                 hint.setObjectName("SectionHint")
                 hint.setWordWrap(True)
 
+                error_label = QLabel("", field_card)
+                error_label.setObjectName("FieldErrorLabel")
+                error_label.setWordWrap(True)
+                error_label.setVisible(False)
+
                 row.addWidget(label, 0, 0)
                 row.addWidget(editor, 0, 1)
                 row.addWidget(unit, 0, 2)
                 row.addWidget(hint, 1, 0, 1, 3)
+                row.addWidget(error_label, 2, 0, 1, 3)
                 form_layout.addWidget(field_card)
                 self._field_cards[spec.field_id] = field_card
+                self._field_error_labels[spec.field_id] = error_label
 
             form_layout.addStretch(1)
             scroll.setWidget(container)
@@ -468,12 +492,13 @@ class BoltTappedAxialPage(BaseChapterPage):
 
         self.add_chapter("校核结果", page)
 
-    def _create_editor(self, spec: FieldSpec, parent: QWidget) -> QWidget:
-        if spec.widget_type == "choice":
+    def _create_editor(self, spec: FieldSchema, parent: QWidget) -> QWidget:
+        if spec.value_type in ("enum", "bool") or spec.widget_type == "choice":
             editor = QComboBox(parent)
             editor.addItems(spec.options)
-            if spec.default:
-                idx = editor.findText(spec.default)
+            default_text = "" if spec.default is None else str(spec.default)
+            if default_text:
+                idx = editor.findText(default_text)
                 if idx >= 0:
                     editor.setCurrentIndex(idx)
             editor.currentTextChanged.connect(
@@ -483,8 +508,9 @@ class BoltTappedAxialPage(BaseChapterPage):
             editor = QLineEdit(parent)
             editor.setObjectName("InputField")
             editor.setPlaceholderText(spec.label)
-            if spec.default:
-                editor.setText(spec.default)
+            default_text = "" if spec.default is None else str(spec.default)
+            if default_text:
+                editor.setText(default_text)
             editor.textChanged.connect(
                 lambda _text, fid=spec.field_id: self._on_input_changed(fid)
             )
@@ -497,41 +523,26 @@ class BoltTappedAxialPage(BaseChapterPage):
     def _apply_defaults(self) -> None:
         for spec in self._field_specs.values():
             widget = self._field_widgets[spec.field_id]
+            default_text = "" if spec.default is None else str(spec.default)
             if spec.widget_type == "choice":
-                widget.setCurrentText(spec.default)  # type: ignore[attr-defined]
+                widget.setCurrentText(default_text)  # type: ignore[attr-defined]
             else:
-                widget.setText(spec.default)  # type: ignore[attr-defined]
+                widget.setText(default_text)  # type: ignore[attr-defined]
 
-    def _read_widget_value(self, spec: FieldSpec) -> str:
+    def _read_widget_value(self, spec: FieldSchema) -> str:
         widget = self._field_widgets[spec.field_id]
         if spec.widget_type == "choice":
             return widget.currentText().strip()  # type: ignore[attr-defined]
         return widget.text().strip()  # type: ignore[attr-defined]
 
-    def _convert_value(self, spec: FieldSpec, raw: str) -> Any:
-        if spec.widget_type == "choice":
-            return raw
-        if raw == "":
-            return None
-        try:
-            if not _NUMBER_RE.fullmatch(raw):
-                raise ValueError(raw)
-            return float(raw)
-        except ValueError as exc:
-            raise ValueError(f"字段\"{spec.label}\"请输入有效数字，当前值: {raw}") from exc
+    def _current_raw_values(self) -> dict[str, str]:
+        return {
+            field_id: self._read_widget_value(spec)
+            for field_id, spec in self._field_specs.items()
+        }
 
     def _build_payload(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {}
-        for spec in self._field_specs.values():
-            raw = self._read_widget_value(spec)
-            value = self._convert_value(spec, raw)
-            if value is None:
-                continue
-            section, key = spec.mapping or (None, None)
-            if section is None or key is None:
-                continue
-            payload.setdefault(section, {})[key] = value
-        return payload
+        return build_payload(self._field_specs.values(), self._current_raw_values())
 
     def _capture_input_snapshot(self) -> dict[str, Any]:
         return build_form_snapshot(
@@ -575,6 +586,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         self._refresh_thread_section()
         self._reconcile_loaded_grade_rp02()
         self._suspend_live_feedback = False
+        self._refresh_all_field_errors()
         self._invalidate_cache()
         self._reset_result_panels()
 
@@ -620,6 +632,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         self._refresh_thread_section()
         self._on_grade_changed(self._current_grade())
         self._suspend_live_feedback = False
+        self._refresh_all_field_errors()
         self._invalidate_cache()
         self._reset_result_panels()
         self.set_info("参数已重置为默认值。")
@@ -762,6 +775,69 @@ class BoltTappedAxialPage(BaseChapterPage):
             self._set_badge(badge, "待计算", "wait")
         self.set_overall_status("等待计算", "wait")
 
+    def _set_field_error(self, field_id: str, message: str | None) -> None:
+        widget = self._field_widgets.get(field_id)
+        label = self._field_error_labels.get(field_id)
+        invalid = bool(message)
+        if widget is not None:
+            widget.setProperty("fieldError", invalid)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+        if label is not None:
+            label.setText(message or "")
+            label.setVisible(invalid)
+
+    def _refresh_field_error(self, field_id: str, values: dict[str, str] | None = None) -> None:
+        spec = self._field_specs.get(field_id)
+        if spec is None:
+            return
+        raw_values = values if values is not None else self._current_raw_values()
+        ok, message = validate_text(spec, raw_values.get(field_id, ""), values=raw_values)
+        self._set_field_error(field_id, None if ok else message)
+
+    def _dependent_field_ids(self, field_id: str) -> list[str]:
+        dependents: list[str] = []
+        for spec in self._field_specs.values():
+            for condition in (spec.required_when, spec.visible_when):
+                if (
+                    isinstance(condition, tuple)
+                    and len(condition) >= 2
+                    and condition[1] == field_id
+                ):
+                    dependents.append(spec.field_id)
+                    break
+        return dependents
+
+    def _refresh_all_field_errors(self) -> None:
+        values = self._current_raw_values()
+        for field_id in self._field_specs:
+            self._refresh_field_error(field_id, values)
+
+    def _collect_field_errors(self, *, show: bool) -> list[str]:
+        values = self._current_raw_values()
+        invalid: list[str] = []
+        for field_id, spec in self._field_specs.items():
+            ok, message = validate_text(spec, values.get(field_id, ""), values=values)
+            if not ok:
+                invalid.append(field_id)
+            if show:
+                self._set_field_error(field_id, None if ok else message)
+        return invalid
+
+    def _focus_field(self, field_id: str) -> None:
+        chapter_index = self._field_chapter_index.get(field_id)
+        if chapter_index is not None:
+            self.set_current_chapter(chapter_index)
+        widget = self._field_widgets.get(field_id)
+        if widget is None:
+            return
+        widget.setFocus(Qt.FocusReason.OtherFocusReason)
+        parent = widget.parentWidget()
+        while parent is not None and not isinstance(parent, QScrollArea):
+            parent = parent.parentWidget()
+        if isinstance(parent, QScrollArea):
+            parent.ensureWidgetVisible(widget)
+
     def _on_input_changed(self, field_id: str) -> None:
         if self._suspend_live_feedback:
             return
@@ -774,6 +850,9 @@ class BoltTappedAxialPage(BaseChapterPage):
             self._on_grade_changed(self._current_grade())
         self._invalidate_cache()
         self.set_overall_status("输入已变更，待重新计算", "wait")
+        self._refresh_field_error(field_id)
+        for dependent_id in self._dependent_field_ids(field_id):
+            self._refresh_field_error(dependent_id)
 
     def _set_badge(self, label: QLabel, text: str, state: str) -> None:
         if state == "pass":
@@ -788,6 +867,12 @@ class BoltTappedAxialPage(BaseChapterPage):
         label.style().polish(label)
 
     def _run_calculation(self) -> None:
+        invalid = self._collect_field_errors(show=True)
+        if invalid:
+            self._invalidate_cache()
+            self._focus_field(invalid[0])
+            self.set_info(f"有 {len(invalid)} 个字段需要修正。")
+            return
         try:
             payload = self._build_payload()
             result = calculate_tapped_axial_joint(payload)
