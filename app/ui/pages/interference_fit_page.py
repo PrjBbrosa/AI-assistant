@@ -40,10 +40,22 @@ from app.ui.input_condition_store import (
     validate_snapshot,
     write_input_conditions,
 )
-from app.ui.model_scope import SOURCE_RECOMMENDED, SOURCE_USER, format_source_label
+from app.ui.model_scope import (
+    INTERFERENCE_SCOPE,
+    SOURCE_RECOMMENDED,
+    SOURCE_USER,
+    format_source_label,
+    make_scope_banner,
+    scope_report_lines,
+)
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, export_report_lines, write_text_report
 from app.ui.report_trace import build_report_trace, trace_report_lines
+from app.ui.result_contract import (
+    INTERFERENCE_CHECK_LABELS,
+    from_interference,
+    status_label_zh,
+)
 from app.ui.theme import mark_input_field_label_wrap, mark_input_field_surface
 from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.help_button import HelpButton
@@ -807,15 +819,7 @@ CHAPTERS: list[dict[str, Any]] = [
     },
 ]
 
-CHECK_LABELS = {
-    "torque_ok": "扭矩能力校核（按最小过盈）",
-    "axial_ok": "轴向力能力校核（按最小过盈）",
-    "combined_ok": "联合作用校核（扭矩 + 轴向）",
-    "gaping_ok": "张口缝校核（p_min >= p_r + p_b）",
-    "fit_range_ok": "最大过盈端覆盖需求校核",
-    "shaft_stress_ok": "轴侧应力安全系数校核（取内孔壁/配合面较大者）",
-    "hub_stress_ok": "轮毂应力安全系数校核",
-}
+CHECK_LABELS = INTERFERENCE_CHECK_LABELS
 
 BEGINNER_GUIDES: dict[str, str] = {
     "loads.application_factor_ka": "工况越冲击，KA 越大，需求过盈也会随之提高。",
@@ -1204,8 +1208,10 @@ class InterferenceFitPage(BaseChapterPage):
         hint = QLabel("按最小过盈校核承载能力，按最大过盈校核应力，并单独显示最大过盈端是否覆盖需求。", container)
         hint.setObjectName("SectionHint")
         hint.setWordWrap(True)
+        self.model_scope_banner = make_scope_banner(container, INTERFERENCE_SCOPE)
         content.addWidget(title)
         content.addWidget(hint)
+        content.addWidget(self.model_scope_banner)
 
         summary_card = QFrame(container)
         summary_card.setObjectName("SubCard")
@@ -1771,20 +1777,17 @@ class InterferenceFitPage(BaseChapterPage):
         self._mark_results_fresh()
 
     def _render_result(self, result: dict[str, Any], payload: dict[str, Any] | None = None) -> None:
-        overall = bool(result.get("overall_pass"))
-        checks = result["checks"]
+        view = from_interference(result, payload)
         fit_trace_lines = self._build_fit_trace_lines(payload)
 
-        if overall:
-            self.result_title.setText("校核通过")
-            self.result_summary.setText("该工况在当前输入范围内满足 DIN 7190 核心能力、联合作用、张口缝与应力要求。")
-        else:
-            self.result_title.setText("校核不通过")
-            self.result_summary.setText("存在未满足项，请优先查看联合作用、张口缝、需求过盈和应力侧提示。")
+        self.result_title.setText(view.title_zh)
+        self.result_summary.setText(view.summary_zh)
 
-        for key, badge in self._check_badges.items():
-            ok = bool(checks.get(key, False))
-            self._set_badge(badge, "通过" if ok else "不通过", "pass" if ok else "fail")
+        for check in view.checks:
+            badge = self._check_badges.get(check.id)
+            if badge is None:
+                continue
+            self._set_badge(badge, status_label_zh(check.status), check.status)
 
         p = result["pressure_mpa"]
         cap = result["capacity"]
@@ -1835,44 +1838,18 @@ class InterferenceFitPage(BaseChapterPage):
             curve["delta_required_um"],
         )
 
-        messages = []
-        for msg in result.get("messages", []):
-            messages.append(f"[提示] {msg}")
-        messages.extend(self._build_recommendations(result))
+        messages = [f"[提示] {msg}" for msg in view.warnings]
+        messages.extend(f"[建议] {msg}" for msg in view.recommendations)
         fretting_result = result.get("fretting", {})
         if isinstance(fretting_result, dict) and fretting_result.get("enabled"):
             risk_level = str(fretting_result.get("risk_level", "not_applicable"))
             messages.append(f"[Step 5] Fretting 风险等级: {risk_level}")
             for recommendation in fretting_result.get("recommendations", []):
                 messages.append(f"[Step 5 建议] {recommendation}")
-        messages.append(
-            "[说明] 当前模型为 DIN 7190 核心增强版：线弹性、均匀接触压力、恒定摩擦。"
-            "弯矩附加压强按 QW=0 的保守简化处理；当前仅内置有限范围的优选配合预设，"
-            "阶梯轮毂与离心力未纳入本轮。空心轴主模型已支持，但重复载荷简化式仍仅适用于实心轴。"
-        )
+        for note in view.source_notes:
+            messages.append(f"[说明] {note}")
         messages.append("[说明] Step 5 Fretting 风险评估属于增强结果，不改变基础通过/不通过结论。")
         self.message_box.setPlainText("\n".join(messages))
-
-    def _build_recommendations(self, result: dict[str, Any]) -> list[str]:
-        checks = result.get("checks", {})
-        recs: list[str] = []
-        if not checks.get("gaping_ok", True):
-            recs.append("[建议] 存在张口缝风险：优先增大最小过盈、提高配合长度或降低径向力/弯矩。")
-        if not checks.get("torque_ok", True):
-            recs.append("[建议] 扭矩能力不足：可增大最小过盈、提高 mu_T 或增大配合长度。")
-        if not checks.get("axial_ok", True):
-            recs.append("[建议] 轴向能力不足：可增大最小过盈、提高 mu_Ax 或增加接触面积。")
-        if not checks.get("combined_ok", True):
-            recs.append("[建议] 联合作用不足：需同时提高扭矩与轴向共同承载能力，不能只看单项通过。")
-        if not checks.get("fit_range_ok", True):
-            recs.append("[建议] 最大过盈端仍不足以覆盖需求：请提升公差带或调整结构尺寸。")
-        if not checks.get("shaft_stress_ok", True):
-            recs.append("[建议] 轴侧应力安全系数不足：降低最大过盈或提高轴材料屈服强度。")
-        if not checks.get("hub_stress_ok", True):
-            recs.append("[建议] 轮毂应力安全系数不足：优先增大轮毂外径或提高轮毂材料强度。")
-        if not recs:
-            recs.append("[建议] 当前工况满足全部校核，建议至少保留 10% 工程裕量。")
-        return recs
 
     def _build_fit_trace_lines(self, payload: dict[str, Any] | None = None) -> list[str]:
         fit_selection = {}
@@ -2265,7 +2242,8 @@ class InterferenceFitPage(BaseChapterPage):
     def _build_report_lines(self) -> list[str]:
         assert self._last_result is not None
         result = self._last_result
-        checks = result["checks"]
+        payload = self._last_payload or {}
+        view = from_interference(result, payload)
         p = result["pressure_mpa"]
         cap = result["capacity"]
         asm = result["assembly"]
@@ -2281,14 +2259,22 @@ class InterferenceFitPage(BaseChapterPage):
 
         lines = [
             "过盈配合校核报告（DIN 7190 核心增强版）",
-            *trace_report_lines(build_report_trace(MODULE_ID, self._last_payload or {})),
+            *trace_report_lines(
+                build_report_trace(
+                    MODULE_ID,
+                    payload,
+                    model_level=INTERFERENCE_SCOPE.model_level,
+                )
+            ),
             "",
-            f"总体结论: {'通过' if result['overall_pass'] else '不通过'}",
+            *scope_report_lines(view.model_scope),
+            "",
+            f"总体结论: {view.status_label_zh}",
             "",
             "分项结果:",
         ]
-        for key, title in CHECK_LABELS.items():
-            lines.append(f"- {title}: {'通过' if checks.get(key) else '不通过'}")
+        for check in view.checks:
+            lines.append(f"- {check.label_zh}: {status_label_zh(check.status)}")
 
         lines.extend(
             [
@@ -2317,11 +2303,11 @@ class InterferenceFitPage(BaseChapterPage):
                 f"- shaft_vm_interface_max / shaft_vm_bore_max: {stress.get('shaft_vm_interface_max', 0.0):.3f} / {stress.get('shaft_vm_bore_max', 0.0):.3f} MPa",
                 f"- S_torque / S_axial / S_comb: {safety['torque_sf']:.3f} / {safety['axial_sf']:.3f} / {safety['combined_sf']:.3f}",
                 f"- S_shaft / S_hub: {safety['shaft_sf']:.3f} / {safety['hub_sf']:.3f}",
-                "",
-                "模型假设与排除:",
-                "- 当前模型为 DIN 7190 核心增强版：线弹性、均匀接触压力、恒定摩擦；已支持实心轴与空心轴主模型。",
-                "- 弯矩附加压强按 QW=0 的保守简化处理。",
-                "- 本轮显式排除：centrifugal force、stepped hub geometry；repeated-load 简化式仍只适用于实心轴。",
             ]
         )
+        if view.warnings:
+            lines.extend(["", "提示:"])
+            lines.extend(f"- {msg}" for msg in view.warnings)
+        lines.extend(["", "建议:"])
+        lines.extend(f"- {msg}" for msg in view.recommendations)
         return lines

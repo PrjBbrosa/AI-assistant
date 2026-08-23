@@ -4,13 +4,15 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QMessageBox
+from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QLineEdit, QMessageBox
 
+from app.ui.model_scope import INTERFERENCE_SCOPE, MODEL_LEVEL_FORMAL_SUBSET
 from app.ui.pages.interference_fit_page import (
     INTERFERENCE_YIELD_SOURCE_NOTE,
     MATERIAL_LIBRARY,
     InterferenceFitPage,
 )
+from app.ui.result_contract import from_interference, status_label_zh
 
 
 class InterferenceFitPageTests(unittest.TestCase):
@@ -608,6 +610,58 @@ class InterferenceFitPageTests(unittest.TestCase):
         self.assertNotIn("preferred_fit_name", fit)
         self.assertEqual(fit["delta_min_um"], 20.0)
         self.assertEqual(payload["fit_selection"]["mode"], "manual_interference")
+
+    def test_result_header_and_report_show_model_level(self) -> None:
+        page = InterferenceFitPage()
+        banner = page.findChild(QLabel, "ModelScopeBanner")
+        self.assertIsNotNone(banner)
+        self.assertIn(MODEL_LEVEL_FORMAL_SUBSET, banner.text())
+        self.assertIn("覆盖工况", banner.text())
+        self.assertIn("未覆盖", banner.text())
+        self.assertIn("服役温度", banner.text())
+        self.assertIn("转速", banner.text())
+        self.assertIn("离心力", banner.text())
+        self.assertIn("阶梯", banner.text())
+
+        self.__class__.app.processEvents()
+        page._calculate()
+        self.assertIn(MODEL_LEVEL_FORMAL_SUBSET, page.result_title.text())
+        lines = page._build_report_lines()
+        joined = "\n".join(lines)
+        self.assertIn("软件版本", joined)
+        self.assertIn("输入摘要哈希", joined)
+        self.assertIn("模块: interference_fit", joined)
+        self.assertIn(f"模型等级: {INTERFERENCE_SCOPE.model_level}", joined)
+        self.assertIn("覆盖工况:", joined)
+        self.assertIn("未覆盖:", joined)
+
+    def test_result_view_model_overall_matches_ui_title(self) -> None:
+        page = InterferenceFitPage()
+        self.__class__.app.processEvents()
+        page._calculate()
+
+        view = from_interference(page._last_result, page._last_payload)
+        self.assertEqual(page.result_title.text(), view.title_zh)
+        self.assertIn(INTERFERENCE_SCOPE.model_level, view.title_zh)
+        self.assertEqual(page.result_summary.text(), view.summary_zh)
+        report = "\n".join(page._build_report_lines())
+        self.assertIn(f"总体结论: {view.status_label_zh}", report)
+        self.assertEqual(
+            view.overall_status,
+            "pass" if page._last_result["overall_pass"] else "fail",
+        )
+        self.assertTrue(view.checks)
+        self.assertTrue(
+            any(item.id in ("torque_ok", "combined_ok") for item in view.checks)
+        )
+        self.assertTrue(
+            any(item.id in ("shaft_stress_ok", "hub_stress_ok") for item in view.checks)
+        )
+        for check in view.checks:
+            badge = page._check_badges.get(check.id)
+            if badge is None:
+                continue
+            self.assertEqual(badge.text(), status_label_zh(check.status))
 
 
 if __name__ == "__main__":

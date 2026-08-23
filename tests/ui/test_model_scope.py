@@ -3,9 +3,11 @@
 from core.hertz.calculator import OUTER_CONTACT_SCOPE_NOTE
 from app.ui.model_scope import (
     HERTZ_SCOPE,
+    INTERFERENCE_SCOPE,
     MODEL_LEVEL_FORMAL_SUBSET,
     MODEL_LEVEL_PRECHECK,
     MODEL_LEVEL_QUICK,
+    MODULE_SCOPES,
     SPLINE_SCOPE,
     WORM_SCOPE,
     format_scope_banner_text,
@@ -35,3 +37,16 @@ def test_spline_and_worm_scope_levels() -> None:
     assert "正式子集" in worm_lines
     assert "负载能力" in worm_lines
     assert "完整 DIN 3996" in worm_lines
+
+
+def test_interference_scope_is_din7190_style_not_full_cert() -> None:
+    assert INTERFERENCE_SCOPE.module_id == "interference_fit"
+    assert INTERFERENCE_SCOPE.model_level == MODEL_LEVEL_FORMAL_SUBSET
+    assert MODULE_SCOPES[INTERFERENCE_SCOPE.module_id] is INTERFERENCE_SCOPE
+    text = "\n".join(scope_report_lines(INTERFERENCE_SCOPE))
+    assert "DIN 7190" in text
+    assert "签发" in text
+    assert "服役温度" in text
+    assert "转速" in text
+    assert "离心力" in text
+    assert "阶梯" in text

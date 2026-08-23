@@ -18,6 +18,7 @@ from reportlab.platypus import (
     Spacer,
 )
 
+from app.ui.model_scope import INTERFERENCE_SCOPE, scope_kv_rows
 from app.ui.report_pdf_common import (
     _build_styles,
     _check_pills,
@@ -26,7 +27,6 @@ from app.ui.report_pdf_common import (
     _input_table,
     _kv_table,
     _metric_cards,
-    _pass_text,
     _register_fonts,
     _rstep_card,
     _section_title,
@@ -35,61 +35,30 @@ from app.ui.report_pdf_common import (
     build_pdf,
 )
 from app.ui.report_trace import build_report_trace, trace_kv_rows
-
-# ---------------------------------------------------------------------------
-# Check labels
-# ---------------------------------------------------------------------------
-CHECK_LABELS = {
-    "torque_ok": "扭矩能力校核",
-    "axial_ok": "轴向力能力校核",
-    "combined_ok": "联合作用校核",
-    "gaping_ok": "张口缝校核",
-    "fit_range_ok": "过盈覆盖需求校核",
-    "shaft_stress_ok": "轴侧应力校核（取内孔壁/配合面较大者）",
-    "hub_stress_ok": "轮毂应力校核",
-}
+from app.ui.result_contract import (
+    INTERFERENCE_SLIP_CHECK_IDS,
+    INTERFERENCE_STRESS_CHECK_IDS,
+    from_interference,
+    status_label_zh,
+)
 
 
-# ---------------------------------------------------------------------------
-# Recommendations
-# ---------------------------------------------------------------------------
 def build_interference_recommendations(result: Dict[str, Any]) -> list[str]:
-    """Build recommendation strings from result dict."""
-    checks = result.get("checks", {})
-    recs: list[str] = []
-    if not checks.get("torque_ok", True):
-        recs.append(
-            "扭矩能力不足：可增大过盈量、增大配合长度或提高摩擦系数。"
-        )
-    if not checks.get("axial_ok", True):
-        recs.append(
-            "轴向力能力不足：可增大过盈量、增大配合长度或提高摩擦系数。"
-        )
-    if not checks.get("combined_ok", True):
-        recs.append(
-            "联合作用校核不通过：扭矩和轴向力组合超限，需增大过盈量或减小载荷。"
-        )
-    if not checks.get("gaping_ok", True):
-        recs.append(
-            "张口缝校核不通过：最小面压不足以抵抗弯矩/径向力引起的张开趋势，"
-            "需增大最小过盈量。"
-        )
-    if not checks.get("fit_range_ok", True):
-        recs.append(
-            "过盈覆盖需求校核不通过：最大过盈端面压超出材料许用范围，"
-            "需缩小过盈公差带或提高材料强度。"
-        )
-    if not checks.get("shaft_stress_ok", True):
-        recs.append(
-            "轴侧应力安全系数不足：可更换更高强度的轴材料或减小过盈量。"
-        )
-    if not checks.get("hub_stress_ok", True):
-        recs.append(
-            "轮毂应力安全系数不足：可增大轮毂外径、更换更高强度材料或减小过盈量。"
-        )
-    if not recs:
-        recs.append("所有校核均通过，当前设计满足 DIN 7190 要求。")
-    return recs
+    """Build recommendation strings from the shared interference view model."""
+    return list(from_interference(result).recommendations)
+
+
+def _check_pill_state(status: str) -> bool | None:
+    if status == "pass":
+        return True
+    if status == "fail":
+        return False
+    return None
+
+
+def _group_pass(view, ids: tuple[str, ...]) -> bool:
+    items = [item for item in view.checks if item.id in ids]
+    return bool(items) and all(item.status == "pass" for item in items)
 
 
 # ---------------------------------------------------------------------------
@@ -143,9 +112,8 @@ def generate_interference_report(
     _register_fonts()
     styles = _build_styles()
     elems: list = []
+    view = from_interference(result, payload)
 
-    checks = result.get("checks", {})
-    overall = result.get("overall_pass", False)
     pressure = result.get("pressure_mpa", {})
     capacity = result.get("capacity", {})
     assembly = result.get("assembly", {})
@@ -154,11 +122,13 @@ def generate_interference_report(
     required = result.get("required", {})
     roughness = result.get("roughness", {})
     add_p = result.get("additional_pressure_mpa", {})
-    model = result.get("model", {})
-    messages = result.get("messages", [])
+    messages = list(view.warnings)
 
-    shaft_type_str = "空心轴" if model.get("shaft_type") == "hollow_shaft" else "实心轴"
-    trace = build_report_trace("interference_fit", payload)
+    trace = build_report_trace(
+        INTERFERENCE_SCOPE.module_id,
+        payload,
+        model_level=INTERFERENCE_SCOPE.model_level,
+    )
     date_str = trace.generated_at
 
     # 1. Header bar
@@ -167,9 +137,11 @@ def generate_interference_report(
     elems.extend(_trace_block(styles, trace_kv_rows(trace)))
 
     # 2. Verdict block
-    subtitle = f"模型: 圆柱面过盈配合 ({shaft_type_str})"
-    elems.append(_verdict_block(styles, overall, subtitle))
+    elems.append(_verdict_block(styles, view.overall_status, view.verdict_subtitle_zh))
     elems.append(Spacer(1, 8))
+    elems.append(_section_title(styles, "模型范围"))
+    elems.append(_kv_table(styles, scope_kv_rows(view.model_scope), 0.28))
+    elems.append(Spacer(1, 10))
 
     # 3. Metric cards
     metrics = [
@@ -182,7 +154,9 @@ def generate_interference_report(
     elems.append(Spacer(1, 8))
 
     # 4. Check pills
-    elems.append(_check_pills(styles, checks, CHECK_LABELS, {}))
+    check_states = {item.id: _check_pill_state(item.status) for item in view.checks}
+    check_labels = {item.id: item.label_zh for item in view.checks}
+    elems.append(_check_pills(styles, check_states, check_labels, {}))
     elems.append(Spacer(1, 12))
 
     # 5. Input summary
@@ -234,13 +208,14 @@ def generate_interference_report(
     # 8. Safety cards
     elems.append(_section_title(styles, "安全系数"))
     slip_min = safety.get("slip_safety_min", 0)
-    slip_pass = slip_min >= 1.0 if isinstance(slip_min, (int, float)) else None
+    slip_pass = _group_pass(view, INTERFERENCE_SLIP_CHECK_IDS)
     slip_values = [
         f"扭矩安全系数: {_fmt(safety.get('torque_sf'), 2)}",
         f"轴向力安全系数: {_fmt(safety.get('axial_sf'), 2)}",
         f"联合安全系数: {_fmt(safety.get('combined_sf'), 2)}",
         f"联合利用度: {_fmt(safety.get('combined_usage'), 2)}",
         f"张口缝裕度: {_fmt(safety.get('gaping_margin_mpa'), 2, 'MPa')}",
+        f"结论: {status_label_zh('pass' if slip_pass else 'fail')}",
     ]
     elems.append(KeepTogether([
         _rstep_card(styles, "滑移安全", slip_values, passed=slip_pass,
@@ -249,10 +224,11 @@ def generate_interference_report(
     ]))
 
     stress_min = safety.get("stress_safety_min", 0)
-    stress_pass = stress_min >= 1.0 if isinstance(stress_min, (int, float)) else None
+    stress_pass = _group_pass(view, INTERFERENCE_STRESS_CHECK_IDS)
     stress_sf_values = [
         f"轴侧安全系数（取内孔壁/配合面较大者）: {_fmt(safety.get('shaft_sf'), 2)}",
         f"轮毂安全系数: {_fmt(safety.get('hub_sf'), 2)}",
+        f"结论: {status_label_zh('pass' if stress_pass else 'fail')}",
     ]
     elems.append(KeepTogether([
         _rstep_card(styles, "应力安全", stress_sf_values, passed=stress_pass,
@@ -295,9 +271,8 @@ def generate_interference_report(
         elems.append(Spacer(1, 8))
 
     # 11. Recommendations
-    recs = build_interference_recommendations(result)
     elems.append(_section_title(styles, "建议"))
-    for rec in recs:
+    for rec in view.recommendations:
         elems.append(Paragraph(f"- {rec}", styles["body"]))
 
     build_pdf(path, elems, "DIN 7190 过盈配合校核")

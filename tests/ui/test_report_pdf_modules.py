@@ -319,6 +319,86 @@ class TestInterferencePdfReport:
         assert out.exists()
         assert out.stat().st_size > 1000
 
+    def test_pdf_includes_report_trace(self, tmp_path, monkeypatch):
+        from app.ui import report_pdf_interference
+        from app.ui.model_scope import INTERFERENCE_SCOPE
+        from app.ui.report_pdf_interference import generate_interference_report
+
+        captured: list[list[tuple[str, str]]] = []
+        original = report_pdf_interference._trace_block
+
+        def capture_trace(styles, rows):
+            captured.append(list(rows))
+            return original(styles, rows)
+
+        monkeypatch.setattr(report_pdf_interference, "_trace_block", capture_trace)
+        payload = _interference_payload()
+        generate_interference_report(
+            tmp_path / "interference_trace.pdf", payload, _interference_result()
+        )
+
+        assert captured
+        kv = dict(captured[0])
+        assert "软件版本" in kv
+        assert kv["软件版本"]
+        assert kv.get("模块") == INTERFERENCE_SCOPE.module_id
+        assert kv.get("模型等级") == INTERFERENCE_SCOPE.model_level
+        assert str(kv.get("输入摘要哈希", "")).startswith("sha256:")
+
+    def test_pdf_includes_model_level(self, tmp_path, monkeypatch):
+        from app.ui import report_pdf_interference
+        from app.ui.model_scope import MODEL_LEVEL_FORMAL_SUBSET
+        from app.ui.report_pdf_interference import generate_interference_report
+
+        subtitles: list[str] = []
+        titles: list[str] = []
+        original_verdict = report_pdf_interference._verdict_block
+        original_title = report_pdf_interference._section_title
+
+        def capture_verdict(styles, overall, subtitle):
+            subtitles.append(subtitle)
+            return original_verdict(styles, overall, subtitle)
+
+        def capture_title(styles, title):
+            titles.append(title)
+            return original_title(styles, title)
+
+        monkeypatch.setattr(report_pdf_interference, "_verdict_block", capture_verdict)
+        monkeypatch.setattr(report_pdf_interference, "_section_title", capture_title)
+
+        out = tmp_path / "interference_model_level.pdf"
+        generate_interference_report(out, _interference_payload(), _interference_result())
+        assert any(MODEL_LEVEL_FORMAL_SUBSET in text for text in subtitles)
+        assert "模型范围" in titles
+
+    def test_pdf_verdict_matches_result_view_model(self, tmp_path, monkeypatch):
+        from app.ui import report_pdf_interference
+        from app.ui.report_pdf_interference import generate_interference_report
+        from app.ui.result_contract import from_interference
+
+        overalls: list[object] = []
+        original_verdict = report_pdf_interference._verdict_block
+
+        def capture_verdict(styles, overall, subtitle):
+            overalls.append(overall)
+            return original_verdict(styles, overall, subtitle)
+
+        monkeypatch.setattr(report_pdf_interference, "_verdict_block", capture_verdict)
+        payload = _interference_payload()
+        result = _interference_result()
+        view = from_interference(result, payload)
+        generate_interference_report(tmp_path / "interference_verdict.pdf", payload, result)
+
+        assert overalls
+        assert overalls[0] == view.overall_status
+        assert view.overall_status in ("pass", "fail")
+        assert view.title_zh.startswith(
+            "校核通过" if view.overall_status == "pass" else "校核不通过"
+        )
+        check_ids = {item.id for item in view.checks}
+        assert "torque_ok" in check_ids or "combined_ok" in check_ids
+        assert "shaft_stress_ok" in check_ids or "hub_stress_ok" in check_ids
+
 
 class TestInterferenceRecommendations:
     def test_all_pass(self):

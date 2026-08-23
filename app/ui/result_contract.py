@@ -8,6 +8,7 @@ from typing import Any, Literal
 from app.ui.model_scope import (
     HERTZ_ALLOWABLE_SOURCE_NOTE,
     HERTZ_SCOPE,
+    INTERFERENCE_SCOPE,
     MODEL_LEVEL_REFERENCE,
     SPLINE_SCOPE,
     WORM_SCOPE,
@@ -54,6 +55,28 @@ WORM_CHECK_LABELS: dict[str, str] = {
     "fatigue_life": "疲劳寿命",
     "wear_life": "磨损寿命",
 }
+
+INTERFERENCE_CHECK_LABELS: dict[str, str] = {
+    "torque_ok": "扭矩能力校核（按最小过盈）",
+    "axial_ok": "轴向力能力校核（按最小过盈）",
+    "combined_ok": "联合作用校核（扭矩 + 轴向）",
+    "gaping_ok": "张口缝校核（p_min >= p_r + p_b）",
+    "fit_range_ok": "最大过盈端覆盖需求校核",
+    "shaft_stress_ok": "轴侧应力安全系数校核（取内孔壁/配合面较大者）",
+    "hub_stress_ok": "轮毂应力安全系数校核",
+}
+
+INTERFERENCE_SLIP_CHECK_IDS: tuple[str, ...] = (
+    "torque_ok",
+    "axial_ok",
+    "combined_ok",
+    "gaping_ok",
+    "fit_range_ok",
+)
+INTERFERENCE_STRESS_CHECK_IDS: tuple[str, ...] = (
+    "shaft_stress_ok",
+    "hub_stress_ok",
+)
 
 _SPLINE_OVERALL_TITLE_ZH: dict[str, str] = {
     "pass": "预校核通过",
@@ -880,4 +903,236 @@ def _worm_recommendations(
         recs.append(
             "当前工况满足 Method B 风格最小负载能力子集；寿命与磨损为参考项，不替代完整 DIN 3996 签发。"
         )
+    return tuple(recs)
+
+_INTERFERENCE_SHAFT_TYPE_ZH = {
+    "hollow_shaft": "空心轴",
+    "solid_shaft": "实心轴",
+}
+
+_INTERFERENCE_CHECK_ACTUAL = {
+    "torque_ok": "torque_sf",
+    "axial_ok": "axial_sf",
+    "combined_ok": "combined_sf",
+    "gaping_ok": "gaping_margin_mpa",
+    "shaft_stress_ok": "shaft_sf",
+    "hub_stress_ok": "hub_sf",
+}
+
+
+def from_interference(
+    result: dict[str, Any],
+    payload: dict[str, Any] | None = None,
+) -> ResultViewModel:
+    """Build the interference UI/PDF view model from calculator output."""
+    checks_raw = result.get("checks")
+    if not isinstance(checks_raw, dict):
+        raise TypeError("checks")
+
+    overall_status: OverallStatus = (
+        "pass" if bool(result.get("overall_pass")) else "fail"
+    )
+    model = result.get("model")
+    if not isinstance(model, dict):
+        model = {}
+    shaft_type = str(model.get("shaft_type") or "solid_shaft")
+    shaft_type_zh = _INTERFERENCE_SHAFT_TYPE_ZH.get(shaft_type, "实心轴")
+    model_level = INTERFERENCE_SCOPE.model_level
+    title = overall_title_zh(overall_status, model_level)
+    if overall_status == "pass":
+        summary = (
+            "该工况在当前输入范围内满足 DIN 7190 风格核心能力、联合作用、张口缝与应力要求。"
+            f"{INTERFERENCE_SCOPE.applicability}"
+        )
+    else:
+        summary = (
+            "存在未满足项，请优先查看联合作用、张口缝、需求过盈和应力侧提示。"
+            f"{INTERFERENCE_SCOPE.applicability}"
+        )
+
+    safety = result.get("safety")
+    if not isinstance(safety, dict):
+        safety = {}
+    source = _interference_input_source(payload, result)
+    source_checks = source.get("checks")
+    if not isinstance(source_checks, dict):
+        source_checks = {}
+    slip_limit = source_checks.get("slip_safety_min", safety.get("slip_safety_min"))
+    stress_limit = source_checks.get(
+        "stress_safety_min", safety.get("stress_safety_min")
+    )
+    limit_by_id = {
+        "torque_ok": slip_limit,
+        "axial_ok": slip_limit,
+        "combined_ok": slip_limit,
+        "gaping_ok": 0.0,
+        "fit_range_ok": None,
+        "shaft_stress_ok": stress_limit,
+        "hub_stress_ok": stress_limit,
+    }
+    unit_by_id = {"gaping_ok": "MPa"}
+
+    checks = tuple(
+        CheckView(
+            id=check_id,
+            label_zh=label,
+            status="pass" if checks_raw.get(check_id) else "fail",
+            actual=_as_float(safety.get(_INTERFERENCE_CHECK_ACTUAL[check_id]))
+            if check_id in _INTERFERENCE_CHECK_ACTUAL
+            else None,
+            limit=_as_float(limit_by_id.get(check_id)),
+            unit=unit_by_id.get(check_id, ""),
+            model_level=model_level,
+            source_kind="user",
+        )
+        for check_id, label in INTERFERENCE_CHECK_LABELS.items()
+    )
+
+    warnings = tuple(
+        str(msg) for msg in result.get("messages", []) if msg is not None
+    )
+    return ResultViewModel(
+        overall_status=overall_status,
+        title_zh=title,
+        summary_zh=summary,
+        checks=checks,
+        metrics=_interference_metrics(result, shaft_type_zh),
+        warnings=warnings,
+        model_scope=INTERFERENCE_SCOPE,
+        source_notes=(INTERFERENCE_SCOPE.applicability,),
+        recommendations=_interference_recommendations(result),
+        verdict_subtitle_zh=(
+            f"模型: 圆柱面过盈配合（{shaft_type_zh}） | 模型等级: {model_level}"
+        ),
+    )
+
+
+def _interference_input_source(
+    payload: dict[str, Any] | None,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    if isinstance(payload, dict) and payload:
+        return payload
+    echo = result.get("inputs_echo")
+    return echo if isinstance(echo, dict) else {}
+
+
+def _interference_metrics(
+    result: dict[str, Any],
+    shaft_type_zh: str,
+) -> tuple[MetricView, ...]:
+    derived = result.get("derived")
+    if not isinstance(derived, dict):
+        derived = {}
+    pressure = result.get("pressure_mpa")
+    if not isinstance(pressure, dict):
+        pressure = {}
+    required = result.get("required")
+    if not isinstance(required, dict):
+        required = {}
+    capacity = result.get("capacity")
+    if not isinstance(capacity, dict):
+        capacity = {}
+    assembly = result.get("assembly")
+    if not isinstance(assembly, dict):
+        assembly = {}
+    safety = result.get("safety")
+    if not isinstance(safety, dict):
+        safety = {}
+    stress = result.get("stress_mpa")
+    if not isinstance(stress, dict):
+        stress = {}
+    roughness = result.get("roughness")
+    if not isinstance(roughness, dict):
+        roughness = {}
+    add_p = result.get("additional_pressure_mpa")
+    if not isinstance(add_p, dict):
+        add_p = {}
+
+    metrics: list[MetricView] = [
+        MetricView("几何模型", shaft_type_zh),
+        *_optional_metric(
+            "轴内径", derived.get("shaft_inner_d_mm"), "mm", 2
+        ),
+        *_optional_metric("面压 p_min", pressure.get("p_min"), "MPa", 2),
+        *_optional_metric("面压 p_mean", pressure.get("p_mean"), "MPa", 2),
+        *_optional_metric("面压 p_max", pressure.get("p_max"), "MPa", 2),
+        *_optional_metric(
+            "需求面压 p_required", required.get("p_required_mpa"), "MPa", 2
+        ),
+        *_optional_metric(
+            "需求面压 p_req,T", required.get("p_required_torque_mpa"), "MPa", 2
+        ),
+        *_optional_metric(
+            "需求面压 p_req,Ax", required.get("p_required_axial_mpa"), "MPa", 2
+        ),
+        *_optional_metric(
+            "需求面压 p_req,comb",
+            required.get("p_required_combined_mpa"),
+            "MPa",
+            2,
+        ),
+        *_optional_metric("附加面压 p_gap", add_p.get("p_gap"), "MPa", 2),
+        *_optional_metric(
+            "扭矩容量 T_min", capacity.get("torque_min_nm"), "N*m", 1
+        ),
+        *_optional_metric(
+            "轴向力容量 F_min", capacity.get("axial_min_n"), "N", 0
+        ),
+        *_optional_metric(
+            "压入力 F_press,min", assembly.get("press_force_min_n"), "N", 0
+        ),
+        *_optional_metric(
+            "粗糙度损失 s", roughness.get("subsidence_um"), "um", 2
+        ),
+        *_optional_metric("扭矩安全系数", safety.get("torque_sf"), "", 2),
+        *_optional_metric("轴向力安全系数", safety.get("axial_sf"), "", 2),
+        *_optional_metric("联合安全系数", safety.get("combined_sf"), "", 2),
+        *_optional_metric("轴侧安全系数", safety.get("shaft_sf"), "", 2),
+        *_optional_metric("轮毂安全系数", safety.get("hub_sf"), "", 2),
+        *_optional_metric(
+            "轴 von Mises max", stress.get("shaft_vm_max"), "MPa", 1
+        ),
+        *_optional_metric(
+            "轮毂 von Mises max", stress.get("hub_vm_max"), "MPa", 1
+        ),
+    ]
+    return tuple(metrics)
+
+
+def _interference_recommendations(result: dict[str, Any]) -> tuple[str, ...]:
+    checks = result.get("checks")
+    if not isinstance(checks, dict):
+        checks = {}
+    recs: list[str] = []
+    if checks.get("torque_ok") is False:
+        recs.append("扭矩能力不足：可增大过盈量、增大配合长度或提高摩擦系数。")
+    if checks.get("axial_ok") is False:
+        recs.append(
+            "轴向力能力不足：可增大过盈量、增大配合长度或提高摩擦系数。"
+        )
+    if checks.get("combined_ok") is False:
+        recs.append(
+            "联合作用校核不通过：扭矩和轴向力组合超限，需增大过盈量或减小载荷。"
+        )
+    if checks.get("gaping_ok") is False:
+        recs.append(
+            "张口缝校核不通过：最小面压不足以抵抗弯矩/径向力引起的张开趋势，"
+            "需增大最小过盈量。"
+        )
+    if checks.get("fit_range_ok") is False:
+        recs.append(
+            "过盈覆盖需求校核不通过：最大过盈端面压超出材料许用范围，"
+            "需缩小过盈公差带或提高材料强度。"
+        )
+    if checks.get("shaft_stress_ok") is False:
+        recs.append(
+            "轴侧应力安全系数不足：可更换更高强度的轴材料或减小过盈量。"
+        )
+    if checks.get("hub_stress_ok") is False:
+        recs.append(
+            "轮毂应力安全系数不足：可增大轮毂外径、更换更高强度材料或减小过盈量。"
+        )
+    if not recs:
+        recs.append("所有校核均通过，当前设计满足 DIN 7190 风格核心要求。")
     return tuple(recs)

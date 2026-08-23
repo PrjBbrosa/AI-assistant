@@ -91,10 +91,34 @@ WORM_SCOPE = ModuleScope(
     ),
 )
 
+INTERFERENCE_SCOPE = ModuleScope(
+    module_id="interference_fit",
+    model_level=MODEL_LEVEL_FORMAL_SUBSET,
+    covered=(
+        "DIN 7190 风格圆柱面过盈配合（实心轴 / 空心轴）",
+        "防滑（扭矩 / 轴向 / 联合作用）与张口缝",
+        "轴 / 轮毂应力（取内孔壁与配合面较大者）",
+        "装配（热装 / 压装）",
+        f"Fretting 风险定性评估（{MODEL_LEVEL_REFERENCE}）",
+    ),
+    not_covered=(
+        "服役温度 / 热膨胀工作过盈",
+        "转速",
+        "离心力",
+        "阶梯轴 / 阶梯轮毂几何",
+        "完整 DIN 7190 签发校核",
+    ),
+    applicability=(
+        "当前结论为 DIN 7190 风格核心校核，不是完整标准签发结果。"
+        "线弹性、均匀接触压力、恒定摩擦；弯矩附加压强按 QW=0 保守简化。"
+    ),
+)
+
 MODULE_SCOPES: dict[str, ModuleScope] = {
     HERTZ_SCOPE.module_id: HERTZ_SCOPE,
     SPLINE_SCOPE.module_id: SPLINE_SCOPE,
     WORM_SCOPE.module_id: WORM_SCOPE,
+    INTERFERENCE_SCOPE.module_id: INTERFERENCE_SCOPE,
 }
 
 
