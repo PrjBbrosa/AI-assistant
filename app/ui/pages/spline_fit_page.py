@@ -594,6 +594,10 @@ class SplineFitPage(BaseChapterPage):
         disclaimer.setWordWrap(True)
         layout.addWidget(disclaimer)
 
+        self.result_title = QLabel("尚未执行计算")
+        self.result_title.setObjectName("SubSectionTitle")
+        layout.addWidget(self.result_title)
+
         for scenario, title in [
             ("a", "场景 A - 花键齿面承压（简化）"),
             ("b", "场景 B - 光滑段圆柱过盈"),
@@ -894,6 +898,8 @@ class SplineFitPage(BaseChapterPage):
         # 仅花键模式下场景 B 不参与计算，复位文案须与 _display_result 一致地
         # 显示"未启用" + 跳过说明，避免用户误以为该项会被校核（mode-aware 复位）。
         is_combined = MODE_MAP.get(self._get_value("mode")) == "combined"
+        if getattr(self, "result_title", None) is not None:
+            self.result_title.setText("尚未执行计算")
         for key in ("a_badge", "b_badge"):
             badge = self._result_labels.get(key)
             if badge is None:
@@ -927,16 +933,14 @@ class SplineFitPage(BaseChapterPage):
             self._last_result = None
             self.btn_save.setEnabled(False)
             self._reset_scenario_cards()
-            self.set_overall_status(f"输入错误: {exc}", "fail" if strict else "wait")
-            self.set_info(str(exc))
+            self.set_info(f"输入错误: {exc}" if strict else str(exc))
             return
         except Exception as exc:
             self._last_payload = None
             self._last_result = None
             self.btn_save.setEnabled(False)
             self._reset_scenario_cards()
-            self.set_overall_status(f"内部错误: {exc}", "fail")
-            self.set_info(f"计算过程中出现意外错误，请检查输入或联系开发者。\n{exc}")
+            self.set_info(f"内部错误: {exc}\n计算过程中出现意外错误，请检查输入或联系开发者。")
             return
 
         self._last_payload = payload
@@ -985,10 +989,10 @@ class SplineFitPage(BaseChapterPage):
         a_badge = self._result_labels["a_badge"]
         a_detail = self._result_labels["a_detail"]
         if a["flank_ok"]:
-            a_badge.setText("PASS")
+            a_badge.setText("通过")
             a_badge.setObjectName("PassBadge")
         else:
-            a_badge.setText("FAIL")
+            a_badge.setText("不通过")
             a_badge.setObjectName("FailBadge")
         a_badge.style().unpolish(a_badge)
         a_badge.style().polish(a_badge)
@@ -1005,10 +1009,10 @@ class SplineFitPage(BaseChapterPage):
         if "scenario_b" in result:
             b = result["scenario_b"]
             if b["overall_pass"]:
-                b_badge.setText("PASS")
+                b_badge.setText("通过")
                 b_badge.setObjectName("PassBadge")
             else:
-                b_badge.setText("FAIL")
+                b_badge.setText("不通过")
                 b_badge.setObjectName("FailBadge")
             b_badge.style().unpolish(b_badge)
             b_badge.style().polish(b_badge)
@@ -1040,14 +1044,13 @@ class SplineFitPage(BaseChapterPage):
                 if result.get("overall_verdict_level") == "simplified_precheck"
                 else "通过"
             )
-            self.set_overall_status(status_text, "pass")
         else:
             status_text = (
                 "预校核不通过"
                 if result.get("overall_verdict_level") == "simplified_precheck"
                 else "不通过"
             )
-            self.set_overall_status(status_text, "fail")
+        self.result_title.setText(status_text)
 
         msgs = result.get("messages", [])
         info_text = "\n".join(msgs) if msgs else "校核完成。"
@@ -1157,5 +1160,4 @@ class SplineFitPage(BaseChapterPage):
         self._last_result = None
         self.btn_save.setEnabled(False)
         self._reset_scenario_cards()
-        self.set_overall_status("等待计算", "wait")
         self.set_info("参数已重置为默认值。")

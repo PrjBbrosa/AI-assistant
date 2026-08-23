@@ -1281,16 +1281,11 @@ class WormGearPage(BaseChapterPage):
                 "总体通过" if overall_lc_ok else "总体不通过",
                 "pass" if overall_lc_ok else "fail",
             )
-            if overall_lc_ok:
-                self.set_overall_status("负载能力通过", "pass")
-            else:
-                self.set_overall_status("负载能力需复核", "wait")
         else:
             # LC 未启用：徽章显示"未启用"，整体状态为等待
             for _key, (_, badge) in self._check_badges.items():
                 self._set_badge(badge, "未启用", "wait")
             self._set_badge(self._overall_lc_badge, "未启用", "wait")
-            self.set_overall_status("负载能力未启用", "wait")
         # Step 4: 效率与自锁副标题
         lead_angle_calc_deg = geometry.get("lead_angle_calc_deg", geometry.get("lead_angle_deg", 0.0))
         friction_mu = performance.get("friction_mu", 0.0)
@@ -1469,7 +1464,6 @@ class WormGearPage(BaseChapterPage):
         for label in self._life_row_labels.values():
             label.setText("—")
         self._life_card.setVisible(False)
-        self.set_overall_status("等待计算", "wait")
 
     def _clear(self) -> None:
         self._last_result = None

@@ -72,7 +72,7 @@ class TestSplineFitPage:
     def test_calculate_with_defaults(self, app):
         page = SplineFitPage()
         page._on_calculate()
-        assert page.overall_badge.objectName() in ("PassBadge", "FailBadge")
+        assert page.result_title.text() in ("预校核通过", "预校核不通过", "通过", "不通过")
 
     def test_default_combined_case_surfaces_scenario_b_failure_reason(self, app):
         page = SplineFitPage()
@@ -170,7 +170,7 @@ class TestSplineFitPage:
         page._recalc_timer.timeout.emit()
         app.processEvents()
 
-        assert page._result_labels["a_badge"].text() == "FAIL"
+        assert page._result_labels["a_badge"].text() == "不通过"
         assert page.message_box.toPlainText() != ""
 
     def test_material_autofills_with_blue_style(self, app):
@@ -270,7 +270,7 @@ class TestSplineFitPage:
 
         page._on_calculate()
         app.processEvents()
-        assert page.overall_badge.text() in ("预校核通过", "预校核不通过")
+        assert page.result_title.text() in ("预校核通过", "预校核不通过")
         lines = page._build_report_lines()
         joined = "\n".join(lines)
         assert f"模型等级: {SPLINE_SCOPE.model_level}" in joined

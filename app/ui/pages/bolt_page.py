@@ -1112,12 +1112,9 @@ class BoltPage(QWidget):
         footer_layout = QVBoxLayout(footer)
         footer_layout.setContentsMargins(16, 10, 16, 10)
         footer_layout.setSpacing(6)
-        self.overall_badge = QLabel("等待计算", footer)
-        self.overall_badge.setObjectName("WaitBadge")
         self.info_label = QLabel("选择左侧章节填写参数；聚焦任意字段可查看参数说明和新手提示。", footer)
         self.info_label.setObjectName("SectionHint")
         self.info_label.setWordWrap(True)
-        footer_layout.addWidget(self.overall_badge, 0, Qt.AlignmentFlag.AlignLeft)
         footer_layout.addWidget(self.info_label)
         root.addWidget(footer)
 
@@ -2631,10 +2628,6 @@ class BoltPage(QWidget):
         self.message_box.clear()
         for badge in self._check_badges.values():
             self._set_badge(badge, "待计算", False)
-        self.overall_badge.setText("等待计算")
-        self.overall_badge.setObjectName("WaitBadge")
-        self.overall_badge.style().unpolish(self.overall_badge)
-        self.overall_badge.style().polish(self.overall_badge)
         self.diagram_widget.set_forces(0.0, 0.0, 0.0)
         self.thread_triangle_widget.set_thread_forces(0.0, 0.0, 0.0)
         self._apply_check_level_visibility()
@@ -2888,17 +2881,6 @@ class BoltPage(QWidget):
             summary = "该工况存在未满足项，请查看下方分项状态与调整建议。"
         self.result_title.setText(title)
         self.result_summary.setText(summary)
-        if overall_status == "incomplete":
-            self.overall_badge.setText("结论不完整")
-            self.overall_badge.setObjectName("WaitBadge")
-            self.overall_badge.style().unpolish(self.overall_badge)
-            self.overall_badge.style().polish(self.overall_badge)
-        else:
-            self._set_badge(
-                self.overall_badge,
-                "总体通过" if overall_status == "pass" else "总体不通过",
-                overall_status == "pass",
-            )
 
         for key, badge in self._check_badges.items():
             if key == "residual_clamp_ok" and result.get("calculation_mode") == "design":

@@ -132,7 +132,7 @@ def test_spline_render_failure_rolls_back_result_without_escaping() -> None:
 
     assert page._last_payload is None
     assert page._last_result is None
-    assert "内部错误" in page.overall_badge.text()
+    assert "内部错误" in page.info_label.text()
     assert "broken spline render" in page.info_label.text()
 
 

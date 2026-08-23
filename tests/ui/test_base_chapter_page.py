@@ -55,3 +55,18 @@ def test_chapter_page_at_out_of_range_raises(qapp):
     shell = BaseChapterPage("t", "s")
     with pytest.raises(IndexError):
         shell.chapter_page_at(0)
+
+
+def test_footer_has_info_label_not_overall_badge(qapp):
+    """UI-S04: footer shows run/save/error info, not a competing overall PASS/FAIL badge."""
+    shell = BaseChapterPage("t", "s")
+    assert not hasattr(shell, "overall_badge")
+    assert shell.info_label.text()
+    original = shell.info_label.text()
+    shell.set_overall_status("总体通过", "pass")
+    assert shell.info_label.text() == original
+    assert "总体通过" not in shell.info_label.text()
+    shell.set_overall_status("总体不通过", "fail")
+    assert "总体不通过" not in shell.info_label.text()
+    shell.set_overall_status("输入已变更，待重新计算", "wait")
+    assert shell.info_label.text() == "输入已变更，待重新计算"

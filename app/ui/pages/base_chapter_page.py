@@ -88,12 +88,9 @@ class BaseChapterPage(QWidget):
         footer_layout = QVBoxLayout(footer)
         footer_layout.setContentsMargins(16, 10, 16, 10)
         footer_layout.setSpacing(6)
-        self.overall_badge = QLabel("等待计算", footer)
-        self.overall_badge.setObjectName("WaitBadge")
         self.info_label = QLabel("选择左侧步骤填写参数后执行计算。", footer)
         self.info_label.setObjectName("SectionHint")
         self.info_label.setWordWrap(True)
-        footer_layout.addWidget(self.overall_badge, 0, Qt.AlignmentFlag.AlignLeft)
         footer_layout.addWidget(self.info_label)
         root.addWidget(footer)
 
@@ -182,13 +179,12 @@ class BaseChapterPage(QWidget):
         self.info_label.setText(text)
 
     def set_overall_status(self, text: str, status: str) -> None:
+        """Footer carries run/save/error info only; overall verdict stays on the result card.
+
+        Pass/fail conclusions are ignored so they are not duplicated as colored
+        footer badges. Operational wait/error text is forwarded to ``info_label``.
+        """
         if status == "pass":
-            obj = "PassBadge"
-        elif status == "fail":
-            obj = "FailBadge"
-        else:
-            obj = "WaitBadge"
-        self.overall_badge.setText(text)
-        self.overall_badge.setObjectName(obj)
-        self.overall_badge.style().unpolish(self.overall_badge)
-        self.overall_badge.style().polish(self.overall_badge)
+            return
+        if any(marker in text for marker in ("错误", "变更", "失败", "待重新")):
+            self.set_info(text)

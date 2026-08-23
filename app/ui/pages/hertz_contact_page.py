@@ -785,14 +785,12 @@ class HertzContactPage(BaseChapterPage):
                 "该工况满足允许接触应力要求。"
                 f"{HERTZ_ALLOWABLE_SOURCE_NOTE}。"
             )
-            self.set_overall_status("总体通过", "pass")
         else:
             self.result_title.setText(f"校核不通过（{HERTZ_SCOPE.model_level}）")
             self.result_summary.setText(
                 "最大接触应力超过允许值，请调整几何/材料/载荷。"
                 f"{HERTZ_ALLOWABLE_SOURCE_NOTE}。"
             )
-            self.set_overall_status("总体不通过", "fail")
 
         for key, badge in self._check_badges.items():
             ok = bool(result.get("checks", {}).get(key, False))
@@ -955,7 +953,6 @@ class HertzContactPage(BaseChapterPage):
         self.message_box.clear()
         for badge in self._check_badges.values():
             self._set_badge(badge, "待计算", "wait")
-        self.set_overall_status("等待计算", "wait")
 
     def _mark_results_dirty(self) -> None:
         self.btn_save.setEnabled(False)

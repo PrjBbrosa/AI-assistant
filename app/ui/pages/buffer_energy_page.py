@@ -668,15 +668,11 @@ class BufferEnergyPage(BaseChapterPage):
 
         if impact.get("bottom_out"):
             verdict = "总体结论: 触底 / 峰值未知"
-            status = "fail"
         elif result.get("overall_pass"):
             verdict = "总体结论: 通过"
-            status = "pass"
         else:
             verdict = "总体结论: 不通过"
-            status = "fail"
         self.overall_verdict_label.setText(verdict)
-        self.set_overall_status(verdict.replace("总体结论: ", ""), status)
 
         boundary = [DISCLAIMER_TEXT]
         if impact.get("bottom_out"):
@@ -837,7 +833,6 @@ class BufferEnergyPage(BaseChapterPage):
         self.response_widget.set_response(None)
         self.compare_table.setRowCount(0)
         self.compare_preview_table.setRowCount(0)
-        self.set_overall_status("等待计算", "wait")
 
     def _update_workbench_status(self, result: dict[str, Any]) -> None:
         if not self._curve_data:

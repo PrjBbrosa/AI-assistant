@@ -79,8 +79,7 @@ def test_tapped_clear_resets_visible_result_panels() -> None:
     for badge in page._check_badges.values():
         assert badge.text() == "待计算"
         assert badge.objectName() == "WaitBadge"
-    assert page.overall_badge.text() == "等待计算"
-    assert page.overall_badge.objectName() == "WaitBadge"
+    assert not hasattr(page, "overall_badge")
 
 
 def test_tapped_apply_input_data_resets_visible_result_panels() -> None:
@@ -99,11 +98,10 @@ def test_tapped_apply_input_data_resets_visible_result_panels() -> None:
     for badge in page._check_badges.values():
         assert badge.text() == "待计算"
         assert badge.objectName() == "WaitBadge"
-    assert page.overall_badge.text() == "等待计算"
-    assert page.overall_badge.objectName() == "WaitBadge"
+    assert not hasattr(page, "overall_badge")
 
 
-def test_tapped_input_change_marks_overall_badge_stale() -> None:
+def test_tapped_input_change_marks_footer_info_stale() -> None:
     _app()
     page = BoltTappedAxialPage()
     page._field_widgets["service.FA_max"].setText("2000")
@@ -111,8 +109,7 @@ def test_tapped_input_change_marks_overall_badge_stale() -> None:
 
     page._field_widgets["service.FA_max"].setText("3000")
 
-    assert page.overall_badge.text() == "输入已变更，待重新计算"
-    assert page.overall_badge.objectName() == "WaitBadge"
+    assert page.info_label.text() == "输入已变更，待重新计算"
     assert page._last_result is None
     assert page._last_payload is None
 
@@ -122,7 +119,7 @@ def test_spline_input_error_resets_scenario_cards() -> None:
     page = SplineFitPage()
     app.processEvents()
 
-    assert page._result_labels["a_badge"].text() in ("PASS", "FAIL")
+    assert page._result_labels["a_badge"].text() in ("通过", "不通过")
 
     with patch(
         "app.ui.pages.spline_fit_page.calculate_spline_fit",

@@ -277,7 +277,6 @@ class BoltTappedAxialPage(BaseChapterPage):
         self._refresh_all_field_errors()
 
         self._invalidate_cache()  # 初始禁用导出按钮
-        self.set_overall_status("等待计算", "wait")
         self.set_info('填写输入条件后点击"开始计算"。')
 
     def _build_input_chapters(self) -> None:
@@ -774,7 +773,6 @@ class BoltTappedAxialPage(BaseChapterPage):
         self.message_box.clear()
         for badge in self._check_badges.values():
             self._set_badge(badge, "待计算", "wait")
-        self.set_overall_status("等待计算", "wait")
 
     def _set_field_error(self, field_id: str, message: str | None) -> None:
         widget = self._field_widgets.get(field_id)
@@ -850,7 +848,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         if field_id == "fastener.grade":
             self._on_grade_changed(self._current_grade())
         self._invalidate_cache()
-        self.set_overall_status("输入已变更，待重新计算", "wait")
+        self.set_info("输入已变更，待重新计算")
         self._refresh_field_error(field_id)
         for dependent_id in self._dependent_field_ids(field_id):
             self._refresh_field_error(dependent_id)
@@ -898,6 +896,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         self._last_result = result
         self.btn_export_text.setEnabled(True)
         self.btn_export_pdf.setEnabled(True)
+        self.set_info("校核完成。")
         self.set_current_chapter(self.chapter_list.count() - 1)
 
     def _render_result(self, result: dict[str, Any]) -> None:
@@ -906,18 +905,15 @@ class BoltTappedAxialPage(BaseChapterPage):
         if overall_status == "pass":
             self.result_title.setText("校核通过")
             self.result_summary.setText("该工况满足全部校核要求。")
-            self.set_overall_status("总体通过", "pass")
         elif overall_status == "incomplete":
             self.result_title.setText("校核不完整")
             self.result_summary.setText(
                 "部分分项尚未校核（常见为螺纹脱扣未填啮合长度）。"
                 "请补齐输入后重新计算再给出结论。"
             )
-            self.set_overall_status("校核不完整", "wait")
         else:
             self.result_title.setText("校核不通过")
             self.result_summary.setText("存在不满足校核要求的项目，请查看分项结果与建议。")
-            self.set_overall_status("总体不通过", "fail")
 
         for key, badge in self._check_badges.items():
             raw = result.get("checks", {}).get(key)

@@ -1591,11 +1591,9 @@ class InterferenceFitPage(BaseChapterPage):
         if overall:
             self.result_title.setText("校核通过")
             self.result_summary.setText("该工况在当前输入范围内满足 DIN 7190 核心能力、联合作用、张口缝与应力要求。")
-            self.set_overall_status("总体通过", "pass")
         else:
             self.result_title.setText("校核不通过")
             self.result_summary.setText("存在未满足项，请优先查看联合作用、张口缝、需求过盈和应力侧提示。")
-            self.set_overall_status("总体不通过", "fail")
 
         for key, badge in self._check_badges.items():
             ok = bool(checks.get(key, False))
@@ -2020,7 +2018,6 @@ class InterferenceFitPage(BaseChapterPage):
         for badge in self._check_badges.values():
             self._set_badge(badge, "待计算", "wait")
         self.curve_widget.set_curve([], [], 0.0, 0.0, 0.0)
-        self.set_overall_status("等待计算", "wait")
 
     def _mark_results_dirty(self) -> None:
         self.btn_save.setEnabled(False)
