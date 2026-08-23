@@ -15,10 +15,11 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QLabel
+from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QLineEdit, QMessageBox
 
 from app.ui.model_scope import HERTZ_ALLOWABLE_SOURCE_NOTE, HERTZ_SCOPE, MODEL_LEVEL_QUICK
 from app.ui.pages.hertz_contact_page import HertzContactPage
+from app.ui.result_contract import from_hertz, status_label_zh
 from core.hertz.calculator import OUTER_CONTACT_SCOPE_NOTE
 
 
@@ -123,7 +124,6 @@ class HertzPageSmokeTests(unittest.TestCase):
         page = self._make_page()
 
         # Switch to line contact and set length to 3.0 (< 5.0 triggers warning).
-        from PySide6.QtWidgets import QComboBox, QLineEdit
         mode_widget = page._field_widgets.get("geometry.contact_mode")
         if isinstance(mode_widget, QComboBox):
             idx = mode_widget.findText("线接触")
@@ -194,8 +194,6 @@ class HertzPageSmokeTests(unittest.TestCase):
         self.assertIn(HERTZ_ALLOWABLE_SOURCE_NOTE, page.metrics_text.text())
 
     def test_material_change_does_not_overwrite_allowable_p0(self) -> None:
-        from PySide6.QtWidgets import QComboBox, QLineEdit
-
         page = self._make_page()
         allowable = page._field_widgets["checks.allowable_p0_mpa"]
         self.assertIsInstance(allowable, QLineEdit)
@@ -218,6 +216,82 @@ class HertzPageSmokeTests(unittest.TestCase):
         self.assertEqual(allowable.text(), "1234")
         self.assertIn("用户输入", page._source_labels["materials.e1_mpa"].text())
         self.assertEqual(page._field_cards["materials.e1_mpa"].objectName(), "SubCard")
+
+    def test_allowable_live_rejects_inf_and_non_numeric(self) -> None:
+        page = self._make_page()
+        widget = page._field_widgets["checks.allowable_p0_mpa"]
+        error = page._field_error_labels["checks.allowable_p0_mpa"]
+        self.assertIsInstance(widget, QLineEdit)
+        self.assertTrue(error.isHidden())
+
+        widget.setText("inf")
+        self.assertFalse(error.isHidden())
+        self.assertTrue(error.text())
+        self.assertIn(widget.property("fieldError"), (True, "true"))
+        self.assertTrue(page.btn_calculate.isEnabled())
+
+        widget.setText("abc")
+        self.assertFalse(error.isHidden())
+        self.assertIn("有效数字", error.text())
+        self.assertIn(widget.property("fieldError"), (True, "true"))
+
+        widget.setText("1e999")
+        self.assertFalse(error.isHidden())
+        self.assertIn("有限", error.text())
+        self.assertIn(widget.property("fieldError"), (True, "true"))
+
+        widget.setText("1500")
+        self.assertTrue(error.isHidden())
+        self.assertIn(widget.property("fieldError"), (False, "false", None))
+
+    def test_calculate_with_invalid_allowable_shows_errors_and_focuses_field(self) -> None:
+        page = self._make_page()
+        page._field_widgets["checks.allowable_p0_mpa"].setText("inf")
+
+        with patch.object(QMessageBox, "critical", side_effect=AssertionError("no dialog")):
+            page._calculate()
+
+        self.assertIsNone(page._last_result)
+        self.assertFalse(page.btn_save.isEnabled())
+        self.assertTrue(page.btn_calculate.isEnabled())
+        error = page._field_error_labels["checks.allowable_p0_mpa"]
+        self.assertFalse(error.isHidden())
+        self.assertEqual(page.chapter_list.currentRow(), 0)
+        self.assertIn("字段需要修正", page.info_label.text())
+
+    def test_point_mode_payload_omits_length(self) -> None:
+        page = self._make_page()
+        mode_widget = page._field_widgets["geometry.contact_mode"]
+        self.assertIsInstance(mode_widget, QComboBox)
+        mode_widget.setCurrentText("点接触")
+
+        payload = page._build_payload()
+        geometry = payload.get("geometry", {})
+        self.assertEqual(geometry.get("contact_mode"), "point")
+        self.assertNotIn("length_mm", geometry)
+
+        mode_widget.setCurrentText("线接触")
+        line_payload = page._build_payload()
+        self.assertEqual(line_payload["geometry"].get("contact_mode"), "line")
+        self.assertIn("length_mm", line_payload["geometry"])
+
+    def test_result_view_model_overall_matches_ui_title(self) -> None:
+        page = self._make_page()
+        page._calculate()
+        self.__class__.app.processEvents()
+
+        view = from_hertz(page._last_result, page._last_payload)
+        self.assertEqual(page.result_title.text(), view.title_zh)
+        self.assertIn(HERTZ_SCOPE.model_level, view.title_zh)
+        self.assertEqual(page.result_summary.text(), view.summary_zh)
+        report = "\n".join(page._build_report_lines())
+        self.assertIn(f"总体结论: {view.status_label_zh}", report)
+        self.assertEqual(
+            view.overall_status,
+            "pass" if page._last_result["overall_pass"] else "fail",
+        )
+        badge = page._check_badges["contact_stress_ok"]
+        self.assertEqual(badge.text(), status_label_zh(view.checks[0].status))
 
 
 if __name__ == "__main__":

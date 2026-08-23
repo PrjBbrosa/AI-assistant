@@ -180,9 +180,34 @@ class TestHertzPdfReport:
         monkeypatch.setattr(report_pdf_hertz, "_section_title", capture_title)
 
         out = tmp_path / "hertz_model_level.pdf"
-        generate_hertz_report(out, _hertz_payload(), _hertz_result())
+        payload = _hertz_payload()
+        result = _hertz_result(payload)
+        generate_hertz_report(out, payload, result)
         assert any(MODEL_LEVEL_QUICK in text for text in subtitles)
         assert "模型范围" in titles
+
+    def test_pdf_verdict_matches_result_view_model(self, tmp_path, monkeypatch):
+        from app.ui import report_pdf_hertz
+        from app.ui.report_pdf_hertz import generate_hertz_report
+        from app.ui.result_contract import from_hertz
+
+        overalls: list[object] = []
+        original_verdict = report_pdf_hertz._verdict_block
+
+        def capture_verdict(styles, overall, subtitle):
+            overalls.append(overall)
+            return original_verdict(styles, overall, subtitle)
+
+        monkeypatch.setattr(report_pdf_hertz, "_verdict_block", capture_verdict)
+        payload = _hertz_payload()
+        result = _hertz_result(payload)
+        view = from_hertz(result, payload)
+        generate_hertz_report(tmp_path / "hertz_verdict.pdf", payload, result)
+
+        assert overalls
+        assert overalls[0] == view.overall_status
+        assert view.overall_status in ("pass", "fail")
+        assert view.title_zh.startswith("校核通过" if view.overall_status == "pass" else "校核不通过")
 
 
 class TestBufferPdfReport:

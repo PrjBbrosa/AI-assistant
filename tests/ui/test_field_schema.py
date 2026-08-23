@@ -14,6 +14,8 @@ from app.ui.field_schema import (
     validate_text,
 )
 from app.ui.pages.bolt_tapped_axial_page import CHAPTERS
+from app.ui.pages.hertz_contact_page import CHAPTERS as HERTZ_CHAPTERS
+from app.ui.pages.hertz_contact_page import CONTACT_MODE_LINE
 from app.ui.pages.spline_fit_page import CHAPTERS as SPLINE_CHAPTERS
 from app.ui.pages.spline_fit_page import SMOOTH_FIT_FIELD_IDS
 from core.bolt.grades import BOLT_GRADE_CUSTOM, bolt_grade_options
@@ -230,6 +232,14 @@ def _spline_chapter_specs() -> dict[str, FieldSchema]:
     return specs
 
 
+def _hertz_specs() -> dict[str, FieldSchema]:
+    specs: dict[str, FieldSchema] = {}
+    for chapter in HERTZ_CHAPTERS:
+        for spec in chapter["fields"]:
+            specs[spec.field_id] = spec
+    return specs
+
+
 def test_spline_field_schema_contract() -> None:
     specs = _spline_chapter_specs()
     for field_id in ("checks.flank_safety_min", "loads.application_factor_ka"):
@@ -281,3 +291,79 @@ def test_spline_build_payload_omits_smooth_when_spline_only() -> None:
     assert "smooth_fit" in combined
     assert "shaft_d_mm" in combined["smooth_fit"]
     assert combined["checks"]["slip_safety_min"] == 1.5
+
+
+def test_hertz_field_schema_numeric_bounds() -> None:
+    specs = _hertz_specs()
+
+    for field_id in ("geometry.r1_mm", "geometry.r2_mm"):
+        radius = specs[field_id]
+        assert radius.min_value == 0.0
+        assert radius.min_inclusive is True
+        assert radius.finite is True
+
+    for field_id in ("materials.e1_mpa", "materials.e2_mpa", "loads.normal_force_n"):
+        positive = specs[field_id]
+        assert positive.min_value == 0.0
+        assert positive.min_inclusive is False
+        assert positive.finite is True
+
+    for field_id in ("materials.nu1", "materials.nu2"):
+        nu = specs[field_id]
+        assert nu.min_value == 0.0
+        assert nu.max_value == 0.5
+        assert nu.min_inclusive is False
+        assert nu.max_inclusive is False
+
+    allowable = specs["checks.allowable_p0_mpa"]
+    assert allowable.min_value == 0.0
+    assert allowable.min_inclusive is False
+    assert allowable.finite is True
+    ok_inf, _ = validate_text(allowable, "inf")
+    ok_nan, _ = validate_text(allowable, "abc")
+    ok_overflow, overflow_message = validate_text(allowable, "1e999")
+    assert not ok_inf
+    assert not ok_nan
+    assert not ok_overflow
+    assert "有限" in overflow_message
+
+    curve = specs["options.curve_points"]
+    assert curve.value_type == "int"
+    assert curve.min_value == 11
+    assert curve.max_value == 201
+    ok_low, _ = validate_text(curve, "10")
+    assert not ok_low
+
+    scale = specs["options.curve_force_scale"]
+    assert scale.min_value == 1.05
+    assert scale.max_value == 2.0
+
+    length = specs["geometry.length_mm"]
+    assert length.visible_when == ("eq", "geometry.contact_mode", CONTACT_MODE_LINE)
+    hidden_ok, _ = validate_text(
+        length,
+        "",
+        values={"geometry.contact_mode": "点接触", "geometry.length_mm": ""},
+    )
+    assert hidden_ok
+
+    payload = build_payload(
+        specs.values(),
+        {
+            "geometry.contact_mode": "点接触",
+            "geometry.r1_mm": "30",
+            "geometry.r2_mm": "0",
+            "geometry.length_mm": "20",
+            "materials.e1_mpa": "210000",
+            "materials.nu1": "0.29",
+            "materials.e2_mpa": "210000",
+            "materials.nu2": "0.30",
+            "loads.normal_force_n": "12000",
+            "checks.allowable_p0_mpa": "1500",
+            "options.curve_points": "41",
+            "options.curve_force_scale": "1.30",
+        },
+    )
+    assert "length_mm" not in payload.get("geometry", {})
+    assert specs["geometry.contact_mode"].mapping is None
+    assert specs["materials.body1_material"].mapping is None

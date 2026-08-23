@@ -11,7 +11,6 @@ from reportlab.platypus import KeepTogether, Paragraph, Spacer
 
 from app.ui.model_scope import (
     HERTZ_ALLOWABLE_SOURCE_NOTE,
-    HERTZ_SCOPE,
     scope_kv_rows,
 )
 from app.ui.report_pdf_common import (
@@ -28,11 +27,7 @@ from app.ui.report_pdf_common import (
     _verdict_block,
     build_pdf,
 )
-
-
-CHECK_LABELS = {
-    "contact_stress_ok": "最大接触应力校核",
-}
+from app.ui.result_contract import from_hertz, status_label_zh
 
 
 def _mode_text(mode: Any) -> str:
@@ -113,18 +108,12 @@ def _build_contact_rows(result: dict) -> list[tuple[str, str]]:
     return rows
 
 
-def _build_recommendations(result: dict) -> list[str]:
-    checks = result.get("checks", {}) if isinstance(result.get("checks", {}), dict) else {}
-    check = result.get("check", {}) if isinstance(result.get("check", {}), dict) else {}
-    recs: list[str] = []
-    if checks.get("contact_stress_ok") is False:
-        recs.append("最大接触应力超过许用值：可增大等效曲率半径、降低法向载荷或提高材料许用接触应力。")
-    safety = check.get("safety_factor")
-    if isinstance(safety, (int, float)) and safety < 1.2:
-        recs.append("安全系数低于 1.2，建议增加工程裕量并复核疲劳寿命。")
-    if not recs:
-        recs.append("当前工况满足接触应力校核要求，建议结合疲劳寿命与润滑/表面状态继续复核。")
-    return recs
+def _check_pill_state(status: str) -> bool | None:
+    if status == "pass":
+        return True
+    if status == "fail":
+        return False
+    return None
 
 
 def generate_hertz_report(out_path: Path, payload: dict, result: dict) -> None:
@@ -132,23 +121,17 @@ def generate_hertz_report(out_path: Path, payload: dict, result: dict) -> None:
     _register_fonts()
     styles = _build_styles()
     elems: list[Any] = []
+    view = from_hertz(result, payload)
 
     contact = result.get("contact", {}) if isinstance(result.get("contact", {}), dict) else {}
     check = result.get("check", {}) if isinstance(result.get("check", {}), dict) else {}
-    checks = result.get("checks", {}) if isinstance(result.get("checks", {}), dict) else {}
     mode = result.get("mode")
-    overall = bool(result.get("overall_pass", False))
+    overall_pass = view.overall_status == "pass"
     date_str = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
 
     elems.append(_header_bar(styles, "赫兹接触应力校核报告", date_str))
     elems.append(Spacer(1, 8))
-    elems.append(
-        _verdict_block(
-            styles,
-            overall,
-            f"模型等级: {HERTZ_SCOPE.model_level} | 模型: {_mode_text(mode)}",
-        )
-    )
+    elems.append(_verdict_block(styles, view.overall_status, view.verdict_subtitle_zh))
     elems.append(Spacer(1, 8))
 
     patch_label = "b (mm)" if mode == "line" else "a (mm)"
@@ -161,7 +144,9 @@ def generate_hertz_report(out_path: Path, payload: dict, result: dict) -> None:
     ]
     elems.append(_metric_cards(styles, metrics))
     elems.append(Spacer(1, 8))
-    elems.append(_check_pills(styles, checks, CHECK_LABELS, {}))
+    check_states = {item.id: _check_pill_state(item.status) for item in view.checks}
+    check_labels = {item.id: item.label_zh for item in view.checks}
+    elems.append(_check_pills(styles, check_states, check_labels, {}))
     elems.append(Spacer(1, 12))
 
     input_rows = _build_input_rows(payload, result)
@@ -176,7 +161,7 @@ def generate_hertz_report(out_path: Path, payload: dict, result: dict) -> None:
         elems.append(_kv_table(styles, contact_rows, 0.45))
         elems.append(Spacer(1, 10))
 
-    result_text = "通过" if overall else "不通过"
+    result_text = status_label_zh(view.overall_status)
     allowable = check.get("allowable_p0_mpa")
     p0 = contact.get("p0_mpa")
     compare_values = [
@@ -189,27 +174,27 @@ def generate_hertz_report(out_path: Path, payload: dict, result: dict) -> None:
             styles,
             "许用对比与结论",
             compare_values,
-            passed=overall,
+            passed=overall_pass,
             note="按 p0 不大于 [p0] 判定接触应力校核。",
         ),
         Spacer(1, 8),
     ]))
 
-    warnings = result.get("warnings", [])
-    if warnings:
+    if view.warnings:
         elems.append(_section_title(styles, "提示"))
-        for msg in warnings:
+        for msg in view.warnings:
             elems.append(_paragraph(styles, f"- {msg}"))
         elems.append(Spacer(1, 8))
 
     elems.append(_section_title(styles, "建议"))
-    for rec in _build_recommendations(result):
+    for rec in view.recommendations:
         elems.append(_paragraph(styles, f"- {rec}"))
     elems.append(Spacer(1, 8))
 
     elems.append(_section_title(styles, "模型范围"))
-    elems.append(_kv_table(styles, scope_kv_rows(HERTZ_SCOPE), 0.28))
+    elems.append(_kv_table(styles, scope_kv_rows(view.model_scope), 0.28))
     elems.append(Spacer(1, 4))
-    elems.append(_paragraph(styles, HERTZ_ALLOWABLE_SOURCE_NOTE))
+    for note in view.source_notes:
+        elems.append(_paragraph(styles, note))
 
     build_pdf(out_path, elems, "赫兹接触应力校核")
