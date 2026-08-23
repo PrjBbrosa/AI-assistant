@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime as dt
 from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape
@@ -11,6 +10,7 @@ from reportlab.platypus import KeepTogether, Paragraph, Spacer
 
 from app.ui.model_scope import (
     HERTZ_ALLOWABLE_SOURCE_NOTE,
+    HERTZ_SCOPE,
     scope_kv_rows,
 )
 from app.ui.report_pdf_common import (
@@ -24,9 +24,11 @@ from app.ui.report_pdf_common import (
     _register_fonts,
     _rstep_card,
     _section_title,
+    _trace_block,
     _verdict_block,
     build_pdf,
 )
+from app.ui.report_trace import build_report_trace, trace_kv_rows
 from app.ui.result_contract import from_hertz, status_label_zh
 
 
@@ -127,10 +129,16 @@ def generate_hertz_report(out_path: Path, payload: dict, result: dict) -> None:
     check = result.get("check", {}) if isinstance(result.get("check", {}), dict) else {}
     mode = result.get("mode")
     overall_pass = view.overall_status == "pass"
-    date_str = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    trace = build_report_trace(
+        HERTZ_SCOPE.module_id,
+        payload,
+        model_level=HERTZ_SCOPE.model_level,
+    )
+    date_str = trace.generated_at
 
     elems.append(_header_bar(styles, "赫兹接触应力校核报告", date_str))
     elems.append(Spacer(1, 8))
+    elems.extend(_trace_block(styles, trace_kv_rows(trace)))
     elems.append(_verdict_block(styles, view.overall_status, view.verdict_subtitle_zh))
     elems.append(Spacer(1, 8))
 

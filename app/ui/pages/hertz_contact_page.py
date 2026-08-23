@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import json
 from pathlib import Path
 from typing import Any
@@ -52,6 +51,7 @@ from app.ui.model_scope import (
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, write_text_report
+from app.ui.report_trace import build_report_trace, trace_report_lines
 from app.ui.result_contract import (
     HERTZ_CHECK_LABELS,
     from_hertz,
@@ -1103,7 +1103,13 @@ class HertzContactPage(BaseChapterPage):
         view = from_hertz(self._last_result, self._last_payload)
         lines = [
             "赫兹接触应力校核报告（本地版）",
-            f"生成时间: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            *trace_report_lines(
+                build_report_trace(
+                    MODULE_ID,
+                    self._last_payload or {},
+                    model_level=HERTZ_SCOPE.model_level,
+                )
+            ),
             "",
             *scope_report_lines(view.model_scope),
             "",

@@ -59,6 +59,7 @@ from app.ui.model_scope import (
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, write_text_report
+from app.ui.report_trace import build_report_trace, trace_report_lines
 from app.ui.theme import mark_input_field_surface
 from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.worm_geometry_overview import WormGeometryOverviewWidget
@@ -1639,13 +1640,17 @@ class WormGearPage(BaseChapterPage):
         self.set_info(f"报告已导出: {out_path}")
 
     def _build_report_lines(self) -> list[str]:
-        from datetime import datetime
-
         result = self._last_result or {}
         note = result.get("inputs_echo", {}).get("meta", {}).get("note", "")
         return [
             f"蜗杆副计算报告 -- {note}",
-            f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            *trace_report_lines(
+                build_report_trace(
+                    MODULE_ID,
+                    self._last_payload or {},
+                    model_level=WORM_SCOPE.model_level,
+                )
+            ),
             "",
             *scope_report_lines(WORM_SCOPE),
             "",

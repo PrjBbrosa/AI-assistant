@@ -158,6 +158,30 @@ class TestHertzPdfReport:
 
         generate.assert_called_once()
 
+    def test_pdf_includes_report_trace(self, tmp_path, monkeypatch):
+        from app.ui import report_pdf_hertz
+        from app.ui.model_scope import HERTZ_SCOPE
+        from app.ui.report_pdf_hertz import generate_hertz_report
+
+        captured: list[list[tuple[str, str]]] = []
+        original = report_pdf_hertz._trace_block
+
+        def capture_trace(styles, rows):
+            captured.append(list(rows))
+            return original(styles, rows)
+
+        monkeypatch.setattr(report_pdf_hertz, "_trace_block", capture_trace)
+        payload = _hertz_payload()
+        generate_hertz_report(tmp_path / "hertz_trace.pdf", payload, _hertz_result(payload))
+
+        assert captured
+        kv = dict(captured[0])
+        assert "软件版本" in kv
+        assert kv["软件版本"]
+        assert kv.get("模块") == HERTZ_SCOPE.module_id
+        assert kv.get("模型等级") == HERTZ_SCOPE.model_level
+        assert str(kv.get("输入摘要哈希", "")).startswith("sha256:")
+
     def test_pdf_includes_model_level(self, tmp_path, monkeypatch):
         from app.ui import report_pdf_hertz
         from app.ui.model_scope import MODEL_LEVEL_QUICK
@@ -551,6 +575,55 @@ class TestWormPdfReport:
         out = tmp_path / "worm_lc.pdf"
         generate_worm_report(out, payload, result)
         assert out.exists() and out.stat().st_size > 1000
+
+    def test_pdf_includes_report_trace(self, tmp_path, monkeypatch):
+        from app.ui import report_pdf_worm
+        from app.ui.model_scope import WORM_SCOPE
+        from app.ui.report_pdf_worm import generate_worm_report
+
+        captured: list[list[tuple[str, str]]] = []
+        original = report_pdf_worm._trace_block
+
+        def capture_trace(styles, rows):
+            captured.append(list(rows))
+            return original(styles, rows)
+
+        monkeypatch.setattr(report_pdf_worm, "_trace_block", capture_trace)
+        payload = {"geometry": {"module_mm": 4, "tooth_count_worm": 2, "tooth_count_wheel": 41},
+                   "operating": {"worm_speed_rpm": 1500, "input_power_kw": 1.5}}
+        result = {
+            "geometry": {
+                "ratio": 20.5, "module_mm": 4, "center_distance_mm": 86,
+                "theoretical_center_distance_mm": 86, "lead_angle_deg": 5.6,
+                "worm_dimensions": {"pitch_diameter_mm": 32, "tip_diameter_mm": 40,
+                    "root_diameter_mm": 22.4, "lead_mm": 25.1, "axial_pitch_mm": 12.6,
+                    "pitch_line_speed_mps": 2.51, "face_width_mm": 50},
+                "wheel_dimensions": {"pitch_diameter_mm": 164, "tip_diameter_mm": 172,
+                    "root_diameter_mm": 154.4, "pitch_line_speed_mps": 0.63,
+                    "tooth_height_mm": 8.8, "face_width_mm": 35},
+                "mesh_dimensions": {"ratio": 20.5, "center_distance_mm": 86,
+                    "worm_speed_rpm": 1500, "wheel_speed_rpm": 73.2,
+                    "input_torque_nm": 9.55, "output_torque_nm": 156.3},
+                "consistency": {"warnings": []},
+            },
+            "performance": {"input_power_kw": 1.5, "output_power_kw": 1.2,
+                "input_torque_nm": 9.55, "worm_pitch_line_speed_mps": 2.51,
+                "efficiency_estimate": 0.80, "power_loss_kw": 0.3,
+                "thermal_capacity_kw": 0.5, "output_torque_nm": 156.3,
+                "friction_mu": 0.08, "application_factor": 1.0},
+            "load_capacity": {"enabled": False, "status": "未启用", "checks": {},
+                "forces": {}, "contact": {}, "root": {}, "factors": {},
+                "torque_ripple": {}, "warnings": [], "assumptions": []},
+        }
+        generate_worm_report(tmp_path / "worm_trace.pdf", payload, result)
+
+        assert captured
+        kv = dict(captured[0])
+        assert "软件版本" in kv
+        assert kv["软件版本"]
+        assert kv.get("模块") == WORM_SCOPE.module_id
+        assert kv.get("模型等级") == WORM_SCOPE.model_level
+        assert str(kv.get("输入摘要哈希", "")).startswith("sha256:")
 
     def test_pdf_includes_model_level(self, tmp_path, monkeypatch):
         from app.ui import report_pdf_worm

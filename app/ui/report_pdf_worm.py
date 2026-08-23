@@ -11,7 +11,6 @@ Uses reportlab to produce a modern, visually designed A4 report with:
 
 from __future__ import annotations
 
-import datetime as dt
 from pathlib import Path
 from typing import Any, Dict
 
@@ -34,9 +33,11 @@ from app.ui.report_pdf_common import (
     _register_fonts,
     _rstep_card,
     _section_title,
+    _trace_block,
     _verdict_block,
     build_pdf,
 )
+from app.ui.report_trace import build_report_trace, trace_kv_rows
 
 # ---------------------------------------------------------------------------
 # Check labels (load capacity only)
@@ -68,7 +69,12 @@ def generate_worm_report(
     checks = lc.get("checks", {})
     inputs_echo = result.get("inputs_echo", {})
 
-    date_str = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    trace = build_report_trace(
+        WORM_SCOPE.module_id,
+        payload,
+        model_level=WORM_SCOPE.model_level,
+    )
+    date_str = trace.generated_at
 
     # Determine overall pass/fail
     if lc_enabled and checks:
@@ -79,6 +85,7 @@ def generate_worm_report(
     # 1. Header bar
     elems.append(_header_bar(styles, "DIN 3975 蜗杆副设计报告", date_str))
     elems.append(Spacer(1, 8))
+    elems.extend(_trace_block(styles, trace_kv_rows(trace)))
 
     # 2. Verdict block
     if overall is not None:
