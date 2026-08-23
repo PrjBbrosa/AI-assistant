@@ -51,6 +51,7 @@ from app.ui.pages.bolt_flowchart import (
 )
 from app.ui.theme import mark_input_field_label_wrap, mark_input_field_surface
 from core.bolt.calculator import InputError, calculate_vdi2230_core
+from core.bolt.grades import BOLT_GRADE_TABLE
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 EXAMPLES_DIR = PROJECT_ROOT / "examples"
@@ -101,19 +102,6 @@ class FieldSpec:
 # GB/T 196 标准公制螺纹参数表
 # (d, [(p_coarse, d2, d3, As), (p_fine1, d2, d3, As), ...])
 # 粗牙排第一位，细牙在后。d2/d3/As 按 GB/T 196 / ISO 724 标准值。
-# 螺栓强度等级 → 屈服强度 Rp0.2 (MPa)，参考 GB/T 3098.1
-BOLT_GRADE_TABLE: dict[str, float] = {
-    "4.6":  240,
-    "4.8":  320,
-    "5.6":  300,
-    "5.8":  400,
-    "8.8":  640,
-    "9.8":  720,
-    "10.9": 900,
-    "12.9": 1080,
-}
-
-
 METRIC_THREAD_TABLE: dict[str, list[tuple[float, float, float, float]]] = {
     "M3":   [(0.5,  2.675, 2.387, 5.03)],
     "M4":   [(0.7,  3.545, 3.141, 8.78)],

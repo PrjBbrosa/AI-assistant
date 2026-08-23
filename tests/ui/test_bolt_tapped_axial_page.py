@@ -1,3 +1,4 @@
+import json
 import math
 import os
 import tempfile
@@ -7,9 +8,13 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLineEdit
 
+from app.ui.pages.bolt_page import BOLT_GRADE_TABLE as PAGE_GRADE_TABLE
 from app.ui.pages.bolt_tapped_axial_page import BoltTappedAxialPage
+from core.bolt.grades import BOLT_GRADE_CUSTOM, BOLT_GRADE_TABLE, rp02_source_zh
+
+EXAMPLES_DIR = Path(__file__).resolve().parents[2] / "examples"
 
 
 class BoltTappedAxialPageTests(unittest.TestCase):
@@ -251,6 +256,153 @@ class BoltTappedAxialPageTests(unittest.TestCase):
         self.assertEqual(title, "导出文本报告")
         self.assertEqual(default_path.name, "tapped_axial_report.txt")
         self.assertIn("轴向受力螺纹连接校核报告", "\n".join(lines))
+
+    # --- INPUT-S01：强度等级 → Rp0.2 单一事实源 ---
+
+    def test_shared_grade_table_matches_bolt_page(self) -> None:
+        self.assertIs(PAGE_GRADE_TABLE, BOLT_GRADE_TABLE)
+        self.assertEqual(BOLT_GRADE_TABLE["8.8"], 640)
+        self.assertEqual(BOLT_GRADE_TABLE["10.9"], 900)
+        self.assertEqual(BOLT_GRADE_TABLE["12.9"], 1080)
+        self.assertEqual(rp02_source_zh("10.9"), "预设等级 10.9")
+        self.assertEqual(rp02_source_zh(BOLT_GRADE_CUSTOM), "用户值")
+
+    def test_grade_presets_fill_rp02_and_lock_field(self) -> None:
+        page = BoltTappedAxialPage()
+        grade = page._field_widgets["fastener.grade"]
+        rp02 = page._field_widgets["fastener.Rp02"]
+        self.assertIsInstance(rp02, QLineEdit)
+
+        for value, expected in (("8.8", "640"), ("10.9", "900"), ("12.9", "1080")):
+            with self.subTest(grade=value):
+                grade.setCurrentText(value)
+                self.assertEqual(rp02.text(), expected)
+                self.assertTrue(rp02.isReadOnly())
+                self.assertEqual(
+                    page._field_cards["fastener.Rp02"].objectName(),
+                    "AutoCalcCard",
+                )
+
+    def test_custom_grade_makes_rp02_editable(self) -> None:
+        page = BoltTappedAxialPage()
+        grade = page._field_widgets["fastener.grade"]
+        rp02 = page._field_widgets["fastener.Rp02"]
+        self.assertTrue(rp02.isReadOnly())
+
+        grade.setCurrentText(BOLT_GRADE_CUSTOM)
+
+        self.assertFalse(rp02.isReadOnly())
+        self.assertEqual(rp02.text(), "")
+        self.assertEqual(page._field_cards["fastener.Rp02"].objectName(), "SubCard")
+
+    def test_payload_contains_matching_grade_and_rp02(self) -> None:
+        page = BoltTappedAxialPage()
+        payload = page._build_payload()
+        self.assertEqual(payload["fastener"]["grade"], "8.8")
+        self.assertEqual(payload["fastener"]["Rp02"], 640.0)
+
+        page._field_widgets["fastener.grade"].setCurrentText("10.9")
+        payload = page._build_payload()
+        self.assertEqual(payload["fastener"]["grade"], "10.9")
+        self.assertEqual(payload["fastener"]["Rp02"], 900.0)
+
+        page._field_widgets["fastener.grade"].setCurrentText("12.9")
+        payload = page._build_payload()
+        self.assertEqual(payload["fastener"]["grade"], "12.9")
+        self.assertEqual(payload["fastener"]["Rp02"], 1080.0)
+
+        page._field_widgets["fastener.grade"].setCurrentText(BOLT_GRADE_CUSTOM)
+        page._field_widgets["fastener.Rp02"].setText("450")
+        payload = page._build_payload()
+        self.assertEqual(payload["fastener"]["grade"], BOLT_GRADE_CUSTOM)
+        self.assertEqual(payload["fastener"]["Rp02"], 450.0)
+
+    def test_grade_change_disables_export(self) -> None:
+        page = BoltTappedAxialPage()
+        page._field_widgets["service.FA_max"].setText("2000")
+        page._run_calculation()
+        self.assertTrue(page.btn_export_pdf.isEnabled())
+        self.assertTrue(page.btn_export_text.isEnabled())
+
+        page._field_widgets["fastener.grade"].setCurrentText("10.9")
+
+        self.assertIsNone(page._last_result)
+        self.assertFalse(page.btn_export_pdf.isEnabled())
+        self.assertFalse(page.btn_export_text.isEnabled())
+
+    def test_load_matching_grade_does_not_prompt(self) -> None:
+        page = BoltTappedAxialPage()
+        data = json.loads(
+            (EXAMPLES_DIR / "tapped_axial_joint_case_01.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        with patch.object(page, "_confirm_grade_rp02_mismatch") as confirm:
+            page._apply_input_data(data)
+
+        confirm.assert_not_called()
+        self.assertEqual(page._field_widgets["fastener.grade"].currentText(), "8.8")
+        self.assertEqual(float(page._field_widgets["fastener.Rp02"].text()), 640.0)
+        self.assertTrue(page._field_widgets["fastener.Rp02"].isReadOnly())
+
+    def test_load_mismatched_grade_does_not_silently_overwrite(self) -> None:
+        page = BoltTappedAxialPage()
+        data = json.loads(
+            (EXAMPLES_DIR / "tapped_axial_joint_case_02.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(data["fastener"]["grade"], "10.9")
+        self.assertEqual(data["fastener"]["Rp02"], 940.0)
+
+        with patch.object(
+            page, "_confirm_grade_rp02_mismatch", return_value="keep_file"
+        ) as confirm:
+            page._apply_input_data(data)
+
+        confirm.assert_called_once()
+        grade, stored, table = confirm.call_args.args
+        self.assertEqual(grade, "10.9")
+        self.assertEqual(stored, 940.0)
+        self.assertEqual(table, 900.0)
+        self.assertEqual(
+            page._field_widgets["fastener.grade"].currentText(),
+            BOLT_GRADE_CUSTOM,
+        )
+        self.assertEqual(float(page._field_widgets["fastener.Rp02"].text()), 940.0)
+        self.assertFalse(page._field_widgets["fastener.Rp02"].isReadOnly())
+        self.assertFalse(page.btn_export_pdf.isEnabled())
+
+    def test_load_mismatched_grade_can_apply_table_after_confirm(self) -> None:
+        page = BoltTappedAxialPage()
+        data = json.loads(
+            (EXAMPLES_DIR / "tapped_axial_joint_case_02.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        with patch.object(
+            page, "_confirm_grade_rp02_mismatch", return_value="use_table"
+        ):
+            page._apply_input_data(data)
+
+        self.assertEqual(page._field_widgets["fastener.grade"].currentText(), "10.9")
+        self.assertEqual(page._field_widgets["fastener.Rp02"].text(), "900")
+        self.assertTrue(page._field_widgets["fastener.Rp02"].isReadOnly())
+
+    def test_report_lines_show_rp02_source(self) -> None:
+        page = BoltTappedAxialPage()
+        page._field_widgets["service.FA_max"].setText("2000")
+        page._run_calculation()
+        preset_text = "\n".join(page._build_report_lines())
+        self.assertIn("预设等级 8.8", preset_text)
+        self.assertIn("强度等级: 8.8", preset_text)
+
+        page._field_widgets["fastener.grade"].setCurrentText(BOLT_GRADE_CUSTOM)
+        page._field_widgets["fastener.Rp02"].setText("450")
+        page._run_calculation()
+        custom_text = "\n".join(page._build_report_lines())
+        self.assertIn("用户值", custom_text)
+        self.assertIn(f"强度等级: {BOLT_GRADE_CUSTOM}", custom_text)
 
 
 if __name__ == "__main__":

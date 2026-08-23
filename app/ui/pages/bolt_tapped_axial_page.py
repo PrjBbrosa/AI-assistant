@@ -44,6 +44,12 @@ from core.bolt.tapped_axial_joint import (
     calculate_tapped_axial_joint,
 )
 from core.bolt import InputError
+from core.bolt.grades import (
+    BOLT_GRADE_CUSTOM,
+    BOLT_GRADE_TABLE,
+    bolt_grade_options,
+    rp02_source_zh,
+)
 
 
 # Codex §3.2：As/d2/d3 自动派生，不允许手动覆盖
@@ -97,7 +103,7 @@ CHAPTERS: list[dict[str, Any]] = [
     {
         "id": "fastener_material",
         "title": "螺纹与材料参数",
-        "subtitle": "填螺栓规格与材料强度：公称直径 d 和螺距 p 填好后，中径 d2、小径 d3、应力截面积 As 会按 ISO 公式自动派生并锁为只读。",
+        "subtitle": "填螺栓规格与材料强度：公称直径 d 和螺距 p 填好后，中径 d2、小径 d3、应力截面积 As 会按 ISO 公式自动派生并锁为只读。选择强度等级会自动填入 Rp0.2；选「自定义」可手填。",
         "help_ref": "modules/bolt_tapped_axial/_section_fastener_material",
         "fields": [
             FieldSpec("fastener.d", "公称直径 d", "mm", "螺栓公称直径，按实际螺纹规格填写。", default="10.0", help_ref="terms/bolt_thread_nominal"),
@@ -105,18 +111,25 @@ CHAPTERS: list[dict[str, Any]] = [
             FieldSpec("fastener.d2", "中径 d2", "mm", "由 d/p 自动派生。", default="", help_ref="terms/bolt_stress_area"),
             FieldSpec("fastener.d3", "小径 d3", "mm", "由 d/p 自动派生。", default="", help_ref="terms/bolt_stress_area"),
             FieldSpec("fastener.As", "应力截面积 As", "mm²", "由 d/p 自动派生。", default="", help_ref="terms/bolt_stress_area"),
-            FieldSpec("fastener.Rp02", "屈服强度 Rp0.2", "MPa", "螺栓材料屈服强度。", default="640.0", help_ref="terms/bolt_yield_strength"),
-            FieldSpec("fastener.E_bolt", "螺栓弹性模量 E_bolt", "MPa", "螺栓弹性模量。", default="210000.0", help_ref="terms/elastic_modulus"),
             FieldSpec(
                 "fastener.grade",
-                "强度等级 grade",
+                "强度等级",
                 "-",
-                "强度等级字符串，保留为便于追溯。",
+                "选择螺栓强度等级以自动填入屈服强度 Rp0.2。选「自定义」可手动输入。",
                 widget_type="choice",
-                options=("8.8", "10.9", "12.9"),
+                options=bolt_grade_options(),
                 default="8.8",
                 help_ref="terms/bolt_grade",
             ),
+            FieldSpec(
+                "fastener.Rp02",
+                "屈服强度 Rp0.2（自动计算）",
+                "MPa",
+                "由强度等级自动填入。自定义模式可手动输入。",
+                default="640",
+                help_ref="terms/bolt_yield_strength",
+            ),
+            FieldSpec("fastener.E_bolt", "螺栓弹性模量 E_bolt", "MPa", "螺栓弹性模量。", default="210000.0", help_ref="terms/elastic_modulus"),
         ],
     },
     {
@@ -245,6 +258,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         self._suspend_live_feedback = True
         self._apply_defaults()
         self._refresh_thread_section()
+        self._on_grade_changed(self._current_grade())
         self._suspend_live_feedback = False
 
         self._invalidate_cache()  # 初始禁用导出按钮
@@ -559,6 +573,7 @@ class BoltTappedAxialPage(BaseChapterPage):
                 widget.setText(text)  # type: ignore[attr-defined]
         # 根据新 d/p 重算 As/d2/d3
         self._refresh_thread_section()
+        self._reconcile_loaded_grade_rp02()
         self._suspend_live_feedback = False
         self._invalidate_cache()
         self._reset_result_panels()
@@ -603,6 +618,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         self._suspend_live_feedback = True
         self._apply_defaults()
         self._refresh_thread_section()
+        self._on_grade_changed(self._current_grade())
         self._suspend_live_feedback = False
         self._invalidate_cache()
         self._reset_result_panels()
@@ -654,6 +670,82 @@ class BoltTappedAxialPage(BaseChapterPage):
             widget.setText(f"{value:.4f}")
             widget.blockSignals(False)
 
+    def _current_grade(self) -> str:
+        widget = self._field_widgets.get("fastener.grade")
+        if isinstance(widget, QComboBox):
+            return widget.currentText().strip()
+        return ""
+
+    def _on_grade_changed(self, text: str) -> None:
+        """强度等级下拉变更时自动填入 Rp0.2。"""
+        rp02_w = self._field_widgets.get("fastener.Rp02")
+        if not (rp02_w and isinstance(rp02_w, QLineEdit)):
+            return
+        preset = BOLT_GRADE_TABLE.get(text)
+        if preset is not None:
+            rp02_w.setText(str(int(preset)))
+            self._set_card_autocalc("fastener.Rp02", True)
+        else:
+            self._set_card_autocalc("fastener.Rp02", False)
+            rp02_w.clear()
+            rp02_w.setFocus()
+
+    def _confirm_grade_rp02_mismatch(
+        self, grade: str, stored_rp02: float, table_rp02: float
+    ) -> str:
+        """Ask how to resolve a saved grade/Rp0.2 conflict. Returns keep_file or use_table."""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("强度等级与 Rp0.2 不一致")
+        box.setText(
+            f"文件中强度等级为 {grade}（项目表 Rp0.2 = {int(table_rp02)} MPa），"
+            f"但保存的 Rp0.2 = {stored_rp02:g} MPa。"
+        )
+        box.setInformativeText(
+            "不会静默覆盖。请选择：保留文件中的屈服强度（改为自定义），"
+            "或改用当前强度等级表值。"
+        )
+        keep_btn = box.addButton(
+            "保留文件中的 Rp0.2", QMessageBox.ButtonRole.AcceptRole
+        )
+        table_btn = box.addButton("使用等级表值", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(keep_btn)
+        box.exec()
+        if box.clickedButton() is table_btn:
+            return "use_table"
+        return "keep_file"
+
+    def _reconcile_loaded_grade_rp02(self) -> None:
+        """Keep saved Rp0.2 when it disagrees with the selected grade preset."""
+        grade_w = self._field_widgets.get("fastener.grade")
+        rp02_w = self._field_widgets.get("fastener.Rp02")
+        if not isinstance(grade_w, QComboBox) or not isinstance(rp02_w, QLineEdit):
+            return
+        grade = grade_w.currentText().strip()
+        preset = BOLT_GRADE_TABLE.get(grade)
+        if preset is None:
+            self._set_card_autocalc("fastener.Rp02", False)
+            return
+        raw = rp02_w.text().strip()
+        stored: float | None = None
+        if raw:
+            try:
+                stored = float(raw)
+            except ValueError:
+                stored = None
+        if stored is None or abs(stored - float(preset)) <= 0.5:
+            self._on_grade_changed(grade)
+            return
+        choice = self._confirm_grade_rp02_mismatch(grade, stored, float(preset))
+        if choice == "use_table":
+            self._on_grade_changed(grade)
+            return
+        idx = grade_w.findText(BOLT_GRADE_CUSTOM)
+        if idx >= 0:
+            grade_w.setCurrentIndex(idx)
+        rp02_w.setText(raw)
+        self._set_card_autocalc("fastener.Rp02", False)
+
     def _invalidate_cache(self) -> None:
         """Clear cached calculation result and disable export buttons."""
         self._last_payload = None
@@ -678,6 +770,8 @@ class BoltTappedAxialPage(BaseChapterPage):
             return
         if field_id in ("fastener.d", "fastener.p"):
             self._refresh_thread_section()
+        if field_id == "fastener.grade":
+            self._on_grade_changed(self._current_grade())
         self._invalidate_cache()
         self.set_overall_status("输入已变更，待重新计算", "wait")
 
@@ -815,8 +909,13 @@ class BoltTappedAxialPage(BaseChapterPage):
         fastener = payload.get("fastener", {})
         assembly = payload.get("assembly", {})
         service = payload.get("service", {})
+        grade = fastener.get("grade", "")
+        rp02_source = rp02_source_zh(grade if isinstance(grade, str) else None)
         lines.append(f"螺纹规格: M{fastener.get('d', '?')} x {fastener.get('p', '?')}")
-        lines.append(f"材料屈服强度: Rp0.2 = {fastener.get('Rp02', '?')} MPa")
+        lines.append(f"强度等级: {grade or BOLT_GRADE_CUSTOM}")
+        lines.append(
+            f"材料屈服强度: Rp0.2 = {fastener.get('Rp02', '?')} MPa（{rp02_source}）"
+        )
         lines.append(f"最小预紧力: {assembly.get('F_preload_min', '?')} N")
         lines.append(f"拧紧散差: alpha_A = {assembly.get('alpha_A', '?')}")
         lines.append(

@@ -31,6 +31,7 @@ from app.ui.report_pdf_common import (
     _verdict_block,
     build_pdf,
 )
+from core.bolt.grades import BOLT_GRADE_CUSTOM, rp02_source_zh
 
 CHECK_LABELS = {
     "assembly_von_mises_ok": "装配强度",
@@ -92,10 +93,17 @@ def generate_tapped_axial_report(
     assembly = payload.get("assembly", {})
     service = payload.get("service", {})
     fat_in = payload.get("fatigue", {})
+    grade = fastener.get("grade", "")
+    grade_text = grade if isinstance(grade, str) and grade else BOLT_GRADE_CUSTOM
+    rp02_source = rp02_source_zh(grade if isinstance(grade, str) else None)
     input_rows = [
         ("公称直径 d", _fmt(fastener.get("d"), 1, "mm")),
         ("螺距 p", _fmt(fastener.get("p"), 2, "mm")),
-        ("屈服强度 Rp0.2", _fmt(fastener.get("Rp02"), 0, "MPa")),
+        ("强度等级", grade_text),
+        (
+            "屈服强度 Rp0.2",
+            f"{_fmt(fastener.get('Rp02'), 0, 'MPa')}（{rp02_source}）",
+        ),
         ("最小预紧力 F_preload_min", _fmt(assembly.get("F_preload_min"), 0, "N")),
         ("拧紧散差 alpha_A", _fmt(assembly.get("alpha_A"), 2)),
         ("螺纹摩擦 mu_thread", _fmt(assembly.get("mu_thread"), 3)),
