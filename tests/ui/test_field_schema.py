@@ -14,6 +14,7 @@ from app.ui.field_schema import (
     validate_text,
 )
 from app.ui.pages.bolt_tapped_axial_page import CHAPTERS
+from app.ui.pages.buffer_energy_page import FIELD_SPECS as BUFFER_FIELD_SPECS
 from app.ui.pages.hertz_contact_page import CHAPTERS as HERTZ_CHAPTERS
 from app.ui.pages.hertz_contact_page import CONTACT_MODE_LINE
 from app.ui.pages.spline_fit_page import CHAPTERS as SPLINE_CHAPTERS
@@ -367,3 +368,55 @@ def test_hertz_field_schema_numeric_bounds() -> None:
     assert "length_mm" not in payload.get("geometry", {})
     assert specs["geometry.contact_mode"].mapping is None
     assert specs["materials.body1_material"].mapping is None
+
+
+def test_buffer_field_schema_numeric_bounds() -> None:
+    specs = {spec.field_id: spec for spec in BUFFER_FIELD_SPECS}
+
+    for field_id in (
+        "impact.mass_kg",
+        "impact.initial_velocity_m_s",
+        "impact.available_stroke_mm",
+        "impact.allowable_peak_force_n",
+        "options.force_scale",
+        "options.stroke_scale",
+    ):
+        schema = specs[field_id]
+        assert isinstance(schema, FieldSchema)
+        assert schema.value_type == "float"
+        assert schema.min_value == 0.0
+        assert schema.min_inclusive is False
+        assert schema.finite is True
+        assert schema.mapping is not None
+        ok_zero, zero_message = validate_text(schema, "0")
+        assert not ok_zero
+        assert ">" in zero_message
+        for raw in ("inf", "nan", "abc"):
+            ok, message = validate_text(schema, raw)
+            assert not ok, raw
+            assert message
+        ok_overflow, overflow_message = validate_text(schema, "1e999")
+        assert not ok_overflow
+        assert "有限" in overflow_message
+
+    noise = specs["options.noise_tolerance_n"]
+    assert noise.min_value == 0.0
+    assert noise.min_inclusive is True
+    assert noise.finite is True
+    assert parse_payload_value(noise, "0") == 0.0
+    ok_neg, _ = validate_text(noise, "-1")
+    assert not ok_neg
+
+    samples = specs["options.time_samples"]
+    assert samples.value_type == "int"
+    assert samples.min_value == 8
+    assert samples.finite is True
+    ok_low, _ = validate_text(samples, "7")
+    assert not ok_low
+    assert parse_payload_value(samples, "200") == 200
+
+    mapped = [spec for spec in specs.values() if spec.mapping is not None]
+    assert mapped
+    for spec in mapped:
+        section, key = spec.mapping
+        assert spec.field_id == f"{section}.{key}"

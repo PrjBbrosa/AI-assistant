@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +24,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.field_schema import (
+    FieldSchema,
+    FieldSpec,
+    build_payload,
+    validate_text,
+)
 from app.ui.fonts import make_ui_font
 from app.ui.input_condition_store import (
     InputConditionError,
@@ -56,86 +61,88 @@ DISCLAIMER_TEXT = (
     "不含应变率效应，不能替代真实时域仿真。"
 )
 
-
-@dataclass(frozen=True)
-class FieldSpec:
-    field_id: str
-    label: str
-    unit: str
-    hint: str
-    mapping: tuple[str, str] | None
-    widget_type: str = "number"
-    default: str = ""
-    placeholder: str = ""
+# 与 calculator 一致：冲击量与曲线倍率必须 > 0；噪声容差允许 0。
+_POSITIVE_KW = dict(min_value=0.0, min_inclusive=False, finite=True)
+_NONNEGATIVE_KW = dict(min_value=0.0, min_inclusive=True, finite=True)
 
 
-FIELD_SPECS: tuple[FieldSpec, ...] = (
+FIELD_SPECS: tuple[FieldSchema, ...] = (
     FieldSpec(
         "impact.mass_kg",
         "冲击质量 m",
         "kg",
         "撞击物或运动部件的等效质量。",
-        ("impact", "mass_kg"),
+        mapping=("impact", "mass_kg"),
         default="12.0",
         placeholder="例如 12.0",
+        **_POSITIVE_KW,
     ),
     FieldSpec(
         "impact.initial_velocity_m_s",
         "初始速度 v0",
         "m/s",
         "接触缓冲块前的速度。",
-        ("impact", "initial_velocity_m_s"),
+        mapping=("impact", "initial_velocity_m_s"),
         default="1.5",
         placeholder="例如 1.5",
+        **_POSITIVE_KW,
     ),
     FieldSpec(
         "impact.available_stroke_mm",
         "可用行程",
         "mm",
         "机构允许缓冲块压缩的最大行程。",
-        ("impact", "available_stroke_mm"),
+        mapping=("impact", "available_stroke_mm"),
         default="30.0",
         placeholder="例如 30",
+        **_POSITIVE_KW,
     ),
     FieldSpec(
         "impact.allowable_peak_force_n",
         "允许峰值力",
         "N",
         "结构、导轨或安装件允许承受的峰值反力。",
-        ("impact", "allowable_peak_force_n"),
+        mapping=("impact", "allowable_peak_force_n"),
         default="9000",
         placeholder="例如 9000",
+        **_POSITIVE_KW,
     ),
     FieldSpec(
         "options.force_scale",
         "曲线力倍率",
         "-",
         "对测试曲线的力值统一缩放，用于选型敏感度。",
-        ("options", "force_scale"),
+        mapping=("options", "force_scale"),
         default="1.00",
+        **_POSITIVE_KW,
     ),
     FieldSpec(
         "options.stroke_scale",
         "曲线行程倍率",
         "-",
         "对测试曲线的位移统一缩放，用于行程敏感度。",
-        ("options", "stroke_scale"),
+        mapping=("options", "stroke_scale"),
         default="1.00",
+        **_POSITIVE_KW,
     ),
     FieldSpec(
         "options.noise_tolerance_n",
         "卸载噪声容差",
         "N",
         "允许卸载曲线局部略高于加载曲线的噪声阈值。",
-        ("options", "noise_tolerance_n"),
+        mapping=("options", "noise_tolerance_n"),
         default="5.0",
+        **_NONNEGATIVE_KW,
     ),
     FieldSpec(
         "options.time_samples",
         "时域采样点数",
         "点",
         "能量守恒反推响应曲线的总采样点数。",
-        ("options", "time_samples"),
+        mapping=("options", "time_samples"),
+        value_type="int",
+        min_value=8,
+        finite=True,
         default="200",
     ),
 )
@@ -154,9 +161,12 @@ class BufferEnergyPage(BaseChapterPage):
         self._curve_source: Path | None = None
         self._last_payload: dict[str, Any] | None = None
         self._last_result: dict[str, Any] | None = None
-        self._field_specs: dict[str, FieldSpec] = {spec.field_id: spec for spec in FIELD_SPECS}
+        self._field_specs: dict[str, FieldSchema] = {spec.field_id: spec for spec in FIELD_SPECS}
         self._field_widgets: dict[str, QWidget] = {}
         self._field_cards: dict[str, QWidget] = {}
+        self._field_error_labels: dict[str, QLabel] = {}
+        self._field_chapter_index: dict[str, int] = {}
+        self._suspend_live_feedback = False
 
         self._insert_disclaimer()
 
@@ -193,8 +203,10 @@ class BufferEnergyPage(BaseChapterPage):
         self.btn_load_1.clicked.connect(lambda: self._load_sample("buffer_energy_case_01.csv"))
         self.btn_load_2.clicked.connect(lambda: self._load_sample("buffer_energy_case_02.xlsx"))
 
+        self._suspend_live_feedback = True
         self._apply_defaults()
-        self._connect_input_signals()
+        self._suspend_live_feedback = False
+        self._refresh_all_field_errors()
 
     def _insert_disclaimer(self) -> None:
         banner = QFrame(self)
@@ -239,8 +251,10 @@ class BufferEnergyPage(BaseChapterPage):
         form = QVBoxLayout(container)
         form.setContentsMargins(0, 0, 0, 0)
         form.setSpacing(8)
+        chapter_index = self.chapter_list.count()
         for spec in FIELD_SPECS:
             form.addWidget(self._build_field_card(spec, container))
+            self._field_chapter_index[spec.field_id] = chapter_index
         form.addStretch(1)
         scroll.setWidget(container)
         body.addWidget(scroll, 1)
@@ -421,7 +435,7 @@ class BufferEnergyPage(BaseChapterPage):
         layout.addWidget(subtitle_label)
         return page, layout
 
-    def _build_field_card(self, spec: FieldSpec, parent: QWidget) -> QWidget:
+    def _build_field_card(self, spec: FieldSchema, parent: QWidget) -> QWidget:
         card = QFrame(parent)
         card.setObjectName("SubCard")
         mark_input_field_surface(card)
@@ -435,17 +449,26 @@ class BufferEnergyPage(BaseChapterPage):
         editor.setObjectName("InputField")
         editor.setFont(make_ui_font(12))
         editor.setPlaceholderText(spec.placeholder or "请输入数值")
+        editor.textChanged.connect(
+            lambda _text, fid=spec.field_id: self._on_input_changed(fid)
+        )
         unit = QLabel(spec.unit, card)
         unit.setObjectName("UnitLabel")
         hint = QLabel(spec.hint, card)
         hint.setObjectName("SectionHint")
         hint.setWordWrap(True)
+        error_label = QLabel("", card)
+        error_label.setObjectName("FieldErrorLabel")
+        error_label.setWordWrap(True)
+        error_label.setVisible(False)
         grid.addWidget(label, 0, 0)
         grid.addWidget(editor, 0, 1)
         grid.addWidget(unit, 0, 2)
         grid.addWidget(hint, 1, 0, 1, 3)
+        grid.addWidget(error_label, 2, 0, 1, 3)
         self._field_widgets[spec.field_id] = editor
         self._field_cards[spec.field_id] = card
+        self._field_error_labels[spec.field_id] = error_label
         return card
 
     def _metric_card(self, parent: QWidget, key: str, title: str, unit: str) -> QWidget:
@@ -470,11 +493,6 @@ class BufferEnergyPage(BaseChapterPage):
             if isinstance(widget, QLineEdit):
                 widget.setText(spec.default)
 
-    def _connect_input_signals(self) -> None:
-        for widget in self._field_widgets.values():
-            if isinstance(widget, QLineEdit):
-                widget.textChanged.connect(lambda _text: self._invalidate_result())
-
     def _invalidate_result(self) -> None:
         self._last_payload = None
         self._last_result = None
@@ -485,11 +503,73 @@ class BufferEnergyPage(BaseChapterPage):
         self.btn_save_report.setEnabled(False)
         self.btn_calculate.setEnabled(self._curve_data is not None)
 
-    def _read_value(self, spec: FieldSpec) -> str:
+    def _read_value(self, spec: FieldSchema) -> str:
         widget = self._field_widgets[spec.field_id]
         if isinstance(widget, QLineEdit):
             return widget.text().strip()
         return ""
+
+    def _current_raw_values(self) -> dict[str, str]:
+        return {
+            field_id: self._read_value(spec)
+            for field_id, spec in self._field_specs.items()
+        }
+
+    def _set_field_error(self, field_id: str, message: str | None) -> None:
+        widget = self._field_widgets.get(field_id)
+        label = self._field_error_labels.get(field_id)
+        invalid = bool(message)
+        if widget is not None:
+            widget.setProperty("fieldError", invalid)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+        if label is not None:
+            label.setText(message or "")
+            label.setVisible(invalid)
+
+    def _refresh_field_error(self, field_id: str, values: dict[str, str] | None = None) -> None:
+        spec = self._field_specs.get(field_id)
+        if spec is None:
+            return
+        raw_values = values if values is not None else self._current_raw_values()
+        ok, message = validate_text(spec, raw_values.get(field_id, ""), values=raw_values)
+        self._set_field_error(field_id, None if ok else message)
+
+    def _refresh_all_field_errors(self) -> None:
+        values = self._current_raw_values()
+        for field_id in self._field_specs:
+            self._refresh_field_error(field_id, values)
+
+    def _collect_field_errors(self, *, show: bool) -> list[str]:
+        values = self._current_raw_values()
+        invalid: list[str] = []
+        for field_id, spec in self._field_specs.items():
+            ok, message = validate_text(spec, values.get(field_id, ""), values=values)
+            if not ok:
+                invalid.append(field_id)
+            if show:
+                self._set_field_error(field_id, None if ok else message)
+        return invalid
+
+    def _focus_field(self, field_id: str) -> None:
+        chapter_index = self._field_chapter_index.get(field_id)
+        if chapter_index is not None:
+            self.set_current_chapter(chapter_index)
+        widget = self._field_widgets.get(field_id)
+        if widget is None:
+            return
+        widget.setFocus(Qt.FocusReason.OtherFocusReason)
+        parent = widget.parentWidget()
+        while parent is not None and not isinstance(parent, QScrollArea):
+            parent = parent.parentWidget()
+        if isinstance(parent, QScrollArea):
+            parent.ensureWidgetVisible(widget)
+
+    def _on_input_changed(self, field_id: str) -> None:
+        if self._suspend_live_feedback:
+            return
+        self._invalidate_result()
+        self._refresh_field_error(field_id)
 
     def _read_field_float(self, field_id: str, default: float) -> float:
         widget = self._field_widgets.get(field_id)
@@ -609,29 +689,20 @@ class BufferEnergyPage(BaseChapterPage):
     def _build_payload(self) -> dict[str, Any]:
         if self._curve_data is None:
             raise ValueError("请先导入曲线文件或加载测试案例。")
-        payload: dict[str, Any] = {
-            "curve": {
-                "loading": list(self._curve_data.get("loading", [])),
-                "unloading": list(self._curve_data.get("unloading", [])),
-            },
-            "impact": {},
-            "options": {},
+        payload = build_payload(self._field_specs.values(), self._current_raw_values())
+        payload["curve"] = {
+            "loading": list(self._curve_data.get("loading", [])),
+            "unloading": list(self._curve_data.get("unloading", [])),
         }
-        for spec in FIELD_SPECS:
-            if spec.mapping is None:
-                continue
-            raw = self._read_value(spec)
-            if raw == "":
-                raise ValueError(f"{spec.label} 不能为空。")
-            try:
-                value: Any = int(raw) if spec.field_id == "options.time_samples" else float(raw)
-            except ValueError as exc:
-                raise ValueError(f"{spec.label} 不是数字: {raw!r}") from exc
-            section, key = spec.mapping
-            payload[section][key] = value
         return payload
 
     def _on_calculate(self) -> None:
+        invalid = self._collect_field_errors(show=True)
+        if invalid:
+            self._invalidate_result()
+            self._focus_field(invalid[0])
+            self.set_info(f"有 {len(invalid)} 个字段需要修正。")
+            return
         try:
             payload = self._build_payload()
             result = self._calculate_buffer_energy(payload)
@@ -803,7 +874,10 @@ class BufferEnergyPage(BaseChapterPage):
         self._curve_source = None
         self._last_payload = None
         self._last_result = None
+        self._suspend_live_feedback = True
         self._apply_defaults()
+        self._suspend_live_feedback = False
+        self._refresh_all_field_errors()
         self.curve_summary_label.setText("尚未导入曲线。")
         self.curve_metrics_label.setText("导入曲线后显示能量与刚度指标。")
         self.workbench_status_label.setText("尚未导入曲线。")
@@ -1022,6 +1096,7 @@ class BufferEnergyPage(BaseChapterPage):
         inputs = data.get("inputs") if isinstance(data.get("inputs"), dict) else {}
         ui_state = data.get("ui_state") if isinstance(data.get("ui_state"), dict) else {}
 
+        self._suspend_live_feedback = True
         for spec in FIELD_SPECS:
             value: Any | None = None
             if spec.field_id in ui_state:
@@ -1038,6 +1113,8 @@ class BufferEnergyPage(BaseChapterPage):
                 old = widget.blockSignals(True)
                 widget.setText(str(value))
                 widget.blockSignals(old)
+        self._suspend_live_feedback = False
+        self._refresh_all_field_errors()
 
         curve_source = str(ui_state.get("curve_source", "") or "")
         if curve_source:

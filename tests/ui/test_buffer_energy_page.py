@@ -422,6 +422,74 @@ class BufferEnergyPageTests(unittest.TestCase):
         self.assertEqual(page._field_widgets["impact.initial_velocity_m_s"].text(), "4.2")
         self.assertEqual(page._field_widgets["options.time_samples"].text(), "120")
 
+    def _assert_live_error_for_invalid_numeric(self, field_id: str) -> None:
+        page = self._make_page()
+        widget = page._field_widgets[field_id]
+        error = page._field_error_labels[field_id]
+        self.assertTrue(error.isHidden())
+        page._curve_data = _sample_curve()
+        page.btn_calculate.setEnabled(True)
+
+        widget.setText("inf")
+        self.assertFalse(error.isHidden())
+        self.assertTrue(error.text())
+        self.assertIn(widget.property("fieldError"), (True, "true"))
+        self.assertTrue(page.btn_calculate.isEnabled())
+
+        widget.setText("nan")
+        self.assertFalse(error.isHidden())
+        self.assertIn("有效数字", error.text())
+        self.assertIn(widget.property("fieldError"), (True, "true"))
+        self.assertTrue(page.btn_calculate.isEnabled())
+
+        widget.setText("abc")
+        self.assertFalse(error.isHidden())
+        self.assertIn("有效数字", error.text())
+        self.assertIn(widget.property("fieldError"), (True, "true"))
+        self.assertTrue(page.btn_calculate.isEnabled())
+
+        widget.setText("1e999")
+        self.assertFalse(error.isHidden())
+        self.assertIn("有限", error.text())
+        self.assertIn(widget.property("fieldError"), (True, "true"))
+        self.assertTrue(page.btn_calculate.isEnabled())
+
+        widget.setText("0")
+        self.assertFalse(error.isHidden())
+        self.assertIn(">", error.text())
+        self.assertTrue(page.btn_calculate.isEnabled())
+
+        widget.setText(page._field_specs[field_id].default)
+        self.assertTrue(error.isHidden())
+        self.assertIn(widget.property("fieldError"), (False, "false", None))
+        self.assertTrue(page.btn_calculate.isEnabled())
+
+    def test_available_stroke_live_rejects_inf_nan_and_non_numeric(self) -> None:
+        self._assert_live_error_for_invalid_numeric("impact.available_stroke_mm")
+
+    def test_allowable_peak_live_rejects_inf_nan_and_non_numeric(self) -> None:
+        self._assert_live_error_for_invalid_numeric("impact.allowable_peak_force_n")
+
+    def test_calculate_with_invalid_stroke_focuses_field_and_keeps_button(self) -> None:
+        page = self._make_page()
+        page._curve_data = _sample_curve()
+        page.btn_calculate.setEnabled(True)
+        page._field_widgets["impact.available_stroke_mm"].setText("inf")
+        page._field_widgets["impact.allowable_peak_force_n"].setText("abc")
+
+        with patch.object(QMessageBox, "warning", side_effect=AssertionError("no dialog")):
+            page._on_calculate()
+
+        self.assertIsNone(page._last_result)
+        self.assertFalse(page.btn_save_report.isEnabled())
+        self.assertTrue(page.btn_calculate.isEnabled())
+        stroke_error = page._field_error_labels["impact.available_stroke_mm"]
+        peak_error = page._field_error_labels["impact.allowable_peak_force_n"]
+        self.assertFalse(stroke_error.isHidden())
+        self.assertFalse(peak_error.isHidden())
+        self.assertEqual(page.chapter_list.currentRow(), 2)
+        self.assertIn("字段需要修正", page.info_label.text())
+
 
 class BufferEnergyMainWindowIntegrationTests(unittest.TestCase):
     @classmethod
