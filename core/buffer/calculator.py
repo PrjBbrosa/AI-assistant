@@ -10,6 +10,8 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from core._validation import finite_float, positive_float, require_mapping, section
+
 
 class InputError(ValueError):
     """Raised when input data is incomplete or physically invalid."""
@@ -27,12 +29,8 @@ def _require(section: Dict[str, Any], key: str, label: str) -> Any:
     return section[key]
 
 
-def _positive(value: float, label: str, allow_zero: bool = False) -> float:
-    if allow_zero and value == 0:
-        return value
-    if value <= 0:
-        raise InputError(f"{label} 必须 > 0，当前值 {value}")
-    return value
+def _positive(value: Any, label: str, allow_zero: bool = False) -> float:
+    return positive_float(value, label, allow_zero=allow_zero, error_cls=InputError)
 
 
 def _normalize_curve(
@@ -378,20 +376,19 @@ def _build_assumptions() -> List[str]:
 
 def calculate_buffer_energy(data: Dict[str, Any]) -> Dict[str, Any]:
     """Calculate a single-impact buffer energy simulation from F-x curves."""
-    if not isinstance(data, dict):
-        raise InputError("输入必须是 dict")
+    require_mapping(data, error_cls=InputError)
     curve = _require(data, "curve", "data")
     impact_in = _require(data, "impact", "data")
-    options = data.get("options", {}) or {}
-    if not isinstance(options, dict):
-        raise InputError("options 必须是字典")
+    options = section(data, "options", error_cls=InputError)
 
-    force_scale = _positive(float(options.get("force_scale", 1.0)), "力倍率")
-    stroke_scale = _positive(float(options.get("stroke_scale", 1.0)), "行程倍率")
+    force_scale = _positive(options.get("force_scale", 1.0), "力倍率")
+    stroke_scale = _positive(options.get("stroke_scale", 1.0), "行程倍率")
     noise_tolerance = _positive(
-        float(options.get("noise_tolerance_n", 5.0)), "噪声容差", allow_zero=True
+        options.get("noise_tolerance_n", 5.0), "噪声容差", allow_zero=True
     )
-    time_samples = int(options.get("time_samples", 200))
+    time_samples = int(
+        finite_float(options.get("time_samples", 200), "time_samples", error_cls=InputError)
+    )
     if time_samples < 8:
         raise InputError("time_samples 必须 >= 8")
 
@@ -414,15 +411,15 @@ def calculate_buffer_energy(data: Dict[str, Any]) -> Dict[str, Any]:
         warnings.append("卸载曲线最大位移小于加载曲线，已补充加载顶点作为卸载起点")
     warnings.extend(_validate_unloading_against_loading(loading, unloading, noise_tolerance))
 
-    mass_kg = _positive(float(_require(impact_in, "mass_kg", "impact")), "质量")
+    mass_kg = _positive(_require(impact_in, "mass_kg", "impact"), "质量")
     initial_velocity = _positive(
-        float(_require(impact_in, "initial_velocity_m_s", "impact")), "初速度"
+        _require(impact_in, "initial_velocity_m_s", "impact"), "初速度"
     )
     available_stroke = _positive(
-        float(_require(impact_in, "available_stroke_mm", "impact")), "可用行程"
+        _require(impact_in, "available_stroke_mm", "impact"), "可用行程"
     )
     allowable_peak = _positive(
-        float(_require(impact_in, "allowable_peak_force_n", "impact")), "允许峰值力"
+        _require(impact_in, "allowable_peak_force_n", "impact"), "允许峰值力"
     )
 
     if available_stroke > loading[-1]["x_mm"] + _DUP_X_TOL:

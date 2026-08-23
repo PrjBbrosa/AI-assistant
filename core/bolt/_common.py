@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from core._validation import finite_float
+
 
 class InputError(ValueError):
     """Raised when input data is incomplete or physically invalid."""
@@ -12,15 +14,7 @@ class InputError(ValueError):
 
 def to_float(value: Any, name: str) -> float:
     """Parse a finite float and normalize validation errors to Chinese InputError."""
-    if isinstance(value, bool):
-        raise InputError(f"{name} 必须为有限数字，当前值: {value}")
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError) as exc:
-        raise InputError(f"{name} 必须为数字，当前值: {value}") from exc
-    if not math.isfinite(parsed):
-        raise InputError(f"{name} 必须为有限数字，当前值: {value}")
-    return parsed
+    return finite_float(value, name, error_cls=InputError)
 
 
 THREAD_SECTION_TOLERANCE = 0.01

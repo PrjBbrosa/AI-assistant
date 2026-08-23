@@ -5,6 +5,16 @@ from __future__ import annotations
 import math
 from typing import Any, Dict
 
+from core._validation import (
+    enum_value,
+    finite_float,
+    load_amplification,
+    positive_float,
+    require_mapping,
+    safety_factor_min,
+    section,
+)
+
 from .geometry import GeometryError, derive_involute_geometry
 
 
@@ -19,25 +29,11 @@ def _require(section: Dict[str, Any], key: str, section_name: str) -> Any:
 
 
 def _to_float(value: Any, name: str) -> float:
-    # 与 core.bolt._common.to_float 同构；若第三处复制，应抽为 core/_validation.py。
-    if isinstance(value, bool):
-        raise InputError(f"{name} 必须为有限数字，当前值: {value}")
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError) as exc:
-        raise InputError(f"{name} 必须为数字，当前值: {value}") from exc
-    if not math.isfinite(parsed):
-        raise InputError(f"{name} 必须为有限数字，当前值: {value}")
-    return parsed
+    return finite_float(value, name, error_cls=InputError)
 
 
 def _positive(value: Any, name: str, allow_zero: bool = False) -> float:
-    numeric = _to_float(value, name)
-    if allow_zero and numeric == 0:
-        return numeric
-    if numeric <= 0:
-        raise InputError(f"{name} 必须 > 0，当前值 {numeric}")
-    return numeric
+    return positive_float(value, name, allow_zero=allow_zero, error_cls=InputError)
 
 
 def _positive_int(value: Any, name: str) -> int:
@@ -230,20 +226,30 @@ def _calculate_scenario_b(
 
 def calculate_spline_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     """Main entry point for spline interference-fit calculation."""
-    mode = str(data.get("mode", "spline_only"))
-    spline = data.get("spline", {})
-    loads = data.get("loads", {})
-    checks = data.get("checks", {})
+    require_mapping(data, error_cls=InputError)
+    mode = enum_value(
+        str(data.get("mode", "spline_only")).strip(),
+        "mode",
+        ("spline_only", "combined"),
+        error_cls=InputError,
+    )
+    spline = section(data, "spline", error_cls=InputError)
+    loads = section(data, "loads", error_cls=InputError)
+    checks = section(data, "checks", error_cls=InputError)
 
     torque_required_nm = _positive(
         _require(loads, "torque_required_nm", "loads"),
         "loads.torque_required_nm",
     )
-    ka = _positive(loads.get("application_factor_ka", 1.0), "loads.application_factor_ka")
+    ka = load_amplification(
+        loads.get("application_factor_ka", 1.0),
+        "loads.application_factor_ka",
+        error_cls=InputError,
+    )
     torque_design_nm = torque_required_nm * ka
 
-    flank_safety_min = _positive(
-        checks.get("flank_safety_min", 1.3), "checks.flank_safety_min"
+    flank_safety_min = safety_factor_min(
+        checks.get("flank_safety_min", 1.3), "checks.flank_safety_min", error_cls=InputError
     )
 
     scenario_a = _calculate_scenario_a(spline, torque_design_nm, flank_safety_min)
@@ -261,11 +267,11 @@ def calculate_spline_fit(data: Dict[str, Any]) -> Dict[str, Any]:
             allow_zero=True,
         )
         axial_design_n = axial_required_n * ka
-        slip_safety_min = _positive(
-            checks.get("slip_safety_min", 1.5), "checks.slip_safety_min"
+        slip_safety_min = safety_factor_min(
+            checks.get("slip_safety_min", 1.5), "checks.slip_safety_min", error_cls=InputError
         )
-        stress_safety_min = _positive(
-            checks.get("stress_safety_min", 1.2), "checks.stress_safety_min"
+        stress_safety_min = safety_factor_min(
+            checks.get("stress_safety_min", 1.2), "checks.stress_safety_min", error_cls=InputError
         )
         scenario_b = _calculate_scenario_b(
             smooth_fit, smooth_materials, smooth_roughness, smooth_friction,

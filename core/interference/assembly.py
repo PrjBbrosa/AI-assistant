@@ -5,23 +5,25 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from core._validation import bounded_float, finite_float, positive_float, require_mapping
+
 from .calculator import InputError
 
 
 def _positive(value: Any, name: str, *, allow_zero: bool = False) -> float:
-    numeric = float(value)
-    if allow_zero and numeric == 0.0:
-        return numeric
-    if numeric <= 0.0:
-        raise InputError(f"{name} 必须 > 0，当前值 {numeric}")
-    return numeric
+    return positive_float(value, name, allow_zero=allow_zero, error_cls=InputError)
 
 
 def _open_interval(value: Any, lo: float, hi: float, name: str) -> float:
-    numeric = float(value)
-    if not (lo < numeric < hi):
-        raise InputError(f"{name} 必须满足 {lo} < 值 < {hi}，当前值 {numeric}")
-    return numeric
+    return bounded_float(
+        value,
+        name,
+        min_value=lo,
+        max_value=hi,
+        min_inclusive=False,
+        max_inclusive=False,
+        error_cls=InputError,
+    )
 
 
 def _recommended_edge_length_mm(shaft_d_mm: float) -> float:
@@ -45,7 +47,10 @@ def calculate_assembly_detail(
     context: dict[str, float],
 ) -> dict[str, Any]:
     """Build mode-specific assembly detail from the calculator context."""
-    assembly = assembly_input or {}
+    if assembly_input is None:
+        assembly: dict[str, Any] = {}
+    else:
+        assembly = dict(require_mapping(assembly_input, "assembly", error_cls=InputError))
 
     shaft_d_mm = _positive(context["shaft_d_mm"], "context.shaft_d_mm")
     fit_length_mm = _positive(context["fit_length_mm"], "context.fit_length_mm")
@@ -102,8 +107,16 @@ def calculate_assembly_detail(
             "assembly.clearance_um",
             allow_zero=True,
         )
-        room_temperature_c = float(assembly.get("room_temperature_c", 20.0))
-        shaft_temperature_c = float(assembly.get("shaft_temperature_c", 20.0))
+        room_temperature_c = finite_float(
+            assembly.get("room_temperature_c", 20.0),
+            "assembly.room_temperature_c",
+            error_cls=InputError,
+        )
+        shaft_temperature_c = finite_float(
+            assembly.get("shaft_temperature_c", 20.0),
+            "assembly.shaft_temperature_c",
+            error_cls=InputError,
+        )
         alpha_hub = _positive(
             assembly.get("alpha_hub_1e6_per_c", 11.0),
             "assembly.alpha_hub_1e6_per_c",
@@ -123,7 +136,11 @@ def calculate_assembly_detail(
             + (alpha_shaft / alpha_hub) * (shaft_temperature_c - room_temperature_c)
         )
         hub_temp_limit_raw = assembly.get("hub_temp_limit_c")
-        hub_temp_limit_c = None if hub_temp_limit_raw in (None, "") else float(hub_temp_limit_raw)
+        hub_temp_limit_c = (
+            None
+            if hub_temp_limit_raw in (None, "")
+            else finite_float(hub_temp_limit_raw, "assembly.hub_temp_limit_c", error_cls=InputError)
+        )
         hub_temp_limit_ok = (
             None if hub_temp_limit_c is None else required_hub_temperature_c <= hub_temp_limit_c
         )

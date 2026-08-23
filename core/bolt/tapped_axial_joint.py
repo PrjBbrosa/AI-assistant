@@ -5,6 +5,13 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from core._validation import (
+    positive_float,
+    require_mapping,
+    safety_factor_min,
+    section,
+)
+
 from ._common import (
     InputError,
     THREAD_SECTION_TOLERANCE as _THREAD_SECTION_TOLERANCE,
@@ -44,19 +51,14 @@ _METHOD_NAMES = {
 }
 
 
-def _require(section: dict[str, Any], key: str, section_name: str) -> Any:
-    if key not in section:
+def _require(mapping: dict[str, Any], key: str, section_name: str) -> Any:
+    if key not in mapping:
         raise InputError(f"Missing required field: {section_name}.{key}")
-    return section[key]
+    return mapping[key]
 
 
 def _positive(value: Any, name: str, allow_zero: bool = False) -> float:
-    parsed = _to_float(value, name)
-    if allow_zero and parsed == 0:
-        return parsed
-    if parsed <= 0:
-        raise InputError(f"{name} 必须大于 0，当前值: {parsed}")
-    return parsed
+    return positive_float(value, name, allow_zero=allow_zero, error_cls=InputError)
 
 
 def _float_or_none(value: Any, name: str) -> float | None:
@@ -112,12 +114,13 @@ def _fatigue_limit_asv(d: float, surface_treatment: str) -> float:
 
 def calculate_tapped_axial_joint(data: dict[str, Any]) -> dict[str, Any]:
     """Calculate a tapped axial threaded joint with no clamped parts."""
-    fastener = data.get("fastener", {})
-    assembly = data.get("assembly", {})
-    service = data.get("service", {})
-    fatigue = data.get("fatigue", {})
-    thread_strip = data.get("thread_strip", {})
-    checks = data.get("checks", {})
+    require_mapping(data, error_cls=InputError)
+    fastener = section(data, "fastener", error_cls=InputError)
+    assembly = section(data, "assembly", error_cls=InputError)
+    service = section(data, "service", error_cls=InputError)
+    fatigue = section(data, "fatigue", error_cls=InputError)
+    thread_strip = section(data, "thread_strip", error_cls=InputError)
+    checks = section(data, "checks", error_cls=InputError)
 
     geometry = _derive_thread_geometry(fastener)
     d = geometry["d"]
@@ -184,14 +187,11 @@ def calculate_tapped_axial_joint(data: dict[str, Any]) -> dict[str, Any]:
     load_cycles = _positive(_require(fatigue, "load_cycles", "fatigue"), "fatigue.load_cycles")
     surface_treatment = str(fatigue.get("surface_treatment", "rolled"))
 
-    yield_safety_operating = _positive(
+    yield_safety_operating = safety_factor_min(
         checks.get("yield_safety_operating", 1.1),
         "checks.yield_safety_operating",
+        error_cls=InputError,
     )
-    if yield_safety_operating < 1.0:
-        raise InputError(
-            "checks.yield_safety_operating 必须 >= 1。"
-        )
 
     f_preload_max = alpha_a * f_preload_min
 
@@ -244,6 +244,12 @@ def calculate_tapped_axial_joint(data: dict[str, Any]) -> dict[str, Any]:
     sigma_a_allow = sigma_asv * goodman_factor
     fatigue_ok = (goodman_factor > 0.0) and (sigma_a <= sigma_a_allow)
 
+    if thread_strip.get("safety_required") not in (None, ""):
+        safety_factor_min(
+            thread_strip["safety_required"],
+            "thread_strip.safety_required",
+            error_cls=InputError,
+        )
     m_eff = _float_or_none(thread_strip.get("m_eff"), "thread_strip.m_eff")
     tau_bm = _float_or_none(thread_strip.get("tau_BM"), "thread_strip.tau_BM")
     tau_bs_raw = thread_strip.get("tau_BS", rp02 * 0.6)
@@ -278,9 +284,10 @@ def calculate_tapped_axial_joint(data: dict[str, Any]) -> dict[str, Any]:
         if tau_bm is None or tau_bm <= 0:
             raise InputError("thread_strip.tau_BM（内螺纹材料剪切强度）必须 > 0。")
         tau_bm = _positive(tau_bm, "thread_strip.tau_BM")
-        strip_safety_required = _positive(
+        strip_safety_required = safety_factor_min(
             thread_strip.get("safety_required", 1.25),
             "thread_strip.safety_required",
+            error_cls=InputError,
         )
 
         a_sb = math.pi * d3 * m_eff * c1

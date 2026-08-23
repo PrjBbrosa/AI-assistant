@@ -67,6 +67,29 @@ class TestPhiNHardBlock:
         for w in result.get("warnings", []):
             assert "phi_n" not in w.lower()
 
+    def test_auto_compliance_da_smaller_than_hole_raises(self):
+        """D_A < d_h 不得产生负面积/负 phi_n 后继续输出总体结果。"""
+        data = _base_input()
+        del data["stiffness"]["bolt_compliance"]
+        del data["stiffness"]["clamped_compliance"]
+        data["stiffness"]["auto_compliance"] = True
+        data["stiffness"]["E_bolt"] = 210_000.0
+        data["stiffness"]["E_clamped"] = 210_000.0
+        data["clamped"] = {
+            "basic_solid": "cylinder",
+            "total_thickness": 30.0,
+            "D_A": 5.0,
+        }
+        data["bearing"]["bearing_d_inner"] = 11.0
+        with pytest.raises(InputError):
+            calculate_vdi2230_core(data)
+
+    def test_negative_clamped_compliance_raises(self):
+        data = _base_input()
+        data["stiffness"]["clamped_compliance"] = -2.7e-6
+        with pytest.raises(InputError):
+            calculate_vdi2230_core(data)
+
 
 class TestLoadIntroductionFactorBound:
     """R-1: VDI 2230 载荷导入系数 n 物理定义域 (0, 1]。"""

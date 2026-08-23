@@ -7,22 +7,24 @@ import math
 from pathlib import Path
 from typing import Any, Dict
 
+from core._validation import (
+    positive_float,
+    require_mapping,
+    safety_factor_min,
+    section,
+)
+
 from ._common import InputError, check_thread_section_consistency, to_float
 
 
-def _require(section: Dict[str, Any], key: str, section_name: str) -> Any:
-    if key not in section:
+def _require(mapping: Dict[str, Any], key: str, section_name: str) -> Any:
+    if key not in mapping:
         raise InputError(f"缺少必填字段: {section_name}.{key}")
-    return section[key]
+    return mapping[key]
 
 
 def _positive(value: Any, name: str, allow_zero: bool = False) -> float:
-    numeric = to_float(value, name)
-    if allow_zero and numeric == 0:
-        return numeric
-    if numeric <= 0:
-        raise InputError(f"{name} 必须 > 0，当前值 {numeric}")
-    return numeric
+    return positive_float(value, name, allow_zero=allow_zero, error_cls=InputError)
 
 
 def _float_or_none(value: Any, name: str) -> float | None:
@@ -83,6 +85,9 @@ def _resolve_compliance(
             layers = cl["layers"]
             if not isinstance(layers, list) or not (1 <= len(layers) <= 10):
                 raise InputError("被夹件层数须在 1~10 之间")
+            for idx, layer in enumerate(layers):
+                if not isinstance(layer, dict):
+                    raise InputError(f"clamped.layers[{idx}] 必须是字典")
             l_K = sum(
                 _positive(
                     _require(layer, "l_K", f"clamped.layers[{idx}]"),
@@ -136,6 +141,8 @@ def _resolve_compliance(
             "载荷导入系数 stiffness.load_introduction_factor_n 必须在 (0, 1] 区间，"
             f"当前值 {n}。n > 1 会使 phi_n 进入非物理范围并低估螺栓载荷。"
         )
+    delta_s = _positive(delta_s, "delta_s")
+    delta_p = _positive(delta_p, "delta_p")
     return {"delta_s": delta_s, "delta_p": delta_p, "n": n, "auto_modeled": auto_modeled}
 
 
@@ -215,15 +222,16 @@ def _estimate_embed_loss(
 
 def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     """Calculate VDI 2230 core-chain outputs for a single bolt joint."""
-    fastener = data.get("fastener", {})
-    tightening = data.get("tightening", {})
-    loads = data.get("loads", {})
-    stiffness = data.get("stiffness", {})
-    bearing = data.get("bearing", {})
-    checks = data.get("checks", {})
-    operating = data.get("operating", {})
-    clamped = data.get("clamped", {})
-    options = data.get("options", {})
+    require_mapping(data, error_cls=InputError)
+    fastener = section(data, "fastener", error_cls=InputError)
+    tightening = section(data, "tightening", error_cls=InputError)
+    loads = section(data, "loads", error_cls=InputError)
+    stiffness = section(data, "stiffness", error_cls=InputError)
+    bearing = section(data, "bearing", error_cls=InputError)
+    checks = section(data, "checks", error_cls=InputError)
+    operating = section(data, "operating", error_cls=InputError)
+    clamped = section(data, "clamped", error_cls=InputError)
+    options = section(data, "options", error_cls=InputError)
 
     check_level = str(options.get("check_level", "basic"))
     if check_level not in {"basic", "thermal", "fatigue"}:
@@ -303,9 +311,9 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     auto_modeled = compliance.get("auto_modeled", False)
     phi = delta_p / (delta_s + delta_p)
     phi_n = n * phi
-    if phi_n >= 1.0:
+    if not (0.0 < phi_n < 1.0):
         raise InputError(
-            f"载荷分配系数 phi_n = {phi_n:.3f} >= 1，外载全部进入螺栓，无物理意义。"
+            f"载荷分配系数 phi_n = {phi_n:.3f} 必须满足 0 < phi_n < 1，"
             "请检查刚度模型（δs/δp）与载荷导入系数 n。"
         )
 
@@ -465,14 +473,11 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     # R5 扭转残余：扭矩法保留约 50% 装配扭矩，其余方法扭矩基本释放
     k_tau = 0.5 if tightening_method == "torque" else 0.0
     sigma_vm_work = math.sqrt(sigma_ax_work**2 + 3.0 * (k_tau * tau_assembly)**2)
-    yield_safety_operating = _positive(
+    yield_safety_operating = safety_factor_min(
         checks.get("yield_safety_operating", 1.1),
         "checks.yield_safety_operating",
+        error_cls=InputError,
     )
-    if yield_safety_operating < 1.0:
-        raise InputError(
-            f"checks.yield_safety_operating 必须 >= 1，当前值 {yield_safety_operating}"
-        )
     sigma_allow_work = rp02 / yield_safety_operating
     pass_work = sigma_vm_work <= sigma_allow_work
 
@@ -516,7 +521,13 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
     # C1 ≈ 0.75 (ISO 公制标准螺纹的螺纹啮合修正系数)
     # C3 ≈ 0.58 (内螺纹参与承载的有效比例)
     # 安全系数 S_strip = min(F_strip_B, F_strip_M) / F_bolt_max
-    thread_strip = data.get("thread_strip", {})
+    thread_strip = section(data, "thread_strip", error_cls=InputError)
+    if thread_strip.get("safety_required") not in (None, ""):
+        safety_factor_min(
+            thread_strip["safety_required"],
+            "thread_strip.safety_required",
+            error_cls=InputError,
+        )
     m_eff = _float_or_none(thread_strip.get("m_eff"), "thread_strip.m_eff")
     tau_BM = _float_or_none(thread_strip.get("tau_BM"), "thread_strip.tau_BM")
     if m_eff is not None and m_eff <= 0:
@@ -560,9 +571,10 @@ def calculate_vdi2230_core(data: Dict[str, Any]) -> Dict[str, Any]:
             F_strip_min = F_strip_nut
 
         strip_safety = F_strip_min / F_bolt_max if F_bolt_max > 0 else math.inf
-        strip_safety_required = _positive(
+        strip_safety_required = safety_factor_min(
             thread_strip.get("safety_required", 1.25),
             "thread_strip.safety_required",
+            error_cls=InputError,
         )
         pass_strip = strip_safety >= strip_safety_required
 

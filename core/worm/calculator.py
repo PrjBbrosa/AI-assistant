@@ -9,6 +9,15 @@ from __future__ import annotations
 import math
 from typing import Any, Dict
 
+from core._validation import (
+    bounded_float,
+    finite_float,
+    load_amplification,
+    positive_float,
+    require_mapping,
+    safety_factor_min,
+    section,
+)
 from core.worm.materials import PLASTIC_MATERIALS, apply_derate
 
 
@@ -22,24 +31,32 @@ def _require(section: Dict[str, Any], key: str, section_name: str) -> Any:
     return section[key]
 
 
-def _positive(value: float, name: str, allow_zero: bool = False) -> float:
-    if allow_zero and value == 0:
-        return value
-    if value <= 0:
-        raise InputError(f"{name} 必须 > 0，当前值 {value}")
-    return value
+def _positive(value: Any, name: str, allow_zero: bool = False) -> float:
+    return positive_float(value, name, allow_zero=allow_zero, error_cls=InputError)
 
 
-def _fraction(value: float, name: str) -> float:
-    if not (0.0 < value < 1.0):
-        raise InputError(f"{name} 必须满足 0 < 值 < 1，当前值 {value}")
-    return value
+def _fraction(value: Any, name: str) -> float:
+    return bounded_float(
+        value,
+        name,
+        min_value=0.0,
+        max_value=1.0,
+        min_inclusive=False,
+        max_inclusive=False,
+        error_cls=InputError,
+    )
 
 
-def _nu(value: float, name: str) -> float:
-    if not (0.0 < value < 0.5):
-        raise InputError(f"{name} 必须满足 0 < nu < 0.5，当前值 {value}")
-    return value
+def _nu(value: Any, name: str) -> float:
+    return bounded_float(
+        value,
+        name,
+        min_value=0.0,
+        max_value=0.5,
+        min_inclusive=False,
+        max_inclusive=False,
+        error_cls=InputError,
+    )
 
 
 STANDARD_Q_VALUES = {6, 7, 8, 9, 10, 11, 12, 14, 17, 20}
@@ -67,44 +84,46 @@ def _estimate_friction(worm_material: str, wheel_material: str) -> float:
 
 def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     """Calculate DIN 3975-style geometry summary and basic performance values."""
-    geometry = data.get("geometry", {})
-    operating = data.get("operating", {})
-    materials = data.get("materials", {})
-    advanced = data.get("advanced", {})
-    load_capacity = data.get("load_capacity", {})
+    require_mapping(data, error_cls=InputError)
+    geometry = section(data, "geometry", error_cls=InputError)
+    operating = section(data, "operating", error_cls=InputError)
+    materials = section(data, "materials", error_cls=InputError)
+    advanced = section(data, "advanced", error_cls=InputError)
+    load_capacity = section(data, "load_capacity", error_cls=InputError)
 
-    z1 = _positive(float(_require(geometry, "z1", "geometry")), "geometry.z1")
-    z2 = _positive(float(_require(geometry, "z2", "geometry")), "geometry.z2")
+    z1 = _positive(_require(geometry, "z1", "geometry"), "geometry.z1")
+    z2 = _positive(_require(geometry, "z2", "geometry"), "geometry.z2")
     if z1 != int(z1):
         raise InputError(f"z1 必须为正整数，当前值 {z1}")
     if z1 > 6:
         raise InputError(f"蜗杆头数 geometry.z1 必须 <= 6，当前值 {int(z1)}")
     if z2 != int(z2):
         raise InputError(f"z2 必须为正整数，当前值 {z2}")
-    module_mm = _positive(float(_require(geometry, "module_mm", "geometry")), "geometry.module_mm")
+    module_mm = _positive(_require(geometry, "module_mm", "geometry"), "geometry.module_mm")
     center_distance_mm = _positive(
-        float(_require(geometry, "center_distance_mm", "geometry")),
+        _require(geometry, "center_distance_mm", "geometry"),
         "geometry.center_distance_mm",
     )
     diameter_factor_q = _positive(
-        float(_require(geometry, "diameter_factor_q", "geometry")),
+        _require(geometry, "diameter_factor_q", "geometry"),
         "geometry.diameter_factor_q",
     )
     lead_angle_deg = _positive(
-        float(_require(geometry, "lead_angle_deg", "geometry")),
+        _require(geometry, "lead_angle_deg", "geometry"),
         "geometry.lead_angle_deg",
     )
     if lead_angle_deg > 45:
         raise InputError(f"导程角必须 <= 45 deg，当前值 {lead_angle_deg}")
 
-    input_torque_nm = _positive(float(_require(operating, "input_torque_nm", "operating")), "operating.input_torque_nm")
-    speed_rpm = _positive(float(_require(operating, "speed_rpm", "operating")), "operating.speed_rpm")
-    application_factor = _positive(
-        float(operating.get("application_factor", 1.0)),
+    input_torque_nm = _positive(_require(operating, "input_torque_nm", "operating"), "operating.input_torque_nm")
+    speed_rpm = _positive(_require(operating, "speed_rpm", "operating"), "operating.speed_rpm")
+    application_factor = load_amplification(
+        operating.get("application_factor", 1.0),
         "operating.application_factor",
+        error_cls=InputError,
     )
     torque_ripple_percent = _positive(
-        float(operating.get("torque_ripple_percent", 0.0)),
+        operating.get("torque_ripple_percent", 0.0),
         "operating.torque_ripple_percent",
         allow_zero=True,
     )
@@ -117,8 +136,12 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
 
     # ---- 塑料材料库降额（Step 2：Wave 1）----
     # 读取工况参数（默认值为常温 23℃、中等湿度 50%RH）
-    operating_temp_c = float(advanced.get("operating_temp_c", 23.0))
-    humidity_rh = float(advanced.get("humidity_rh", 50.0))
+    operating_temp_c = finite_float(
+        advanced.get("operating_temp_c", 23.0), "advanced.operating_temp_c", error_cls=InputError
+    )
+    humidity_rh = finite_float(
+        advanced.get("humidity_rh", 50.0), "advanced.humidity_rh", error_cls=InputError
+    )
     wheel_plastic = PLASTIC_MATERIALS.get(wheel_material)
     material_warnings: list[str] = []
     if wheel_plastic is not None:
@@ -144,13 +167,13 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
         if "wheel_nu" not in materials:
             wheel_elastic_defaults["nu"] = wheel_plastic.nu
 
-    worm_e_mpa = _positive(float(materials.get("worm_e_mpa", worm_elastic_defaults["e_mpa"])), "materials.worm_e_mpa")
-    worm_nu = _nu(float(materials.get("worm_nu", worm_elastic_defaults["nu"])), "materials.worm_nu")
-    wheel_e_mpa = _positive(float(materials.get("wheel_e_mpa", wheel_elastic_defaults["e_mpa"])), "materials.wheel_e_mpa")
-    wheel_nu = _nu(float(materials.get("wheel_nu", wheel_elastic_defaults["nu"])), "materials.wheel_nu")
+    worm_e_mpa = _positive(materials.get("worm_e_mpa", worm_elastic_defaults["e_mpa"]), "materials.worm_e_mpa")
+    worm_nu = _nu(materials.get("worm_nu", worm_elastic_defaults["nu"]), "materials.worm_nu")
+    wheel_e_mpa = _positive(materials.get("wheel_e_mpa", wheel_elastic_defaults["e_mpa"]), "materials.wheel_e_mpa")
+    wheel_nu = _nu(materials.get("wheel_nu", wheel_elastic_defaults["nu"]), "materials.wheel_nu")
 
-    x1 = float(geometry.get("x1", 0.0))
-    x2 = float(geometry.get("x2", 0.0))
+    x1 = finite_float(geometry.get("x1", 0.0), "geometry.x1", error_cls=InputError)
+    x2 = finite_float(geometry.get("x2", 0.0), "geometry.x2", error_cls=InputError)
     # 变位系数范围校验（DIN 3975 推荐范围）（Step 4：Wave 1）
     if not (-0.5 <= x1 <= 1.0):
         raise InputError(f"x1 必须在 -0.5 ~ 1.0 范围内（DIN 3975 推荐），当前值 {x1}")
@@ -185,11 +208,11 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     lead_mm = math.pi * pitch_diameter_worm_mm * math.tan(lead_angle_calc_rad)
     axial_pitch_mm = lead_mm / z1
     worm_face_width_mm = _positive(
-        float(geometry.get("worm_face_width_mm", 8.0 * module_mm)),
+        geometry.get("worm_face_width_mm", 8.0 * module_mm),
         "geometry.worm_face_width_mm",
     )
     wheel_face_width_mm = _positive(
-        float(geometry.get("wheel_face_width_mm", 7.0 * module_mm)),
+        geometry.get("wheel_face_width_mm", 7.0 * module_mm),
         "geometry.wheel_face_width_mm",
     )
 
@@ -206,7 +229,7 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     if friction_override in ("", None):
         friction_mu = _estimate_friction(worm_material, wheel_material)
     else:
-        friction_mu = float(friction_override)
+        friction_mu = finite_float(friction_override, "advanced.friction_override", error_cls=InputError)
         if not (0.01 <= friction_mu <= 0.30):
             raise InputError(f"摩擦系数覆盖值必须在 0.01~0.30 范围内，当前值 {friction_mu}")
 
@@ -219,7 +242,7 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
 
     # 提前读取法向压力角（效率和自锁公式共用）
     normal_pressure_angle_deg = _positive(
-        float(advanced.get("normal_pressure_angle_deg", 20.0)),
+        advanced.get("normal_pressure_angle_deg", 20.0),
         "advanced.normal_pressure_angle_deg",
     )
     if not (5.0 <= normal_pressure_angle_deg <= 35.0):
@@ -256,8 +279,12 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     # 塑料蜗轮散热系数 k 约 12-18 W/(m²·K)，此处取 14
     # 接触面积 A 按 2·d2·b2 简化（单位 m²）
     # 允许温升 ΔT = 50 K（PA66 工程上限约 80℃，环境 30℃）
-    thermal_heat_transfer_coefficient = float(advanced.get("thermal_k_w_m2k", 14.0))
-    thermal_allowable_delta_t_k = float(advanced.get("thermal_delta_t_k", 50.0))
+    thermal_heat_transfer_coefficient = _positive(
+        advanced.get("thermal_k_w_m2k", 14.0), "advanced.thermal_k_w_m2k"
+    )
+    thermal_allowable_delta_t_k = _positive(
+        advanced.get("thermal_delta_t_k", 50.0), "advanced.thermal_delta_t_k"
+    )
     thermal_area_m2 = (2.0 * pitch_diameter_wheel_mm * wheel_face_width_mm) / 1.0e6
     thermal_capacity_kw = thermal_heat_transfer_coefficient * thermal_area_m2 * thermal_allowable_delta_t_k / 1000.0
 
@@ -445,30 +472,38 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     # ---- Load capacity parameters (only parsed when enabled) ----
-    dynamic_factor_kv = _positive(float(load_capacity.get("dynamic_factor_kv", 1.0)), "load_capacity.dynamic_factor_kv")
-    transverse_load_factor_kha = _positive(
-        float(load_capacity.get("transverse_load_factor_kha", 1.0)),
-        "load_capacity.transverse_load_factor_kha",
+    dynamic_factor_kv = load_amplification(
+        load_capacity.get("dynamic_factor_kv", 1.0),
+        "load_capacity.dynamic_factor_kv",
+        error_cls=InputError,
     )
-    face_load_factor_khb = _positive(
-        float(load_capacity.get("face_load_factor_khb", 1.0)),
+    transverse_load_factor_kha = load_amplification(
+        load_capacity.get("transverse_load_factor_kha", 1.0),
+        "load_capacity.transverse_load_factor_kha",
+        error_cls=InputError,
+    )
+    face_load_factor_khb = load_amplification(
+        load_capacity.get("face_load_factor_khb", 1.0),
         "load_capacity.face_load_factor_khb",
+        error_cls=InputError,
     )
     allowable_contact_stress_mpa = _positive(
-        float(load_capacity.get("allowable_contact_stress_mpa", wheel_allowable_defaults["contact_mpa"])),
+        load_capacity.get("allowable_contact_stress_mpa", wheel_allowable_defaults["contact_mpa"]),
         "load_capacity.allowable_contact_stress_mpa",
     )
     allowable_root_stress_mpa = _positive(
-        float(load_capacity.get("allowable_root_stress_mpa", wheel_allowable_defaults["root_mpa"])),
+        load_capacity.get("allowable_root_stress_mpa", wheel_allowable_defaults["root_mpa"]),
         "load_capacity.allowable_root_stress_mpa",
     )
-    required_contact_safety = _positive(
-        float(load_capacity.get("required_contact_safety", 1.0)),
+    required_contact_safety = safety_factor_min(
+        load_capacity.get("required_contact_safety", 1.0),
         "load_capacity.required_contact_safety",
+        error_cls=InputError,
     )
-    required_root_safety = _positive(
-        float(load_capacity.get("required_root_safety", 1.0)),
+    required_root_safety = safety_factor_min(
+        load_capacity.get("required_root_safety", 1.0),
         "load_capacity.required_root_safety",
+        error_cls=InputError,
     )
 
     torque_ripple_ratio = torque_ripple_percent / 100.0
@@ -579,7 +614,11 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
 
     # 磨损率 J (mm³/N·m) 按 DIN 3996 K9 参考值（塑料-钢副，油脂润滑）
     # 滑动速度 v_g (m/s) = pi * d1 * n1 / (60000 * cos(gamma))
-    wear_coeff_j = float(load_capacity.get("wear_coefficient_mm3_per_nm", 6.0e-7))
+    wear_coeff_j = _positive(
+        load_capacity.get("wear_coefficient_mm3_per_nm", 6.0e-7),
+        "load_capacity.wear_coefficient_mm3_per_nm",
+        allow_zero=True,
+    )
     sliding_velocity_mps = (
         math.pi * pitch_diameter_worm_mm * speed_rpm / 60000.0
         / max(math.cos(lead_angle_calc_rad), 1e-6)

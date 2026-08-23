@@ -5,6 +5,15 @@ from __future__ import annotations
 import math
 from typing import Any, Dict
 
+from core._validation import (
+    bounded_float,
+    load_amplification,
+    positive_float,
+    require_mapping,
+    safety_factor_min,
+    section,
+)
+
 
 class InputError(ValueError):
     """Raised when input data is incomplete or physically invalid."""
@@ -16,24 +25,32 @@ def _require(section: Dict[str, Any], key: str, section_name: str) -> Any:
     return section[key]
 
 
-def _positive(value: float, name: str, allow_zero: bool = False) -> float:
-    if allow_zero and value == 0:
-        return value
-    if value <= 0:
-        raise InputError(f"{name} 必须 > 0，当前值 {value}")
-    return value
+def _positive(value: Any, name: str, allow_zero: bool = False) -> float:
+    return positive_float(value, name, allow_zero=allow_zero, error_cls=InputError)
 
 
-def _in_open_interval(value: float, lo: float, hi: float, name: str) -> float:
-    if not (lo < value < hi):
-        raise InputError(f"{name} 必须满足 {lo} < 值 < {hi}，当前值 {value}")
-    return value
+def _in_open_interval(value: Any, lo: float, hi: float, name: str) -> float:
+    return bounded_float(
+        value,
+        name,
+        min_value=lo,
+        max_value=hi,
+        min_inclusive=False,
+        max_inclusive=False,
+        error_cls=InputError,
+    )
 
 
-def _in_closed_interval(value: float, lo: float, hi: float, name: str) -> float:
-    if not (lo <= value <= hi):
-        raise InputError(f"{name} 必须满足 {lo} <= 值 <= {hi}，当前值 {value}")
-    return value
+def _in_closed_interval(value: Any, lo: float, hi: float, name: str) -> float:
+    return bounded_float(
+        value,
+        name,
+        min_value=lo,
+        max_value=hi,
+        min_inclusive=True,
+        max_inclusive=True,
+        error_cls=InputError,
+    )
 
 
 def _hollow_shaft_compliance_factor(bore_ratio: float, nu_shaft: float) -> float:
@@ -50,71 +67,72 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     from .assembly import calculate_assembly_detail
     from .fretting import assess_fretting_risk
 
-    geometry = data.get("geometry", {})
-    materials = data.get("materials", {})
-    fit = data.get("fit", {})
-    roughness = data.get("roughness", {})
-    friction = data.get("friction", {})
-    loads = data.get("loads", {})
-    checks = data.get("checks", {})
-    options = data.get("options", {})
-    advanced = data.get("advanced", {})
-    fretting_input = data.get("fretting", {})
+    require_mapping(data, error_cls=InputError)
+    geometry = section(data, "geometry", error_cls=InputError)
+    materials = section(data, "materials", error_cls=InputError)
+    fit = section(data, "fit", error_cls=InputError)
+    roughness = section(data, "roughness", error_cls=InputError)
+    friction = section(data, "friction", error_cls=InputError)
+    loads = section(data, "loads", error_cls=InputError)
+    checks = section(data, "checks", error_cls=InputError)
+    options = section(data, "options", error_cls=InputError)
+    advanced = section(data, "advanced", error_cls=InputError)
+    fretting_input = section(data, "fretting", error_cls=InputError)
 
-    d = _positive(float(_require(geometry, "shaft_d_mm", "geometry")), "geometry.shaft_d_mm")
+    d = _positive(_require(geometry, "shaft_d_mm", "geometry"), "geometry.shaft_d_mm")
     d_inner = _positive(
-        float(geometry.get("shaft_inner_d_mm", 0.0)),
+        geometry.get("shaft_inner_d_mm", 0.0),
         "geometry.shaft_inner_d_mm",
         allow_zero=True,
     )
     d_outer = _positive(
-        float(_require(geometry, "hub_outer_d_mm", "geometry")),
+        _require(geometry, "hub_outer_d_mm", "geometry"),
         "geometry.hub_outer_d_mm",
     )
-    l_fit = _positive(float(_require(geometry, "fit_length_mm", "geometry")), "geometry.fit_length_mm")
+    l_fit = _positive(_require(geometry, "fit_length_mm", "geometry"), "geometry.fit_length_mm")
     if d_inner >= d:
         raise InputError("geometry.shaft_inner_d_mm 必须满足 0 <= d_i < d")
     if d_outer <= d:
         raise InputError("geometry.hub_outer_d_mm 必须大于 geometry.shaft_d_mm")
 
-    e_shaft = _positive(float(_require(materials, "shaft_e_mpa", "materials")), "materials.shaft_e_mpa")
+    e_shaft = _positive(_require(materials, "shaft_e_mpa", "materials"), "materials.shaft_e_mpa")
     nu_shaft = _in_open_interval(
-        float(_require(materials, "shaft_nu", "materials")),
+        _require(materials, "shaft_nu", "materials"),
         0.0,
         0.5,
         "materials.shaft_nu",
     )
     yield_shaft = _positive(
-        float(_require(materials, "shaft_yield_mpa", "materials")),
+        _require(materials, "shaft_yield_mpa", "materials"),
         "materials.shaft_yield_mpa",
     )
 
-    e_hub = _positive(float(_require(materials, "hub_e_mpa", "materials")), "materials.hub_e_mpa")
+    e_hub = _positive(_require(materials, "hub_e_mpa", "materials"), "materials.hub_e_mpa")
     nu_hub = _in_open_interval(
-        float(_require(materials, "hub_nu", "materials")),
+        _require(materials, "hub_nu", "materials"),
         0.0,
         0.5,
         "materials.hub_nu",
     )
-    yield_hub = _positive(float(_require(materials, "hub_yield_mpa", "materials")), "materials.hub_yield_mpa")
+    yield_hub = _positive(_require(materials, "hub_yield_mpa", "materials"), "materials.hub_yield_mpa")
 
-    delta_min_um = _positive(float(_require(fit, "delta_min_um", "fit")), "fit.delta_min_um", allow_zero=True)
-    delta_max_um = _positive(float(_require(fit, "delta_max_um", "fit")), "fit.delta_max_um")
+    delta_min_um = _positive(_require(fit, "delta_min_um", "fit"), "fit.delta_min_um", allow_zero=True)
+    delta_max_um = _positive(_require(fit, "delta_max_um", "fit"), "fit.delta_max_um")
     if delta_max_um < delta_min_um:
         raise InputError("fit.delta_max_um 必须 >= fit.delta_min_um")
 
     rz_shaft_um = _positive(
-        float(roughness.get("shaft_rz_um", 0.0)),
+        roughness.get("shaft_rz_um", 0.0),
         "roughness.shaft_rz_um",
         allow_zero=True,
     )
     rz_hub_um = _positive(
-        float(roughness.get("hub_rz_um", 0.0)),
+        roughness.get("hub_rz_um", 0.0),
         "roughness.hub_rz_um",
         allow_zero=True,
     )
     smoothing_factor = _positive(
-        float(roughness.get("smoothing_factor", 0.4)),
+        roughness.get("smoothing_factor", 0.4),
         "roughness.smoothing_factor",
         allow_zero=True,
     )
@@ -138,47 +156,48 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
         raise InputError("缺少必填字段: friction.mu_axial")
 
     mu_torque = _in_open_interval(
-        float(mu_torque_source),
+        mu_torque_source,
         0.0,
         1.0,
         "friction.mu_torque",
     )
     mu_axial = _in_open_interval(
-        float(mu_axial_source),
+        mu_axial_source,
         0.0,
         1.0,
         "friction.mu_axial",
     )
     mu_assembly = _in_open_interval(
-        float(_require(friction, "mu_assembly", "friction")),
+        _require(friction, "mu_assembly", "friction"),
         0.0,
         1.0,
         "friction.mu_assembly",
     )
 
     torque_required_nm = _positive(
-        float(loads.get("torque_required_nm", 0.0)),
+        loads.get("torque_required_nm", 0.0),
         "loads.torque_required_nm",
         allow_zero=True,
     )
     axial_required_n = _positive(
-        float(loads.get("axial_force_required_n", 0.0)),
+        loads.get("axial_force_required_n", 0.0),
         "loads.axial_force_required_n",
         allow_zero=True,
     )
     radial_required_n = _positive(
-        float(loads.get("radial_force_required_n", 0.0)),
+        loads.get("radial_force_required_n", 0.0),
         "loads.radial_force_required_n",
         allow_zero=True,
     )
     bending_required_nm = _positive(
-        float(loads.get("bending_moment_required_nm", 0.0)),
+        loads.get("bending_moment_required_nm", 0.0),
         "loads.bending_moment_required_nm",
         allow_zero=True,
     )
-    application_factor = _positive(
-        float(loads.get("application_factor_ka", 1.0)),
+    application_factor = load_amplification(
+        loads.get("application_factor_ka", 1.0),
         "loads.application_factor_ka",
+        error_cls=InputError,
     )
 
     torque_design_nm = application_factor * torque_required_nm
@@ -186,14 +205,15 @@ def calculate_interference_fit(data: Dict[str, Any]) -> Dict[str, Any]:
     radial_design_n = application_factor * radial_required_n
     bending_design_nm = application_factor * bending_required_nm
 
-    slip_safety_min = _positive(float(checks.get("slip_safety_min", 1.2)), "checks.slip_safety_min")
-    stress_safety_min = _positive(float(checks.get("stress_safety_min", 1.2)), "checks.stress_safety_min")
-    if slip_safety_min < 1.0:
-        raise InputError(f"checks.slip_safety_min 必须 >= 1.0，当前值 {slip_safety_min}")
-    if stress_safety_min < 1.0:
-        raise InputError(f"checks.stress_safety_min 必须 >= 1.0，当前值 {stress_safety_min}")
-    curve_points = int(options.get("curve_points", 41))
-    curve_points = int(_in_closed_interval(float(curve_points), 11, 201, "options.curve_points"))
+    slip_safety_min = safety_factor_min(
+        checks.get("slip_safety_min", 1.2), "checks.slip_safety_min", error_cls=InputError
+    )
+    stress_safety_min = safety_factor_min(
+        checks.get("stress_safety_min", 1.2), "checks.stress_safety_min", error_cls=InputError
+    )
+    curve_points = int(
+        _in_closed_interval(options.get("curve_points", 41), 11, 201, "options.curve_points")
+    )
     repeated_load_mode = str(advanced.get("repeated_load_mode", "off")).strip() or "off"
     if repeated_load_mode not in {"off", "on"}:
         raise InputError("advanced.repeated_load_mode 必须是 off 或 on")

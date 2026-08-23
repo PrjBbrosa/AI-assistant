@@ -5,6 +5,15 @@ from __future__ import annotations
 import math
 from typing import Any, Dict
 
+from core._validation import (
+    bounded_float,
+    enum_value,
+    finite_float,
+    positive_float,
+    require_mapping,
+    section,
+)
+
 
 class InputError(ValueError):
     """Raised when input data is incomplete or physically invalid."""
@@ -16,18 +25,20 @@ def _require(section: Dict[str, Any], key: str, section_name: str) -> Any:
     return section[key]
 
 
-def _positive(value: float, name: str, allow_zero: bool = False) -> float:
-    if allow_zero and value == 0:
-        return value
-    if value <= 0:
-        raise InputError(f"{name} 必须 > 0，当前值 {value}")
-    return value
+def _positive(value: Any, name: str, allow_zero: bool = False) -> float:
+    return positive_float(value, name, allow_zero=allow_zero, error_cls=InputError)
 
 
-def _nu(value: float, name: str) -> float:
-    if not (0.0 < value < 0.5):
-        raise InputError(f"{name} 必须满足 0 < nu < 0.5，当前值 {value}")
-    return value
+def _nu(value: Any, name: str) -> float:
+    return bounded_float(
+        value,
+        name,
+        min_value=0.0,
+        max_value=0.5,
+        min_inclusive=False,
+        max_inclusive=False,
+        error_cls=InputError,
+    )
 
 
 def _radius_inverse(radius_mm: float, name: str) -> float:
@@ -93,39 +104,39 @@ def calculate_hertz_contact(data: Dict[str, Any]) -> Dict[str, Any]:
     ``contact_area_mm2`` lives at ``result["contact"]["contact_area_mm2"]``,
     **not** at the top level.  UI and report code must use the two-level path.
     """
-    geometry = data.get("geometry", {})
-    materials = data.get("materials", {})
-    loads = data.get("loads", {})
-    checks = data.get("checks", {})
-    options = data.get("options", {})
+    require_mapping(data, error_cls=InputError)
+    geometry = section(data, "geometry", error_cls=InputError)
+    materials = section(data, "materials", error_cls=InputError)
+    loads = section(data, "loads", error_cls=InputError)
+    checks = section(data, "checks", error_cls=InputError)
+    options = section(data, "options", error_cls=InputError)
 
     mode = str(_require(geometry, "contact_mode", "geometry")).strip().lower()
-    if mode not in {"line", "point"}:
-        raise InputError(f"geometry.contact_mode 无效：{mode}（支持 line/point）")
+    mode = enum_value(mode, "geometry.contact_mode", ("line", "point"), error_cls=InputError)
 
-    r1 = _positive(float(_require(geometry, "r1_mm", "geometry")), "geometry.r1_mm", allow_zero=True)
-    r2 = _positive(float(_require(geometry, "r2_mm", "geometry")), "geometry.r2_mm", allow_zero=True)
+    r1 = _positive(_require(geometry, "r1_mm", "geometry"), "geometry.r1_mm", allow_zero=True)
+    r2 = _positive(_require(geometry, "r2_mm", "geometry"), "geometry.r2_mm", allow_zero=True)
     inv_r = _radius_inverse(r1, "geometry.r1_mm") + _radius_inverse(r2, "geometry.r2_mm")
     if inv_r <= 0:
         raise InputError("等效曲率为 0，至少一个曲率半径必须为正数。")
     r_eq = 1.0 / inv_r
 
-    e1 = _positive(float(_require(materials, "e1_mpa", "materials")), "materials.e1_mpa")
-    nu1 = _nu(float(_require(materials, "nu1", "materials")), "materials.nu1")
-    e2 = _positive(float(_require(materials, "e2_mpa", "materials")), "materials.e2_mpa")
-    nu2 = _nu(float(_require(materials, "nu2", "materials")), "materials.nu2")
+    e1 = _positive(_require(materials, "e1_mpa", "materials"), "materials.e1_mpa")
+    nu1 = _nu(_require(materials, "nu1", "materials"), "materials.nu1")
+    e2 = _positive(_require(materials, "e2_mpa", "materials"), "materials.e2_mpa")
+    nu2 = _nu(_require(materials, "nu2", "materials"), "materials.nu2")
 
     e_eq = 1.0 / (((1.0 - nu1 * nu1) / e1) + ((1.0 - nu2 * nu2) / e2))
-    normal_force = _positive(float(_require(loads, "normal_force_n", "loads")), "loads.normal_force_n")
+    normal_force = _positive(_require(loads, "normal_force_n", "loads"), "loads.normal_force_n")
     allowable_p0 = _positive(
-        float(checks.get("allowable_p0_mpa", 1500.0)),
+        checks.get("allowable_p0_mpa", 1500.0),
         "checks.allowable_p0_mpa",
     )
 
     # length_mm 仅线接触需要且必须 >0；点接触时该参数无物理意义，不校验
     if mode == "line":
         length_mm: float = _positive(
-            float(geometry.get("length_mm", 10.0)),
+            geometry.get("length_mm", 10.0),
             "geometry.length_mm",
         )
     else:
@@ -150,9 +161,9 @@ def calculate_hertz_contact(data: Dict[str, Any]) -> Dict[str, Any]:
     safety_factor = allowable_p0 / p0 if p0 > 0 else math.inf
     pass_contact = p0 <= allowable_p0
 
-    _curve_points_raw = int(float(options.get("curve_points", 41)))
+    _curve_points_raw = int(finite_float(options.get("curve_points", 41), "options.curve_points", error_cls=InputError))
     curve_points = max(11, min(201, _curve_points_raw))
-    _force_scale_raw = float(options.get("curve_force_scale", 1.30))
+    _force_scale_raw = finite_float(options.get("curve_force_scale", 1.30), "options.curve_force_scale", error_cls=InputError)
     force_scale = max(1.05, min(2.0, _force_scale_raw))
     force_curve: list[float] = []
     pressure_curve: list[float] = []

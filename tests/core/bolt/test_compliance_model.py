@@ -80,3 +80,38 @@ class TestClampedCompliance:
             model="cylinder", d_h=11, D_A=24, l_K=15, E_clamped=70_000)
         expected = single_steel["delta_p"] + single_alu["delta_p"]
         assert abs(result["delta_p"] - expected) / expected < 0.01
+
+    def test_cylinder_outer_smaller_than_hole_raises(self):
+        from core.bolt.calculator import InputError
+        with pytest.raises(InputError):
+            calculate_clamped_compliance(
+                model="cylinder",
+                d_h=12.0, D_A=10.0, l_K=30.0, E_clamped=210_000.0,
+            )
+
+    def test_sleeve_inner_larger_than_outer_raises(self):
+        from core.bolt.calculator import InputError
+        with pytest.raises(InputError):
+            calculate_clamped_compliance(
+                model="sleeve",
+                D_outer=10.0, D_inner=12.0, l_K=30.0, E_clamped=210_000.0,
+            )
+
+    def test_empty_layers_raises(self):
+        from core.bolt.calculator import InputError
+        with pytest.raises(InputError):
+            calculate_clamped_compliance(layers=[])
+
+    def test_non_list_layers_raises(self):
+        from core.bolt.calculator import InputError
+        with pytest.raises(InputError):
+            calculate_clamped_compliance(layers={"model": "cylinder"})  # type: ignore[arg-type]
+
+    def test_invalid_layer_geometry_raises_independently(self):
+        from core.bolt.calculator import InputError
+        layers = [
+            {"model": "cylinder", "d_h": 11, "D_A": 24, "l_K": 15, "E_clamped": 210_000},
+            {"model": "cylinder", "d_h": 12, "D_A": 10, "l_K": 15, "E_clamped": 210_000},
+        ]
+        with pytest.raises(InputError):
+            calculate_clamped_compliance(layers=layers)
