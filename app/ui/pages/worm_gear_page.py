@@ -48,6 +48,7 @@ from app.ui.model_scope import WORM_SCOPE, make_scope_banner, scope_report_lines
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, write_text_report
 from app.ui.theme import mark_input_field_surface
+from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.worm_geometry_overview import WormGeometryOverviewWidget
 from app.ui.widgets.worm_performance_curve import WormPerformanceCurveWidget
 from app.ui.widgets.worm_stress_curve import WormStressCurveWidget
@@ -513,7 +514,7 @@ class WormGearPage(BaseChapterPage):
 
     def _create_input(self, spec: FieldSpec, parent: QWidget) -> QWidget:
         if spec.widget_type == "choice":
-            combo = QComboBox(parent)
+            combo = AppComboBox(parent)
             combo.addItems(spec.options)
             if spec.default:
                 index = combo.findText(spec.default)

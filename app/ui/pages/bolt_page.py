@@ -42,6 +42,7 @@ from app.ui.input_condition_store import (
     validate_snapshot,
     write_input_conditions,
 )
+from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.clamping_diagram import ClampingDiagramWidget, ThreadForceTriangleWidget
 from app.ui.widgets.help_button import HelpButton
 from app.ui.report_export import ReportExportError, write_text_report
@@ -1040,7 +1041,7 @@ class BoltPage(QWidget):
         self.btn_save = QPushButton("导出结果说明", actions)
         self.btn_load_1 = QPushButton("测试案例 1", actions)
         self.btn_load_2 = QPushButton("测试案例 2", actions)
-        self.check_level_combo = QComboBox(self)
+        self.check_level_combo = AppComboBox(self)
         for text, value in CHECK_LEVELS:
             self.check_level_combo.addItem(text, value)
         left_actions.addWidget(self.btn_save_inputs)
@@ -1269,7 +1270,7 @@ class BoltPage(QWidget):
         mode_title = QLabel("计算模式", mode_card)
         mode_title.setObjectName("SubSectionTitle")
         mode_layout_inner.addWidget(mode_title)
-        self.calc_mode_combo = QComboBox(mode_card)
+        self.calc_mode_combo = AppComboBox(mode_card)
         self.calc_mode_combo.addItem("设计模式 — 由 FK_req 反推 FM_min", "design")
         self.calc_mode_combo.addItem("校核模式 — 使用已知 FM_min", "verify")
         mode_layout_inner.addWidget(self.calc_mode_combo)
@@ -1522,7 +1523,7 @@ class BoltPage(QWidget):
 
     def _create_editor(self, spec: FieldSpec, parent: QWidget) -> QWidget:
         if spec.widget_type == "choice":
-            editor = QComboBox(parent)
+            editor = AppComboBox(parent)
             editor.addItems(spec.options)
             if spec.default:
                 idx = editor.findText(spec.default)

@@ -41,6 +41,7 @@ from app.ui.model_scope import SPLINE_SCOPE, make_scope_banner, scope_report_lin
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, write_text_report
 from app.ui.theme import mark_input_field_label_wrap, mark_input_field_surface
+from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.help_button import HelpButton
 from app.ui.widgets.press_force_curve import PressForceCurveWidget
 from core.spline.calculator import InputError, calculate_spline_fit
@@ -559,7 +560,7 @@ class SplineFitPage(BaseChapterPage):
             grid.addWidget(label, 0, 0)
 
         if spec.widget_type == "choice":
-            w = QComboBox()
+            w = AppComboBox()
             w.addItems(spec.options)
             if spec.default:
                 idx = w.findText(spec.default)

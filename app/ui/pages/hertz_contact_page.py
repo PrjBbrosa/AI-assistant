@@ -48,6 +48,7 @@ from app.ui.model_scope import (
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, write_text_report
 from app.ui.theme import mark_input_field_label_wrap, mark_input_field_surface
+from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.help_button import HelpButton
 from app.ui.widgets.hertz_input_diagram import HertzInputDiagramWidget
 from core.hertz.calculator import InputError, calculate_hertz_contact
@@ -447,7 +448,7 @@ class HertzContactPage(BaseChapterPage):
 
     def _create_editor(self, spec: FieldSpec, parent: QWidget) -> QWidget:
         if spec.widget_type == "choice":
-            editor = QComboBox(parent)
+            editor = AppComboBox(parent)
             editor.addItems(spec.options)
             if spec.default:
                 idx = editor.findText(spec.default)

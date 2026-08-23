@@ -39,6 +39,7 @@ from app.ui.input_condition_store import (
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, export_report_lines, write_text_report
 from app.ui.theme import mark_input_field_label_wrap, mark_input_field_surface
+from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.help_button import HelpButton
 from app.ui.widgets.press_force_curve import PressForceCurveWidget
 from core.interference.calculator import InputError, calculate_interference_fit
@@ -993,7 +994,7 @@ class InterferenceFitPage(BaseChapterPage):
 
     def _create_editor(self, spec: FieldSpec, parent: QWidget) -> QWidget:
         if spec.widget_type == "choice":
-            editor = QComboBox(parent)
+            editor = AppComboBox(parent)
             editor.addItems(spec.options)
             if spec.default:
                 idx = editor.findText(spec.default)

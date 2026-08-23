@@ -42,6 +42,7 @@ from app.ui.input_condition_store import (
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, export_report_lines
 from app.ui.theme import mark_input_field_label_wrap, mark_input_field_surface
+from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.help_button import HelpButton
 from core.bolt.tapped_axial_joint import (
     _derive_thread_section,
@@ -494,7 +495,7 @@ class BoltTappedAxialPage(BaseChapterPage):
 
     def _create_editor(self, spec: FieldSchema, parent: QWidget) -> QWidget:
         if spec.value_type in ("enum", "bool") or spec.widget_type == "choice":
-            editor = QComboBox(parent)
+            editor = AppComboBox(parent)
             editor.addItems(spec.options)
             default_text = "" if spec.default is None else str(spec.default)
             if default_text:

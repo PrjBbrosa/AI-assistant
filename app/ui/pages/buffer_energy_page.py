@@ -9,7 +9,6 @@ from typing import Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -41,6 +40,7 @@ from app.ui.input_condition_store import (
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, write_text_report
 from app.ui.theme import mark_input_field_surface
+from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.buffer_energy_curve import BufferEnergyCurveWidget
 from app.ui.widgets.buffer_response_curve import BufferResponseCurveWidget
 
@@ -364,7 +364,7 @@ class BufferEnergyPage(BaseChapterPage):
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
         row.addWidget(QLabel("显示变量:", page))
-        self.response_var_combo = QComboBox(page)
+        self.response_var_combo = AppComboBox(page)
         self.response_var_combo.addItem("位移 x(t)", "x")
         self.response_var_combo.addItem("速度 v(t)", "v")
         self.response_var_combo.addItem("加速度 a(t)", "a")
