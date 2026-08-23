@@ -45,7 +45,7 @@ from app.ui.input_condition_store import (
     write_input_conditions,
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
-from app.ui.report_export import ReportExportError
+from app.ui.report_export import ReportExportError, write_text_report
 from app.ui.theme import mark_input_field_surface
 from app.ui.widgets.worm_geometry_overview import WormGeometryOverviewWidget
 from app.ui.widgets.worm_performance_curve import WormPerformanceCurveWidget
@@ -1317,7 +1317,7 @@ class WormGearPage(BaseChapterPage):
         note = self._last_result.get("inputs_echo", {}).get("meta", {}).get("note", "")
         header = f"蜗杆副计算报告 -- {note}\n生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n{'=' * 60}\n\n"
         body = self.result_metrics.toPlainText() + "\n\n" + self.load_capacity_metrics.toPlainText()
-        path.write_text(header + body, encoding="utf-8")
+        write_text_report(path, header + body)
 
     def _save_input_conditions(self) -> None:
         out_path = choose_save_input_conditions_path(

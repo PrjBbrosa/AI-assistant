@@ -37,7 +37,7 @@ from app.ui.input_condition_store import (
 )
 from app.ui.fonts import make_ui_font
 from app.ui.pages.base_chapter_page import BaseChapterPage
-from app.ui.report_export import ReportExportError
+from app.ui.report_export import ReportExportError, write_text_report
 from app.ui.theme import mark_input_field_label_wrap, mark_input_field_surface
 from app.ui.widgets.help_button import HelpButton
 from app.ui.widgets.hertz_input_diagram import HertzInputDiagramWidget
@@ -967,7 +967,7 @@ class HertzContactPage(BaseChapterPage):
 
                 _export_docx(out_path, self._build_report_lines())
             else:
-                out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
+                write_text_report(out_path, "\n".join(self._build_report_lines()))
         except (ReportExportError, OSError) as exc:
             QMessageBox.critical(self, "导出失败", f"导出失败：{exc}")
             return

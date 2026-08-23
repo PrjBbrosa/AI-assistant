@@ -39,7 +39,7 @@ from app.ui.input_condition_store import (
     write_input_conditions,
 )
 from app.ui.pages.base_chapter_page import BaseChapterPage
-from app.ui.report_export import ReportExportError
+from app.ui.report_export import ReportExportError, write_text_report
 from app.ui.theme import mark_input_field_surface
 from app.ui.widgets.buffer_energy_curve import BufferEnergyCurveWidget
 from app.ui.widgets.buffer_response_curve import BufferResponseCurveWidget
@@ -895,7 +895,7 @@ class BufferEnergyPage(BaseChapterPage):
 
                 _export_docx(out_path, self._build_report_lines())
             else:
-                out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
+                write_text_report(out_path, "\n".join(self._build_report_lines()))
         except (ReportExportError, OSError) as exc:
             QMessageBox.critical(self, "导出失败", f"导出失败：{exc}")
             return

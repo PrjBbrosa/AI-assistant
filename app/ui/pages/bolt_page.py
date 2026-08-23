@@ -44,7 +44,7 @@ from app.ui.input_condition_store import (
 )
 from app.ui.widgets.clamping_diagram import ClampingDiagramWidget, ThreadForceTriangleWidget
 from app.ui.widgets.help_button import HelpButton
-from app.ui.report_export import ReportExportError
+from app.ui.report_export import ReportExportError, write_text_report
 from app.ui.pages import bolt_help_content as bolt_help
 from app.ui.pages.bolt_flowchart import (
     FlowchartNavWidget, RStepDetailPage, R_STEPS,
@@ -3062,7 +3062,7 @@ class BoltPage(QWidget):
                 from app.ui.report_export import _export_docx
                 _export_docx(out_path, self._build_report_lines())
             else:
-                out_path.write_text("\n".join(self._build_report_lines()), encoding="utf-8")
+                write_text_report(out_path, "\n".join(self._build_report_lines()))
         except (ReportExportError, OSError) as exc:
             QMessageBox.critical(self, "导出失败", f"导出失败：{exc}")
             return

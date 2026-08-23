@@ -8,6 +8,7 @@ paragraph styles, formatting helpers, and reusable building blocks
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any, Callable
 
 from reportlab.lib import colors
@@ -481,9 +482,14 @@ def make_footer(tool_name: str) -> Callable:
 # ---------------------------------------------------------------------------
 def build_pdf(path, elements: list, tool_name: str) -> None:
     """Create a BaseDocTemplate with standard layout and footer, then build."""
-    _register_fonts()
-    footer = make_footer(tool_name)
-    frame = Frame(MARGIN_L, MARGIN_B, CONTENT_W, PAGE_H - MARGIN_T - MARGIN_B, id="main")
-    template = PageTemplate(id="report", frames=[frame], onPage=footer)
-    doc = BaseDocTemplate(str(path), pagesize=A4, pageTemplates=[template])
-    doc.build(elements)
+    from app.ui.report_export import write_report_atomically
+
+    def _write(tmp_path: Path) -> None:
+        _register_fonts()
+        footer = make_footer(tool_name)
+        frame = Frame(MARGIN_L, MARGIN_B, CONTENT_W, PAGE_H - MARGIN_T - MARGIN_B, id="main")
+        template = PageTemplate(id="report", frames=[frame], onPage=footer)
+        doc = BaseDocTemplate(str(tmp_path), pagesize=A4, pageTemplates=[template])
+        doc.build(elements)
+
+    write_report_atomically(Path(path), _write)
