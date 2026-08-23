@@ -468,6 +468,57 @@ class TestSplinePdfReport:
         assert any(MODEL_LEVEL_PRECHECK in text for text in subtitles)
         assert "模型范围" in titles
 
+    def test_pdf_verdict_matches_result_view_model(self, tmp_path, monkeypatch):
+        from app.ui import report_pdf_spline
+        from app.ui.report_pdf_spline import generate_spline_report
+        from app.ui.result_contract import from_spline
+
+        overalls: list[object] = []
+        original_verdict = report_pdf_spline._verdict_block
+
+        def capture_verdict(styles, overall, subtitle):
+            overalls.append(overall)
+            return original_verdict(styles, overall, subtitle)
+
+        monkeypatch.setattr(report_pdf_spline, "_verdict_block", capture_verdict)
+        payload = _spline_only_payload()
+        result = _spline_only_result()
+        view = from_spline(result, payload)
+        generate_spline_report(tmp_path / "spline_verdict.pdf", payload, result)
+
+        assert overalls
+        assert overalls[0] == view.overall_status
+        assert view.overall_status in ("pass", "fail")
+        assert "预校核通过" in view.title_zh or "预校核不通过" in view.title_zh
+        assert view.checks[0].label_zh == "齿面承压校核"
+
+    def test_pdf_includes_report_trace(self, tmp_path, monkeypatch):
+        from app.ui import report_pdf_spline
+        from app.ui.model_scope import MODEL_LEVEL_PRECHECK
+        from app.ui.report_pdf_spline import generate_spline_report
+
+        traces: list[list[tuple[str, str]]] = []
+        original_trace = report_pdf_spline._trace_block
+
+        def capture_trace(styles, rows):
+            traces.append(list(rows))
+            return original_trace(styles, rows)
+
+        monkeypatch.setattr(report_pdf_spline, "_trace_block", capture_trace)
+        generate_spline_report(
+            tmp_path / "spline_trace.pdf",
+            _spline_only_payload(),
+            _spline_only_result(),
+        )
+        assert traces
+        labels = [row[0] for row in traces[0]]
+        values = " ".join(row[1] for row in traces[0])
+        assert "软件版本" in labels
+        assert "输入摘要哈希" in labels
+        assert "模型等级" in labels
+        assert MODEL_LEVEL_PRECHECK in values
+        assert any(row[1].startswith("sha256:") for row in traces[0])
+
 
 class TestSplineRecommendations:
     def test_all_pass(self):

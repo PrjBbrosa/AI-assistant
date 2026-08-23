@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import importlib
 import json
 from pathlib import Path
@@ -44,6 +43,8 @@ from app.ui.input_condition_store import (
 from app.ui.model_scope import SPLINE_SCOPE, make_scope_banner, scope_report_lines
 from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, write_text_report
+from app.ui.report_trace import build_report_trace, trace_report_lines
+from app.ui.result_contract import from_spline, status_label_zh
 from app.ui.theme import mark_input_field_label_wrap, mark_input_field_surface
 from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.help_button import HelpButton
@@ -1048,8 +1049,8 @@ class SplineFitPage(BaseChapterPage):
         return ""
 
     def _reset_scenario_cards(self) -> None:
-        # 仅花键模式下场景 B 不参与计算，复位文案须与 _display_result 一致地
-        # 显示"未启用" + 跳过说明，避免用户误以为该项会被校核（mode-aware 复位）。
+        # 仅花键模式下场景 B 不参与计算。复位显示"未启用"；计算完成后
+        # _render_result 用 view-model 的 not_checked / "未校核"。
         is_combined = MODE_MAP.get(self._get_value("mode")) == "combined"
         if getattr(self, "result_title", None) is not None:
             self.result_title.setText("尚未执行计算")
@@ -1090,6 +1091,7 @@ class SplineFitPage(BaseChapterPage):
         try:
             payload = self._build_payload()
             result = calculate_spline_fit(payload)
+            self._last_payload = payload
             self._display_result(result)
         except (InputError, ValueError) as exc:
             self._last_payload = None
@@ -1124,38 +1126,60 @@ class SplineFitPage(BaseChapterPage):
         self._recalc_timer.stop()
         self._run_calculation(strict=True)
 
-    def _display_result(self, result: dict) -> None:
-        a = result["scenario_a"]
-        a_badge = self._result_labels["a_badge"]
-        a_detail = self._result_labels["a_detail"]
-        if a["flank_ok"]:
-            a_badge.setText("通过")
-            a_badge.setObjectName("PassBadge")
+    def _set_badge(self, label: QLabel, text: str, state: str) -> None:
+        if state == "pass":
+            obj = "PassBadge"
+        elif state == "fail":
+            obj = "FailBadge"
         else:
-            a_badge.setText("不通过")
-            a_badge.setObjectName("FailBadge")
-        a_badge.style().unpolish(a_badge)
-        a_badge.style().polish(a_badge)
-        a_detail.setText(
+            obj = "WaitBadge"
+        label.setText(text)
+        label.setObjectName(obj)
+        label.style().unpolish(label)
+        label.style().polish(label)
+
+    def _display_result(self, result: dict) -> None:
+        self._render_result(result)
+
+    def _render_result(self, result: dict) -> None:
+        view = from_spline(result, self._last_payload)
+        self.result_title.setText(view.title_zh)
+        checks = {item.id: item for item in view.checks}
+
+        a = result["scenario_a"]
+        flank = checks.get("flank_ok")
+        if flank is not None:
+            self._set_badge(
+                self._result_labels["a_badge"],
+                status_label_zh(flank.status),
+                flank.status,
+            )
+        self._result_labels["a_detail"].setText(
             f"参考直径 d_B = {a['geometry']['reference_diameter_mm']:.2f} mm, "
             f"齿面压力 p = {a['flank_pressure_mpa']:.1f} MPa, "
             f"许用 p_zul = {a['p_allowable_mpa']:.0f} MPa, "
             f"安全系数 S (= T_cap/T_design) = {a['flank_safety']:.2f}, "
-            f"结果级别 = {'简化预校核' if a['overall_verdict_level'] == 'simplified_precheck' else a['overall_verdict_level']}"
+            f"结果级别 = {view.model_scope.model_level}"
         )
 
         b_badge = self._result_labels["b_badge"]
         b_detail = self._result_labels["b_detail"]
+        slip = checks.get("slip_ok")
+        stress = checks.get("stress_ok")
         if "scenario_b" in result:
             b = result["scenario_b"]
-            if b["overall_pass"]:
-                b_badge.setText("通过")
-                b_badge.setObjectName("PassBadge")
+            if slip is not None and stress is not None:
+                if (
+                    slip.status == "pass"
+                    and stress.status == "pass"
+                    and b.get("overall_pass")
+                ):
+                    b_status = "pass"
+                else:
+                    b_status = "fail"
             else:
-                b_badge.setText("不通过")
-                b_badge.setObjectName("FailBadge")
-            b_badge.style().unpolish(b_badge)
-            b_badge.style().polish(b_badge)
+                b_status = "pass" if b.get("overall_pass") else "fail"
+            self._set_badge(b_badge, status_label_zh(b_status), b_status)
             b_detail.setText(
                 f"接触压力 p_min = {b['pressure_mpa']['p_min']:.1f} MPa, "
                 f"打滑扭矩 T_min = {b['capacity']['torque_min_nm']:.1f} N*m, "
@@ -1171,32 +1195,22 @@ class SplineFitPage(BaseChapterPage):
             )
             self.curve_widget.setVisible(True)
         else:
-            b_badge.setText("未启用")
-            b_badge.setObjectName("WaitBadge")
-            b_badge.style().unpolish(b_badge)
-            b_badge.style().polish(b_badge)
-            b_detail.setText("仅花键模式，光滑段过盈校核已跳过。")
+            skipped = "仅花键模式，光滑段过盈校核已跳过。"
+            if slip is not None:
+                self._set_badge(b_badge, status_label_zh(slip.status), slip.status)
+                b_detail.setText(slip.message or skipped)
+            else:
+                self._set_badge(b_badge, status_label_zh("not_checked"), "not_checked")
+                b_detail.setText(skipped)
             self.curve_widget.setVisible(False)
 
-        if result["overall_pass"]:
-            status_text = (
-                "预校核通过"
-                if result.get("overall_verdict_level") == "simplified_precheck"
-                else "通过"
-            )
-        else:
-            status_text = (
-                "预校核不通过"
-                if result.get("overall_verdict_level") == "simplified_precheck"
-                else "不通过"
-            )
-        self.result_title.setText(status_text)
-
-        msgs = result.get("messages", [])
+        msgs = list(view.warnings)
         info_text = "\n".join(msgs) if msgs else "校核完成。"
         self.set_info(info_text)
         if self.message_box is not None:
-            self.message_box.setPlainText(info_text if msgs else "")
+            lines = [f"[提示] {msg}" for msg in view.warnings]
+            lines.extend(f"[建议] {msg}" for msg in view.recommendations)
+            self.message_box.setPlainText("\n".join(lines))
 
     def _save_report(self) -> None:
         if self._last_result is None or self._last_payload is None:
@@ -1230,43 +1244,37 @@ class SplineFitPage(BaseChapterPage):
 
     def _build_report_lines(self) -> list[str]:
         assert self._last_result is not None
-        result = self._last_result
-        a = result["scenario_a"]
-        loads = result.get("loads", {})
+        payload = self._last_payload or {}
+        view = from_spline(self._last_result, payload)
         lines = [
             "花键连接校核报告",
-            f"生成时间: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"模式: {result.get('mode', 'spline_only')}",
-            f"总体结论: {'预校核通过' if result['overall_pass'] else '预校核不通过'}",
-            *scope_report_lines(SPLINE_SCOPE),
+            *trace_report_lines(
+                build_report_trace(
+                    MODULE_ID,
+                    payload,
+                    model_level=SPLINE_SCOPE.model_level,
+                )
+            ),
             "",
-            "=== 场景 A: 花键齿面承压 ===",
-            f"参考直径 d_B = {a['geometry']['reference_diameter_mm']:.2f} mm",
-            f"有效齿高 h_w = {a['geometry']['effective_tooth_height_mm']:.2f} mm",
-            f"平均直径 d_m = {a['geometry']['mean_diameter_mm']:.2f} mm",
-            f"齿面压力 p = {a['flank_pressure_mpa']:.2f} MPa",
-            f"许用齿面压力 p_zul = {a['p_allowable_mpa']:.1f} MPa",
-            f"安全系数 S = {a['flank_safety']:.2f}",
-            f"扭矩容量 T_cap = {a['torque_capacity_nm']:.1f} N*m",
-            f"设计扭矩 T_d = {loads.get('torque_design_nm', 0):.1f} N*m",
-            f"扭矩容量比 T_cap/T_d = {a['torque_capacity_sf']:.2f} (与齿面 S 等价)",
-            f"结果: {'通过' if a['flank_ok'] else '不通过'}",
+            *scope_report_lines(view.model_scope),
+            "",
+            f"总体结论: {view.title_zh}",
+            "",
+            "分项结果:",
         ]
-        b = result.get("scenario_b")
-        if b is not None:
-            bp = b["pressure_mpa"]
-            cap = b["capacity"]
-            sf = b["safety"]
-            lines.extend([
-                "",
-                "=== 场景 B: 光滑段圆柱过盈 ===",
-                f"有效配合长度 = {b['effective_fit_length_mm']:.1f} mm",
-                f"面压 p_min/mean/max = {bp['p_min']:.2f} / {bp['p_mean']:.2f} / {bp['p_max']:.2f} MPa",
-                f"扭矩容量 min/mean/max = {cap['torque_min_nm']:.1f} / {cap['torque_mean_nm']:.1f} / {cap['torque_max_nm']:.1f} N*m",
-                f"扭矩安全系数 = {sf['torque_sf']:.2f}",
-                f"联合安全系数 = {sf['combined_sf']:.2f}",
-                f"结果: {'通过' if b['overall_pass'] else '不通过'}",
-            ])
+        for check in view.checks:
+            lines.append(f"- {check.label_zh}: {status_label_zh(check.status)}")
+        lines.extend(["", "关键结果:"])
+        for metric in view.metrics:
+            unit = f" {metric.unit}" if metric.unit else ""
+            lines.append(f"- {metric.label}: {metric.value}{unit}")
+        for note in view.source_notes:
+            lines.append(f"- {note}")
+        if view.warnings:
+            lines.extend(["", "提示:"])
+            lines.extend(f"- {msg}" for msg in view.warnings)
+        lines.extend(["", "建议:"])
+        lines.extend(f"- {msg}" for msg in view.recommendations)
         return lines
 
     def _load_sample(self, filename: str) -> None:

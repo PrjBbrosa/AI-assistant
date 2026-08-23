@@ -4,6 +4,7 @@ from PySide6.QtWidgets import QApplication, QLabel
 from app.ui.main_window import MainWindow
 from app.ui.model_scope import MODEL_LEVEL_PRECHECK, SPLINE_SCOPE
 from app.ui.pages.spline_fit_page import SMOOTH_FIT_FIELD_IDS, SplineFitPage
+from app.ui.result_contract import from_spline, status_label_zh
 
 
 @pytest.fixture(scope="module")
@@ -72,7 +73,9 @@ class TestSplineFitPage:
     def test_calculate_with_defaults(self, app):
         page = SplineFitPage()
         page._on_calculate()
-        assert page.result_title.text() in ("预校核通过", "预校核不通过", "通过", "不通过")
+        view = from_spline(page._last_result, page._last_payload)
+        assert page.result_title.text() == view.title_zh
+        assert "预校核通过" in view.title_zh or "预校核不通过" in view.title_zh
 
     def test_default_combined_case_surfaces_scenario_b_failure_reason(self, app):
         page = SplineFitPage()
@@ -270,14 +273,41 @@ class TestSplineFitPage:
 
         page._on_calculate()
         app.processEvents()
-        assert page.result_title.text() in ("预校核通过", "预校核不通过")
+        view = from_spline(page._last_result, page._last_payload)
+        assert page.result_title.text() == view.title_zh
+        assert "预校核通过" in view.title_zh or "预校核不通过" in view.title_zh
         lines = page._build_report_lines()
         joined = "\n".join(lines)
         assert f"模型等级: {SPLINE_SCOPE.model_level}" in joined
         assert "覆盖工况:" in joined
         assert "未覆盖:" in joined
+        assert "预校核" in joined
+        assert "软件版本" in joined
+        assert "输入摘要哈希" in joined
         assert "PRECHECK PASS" not in joined
         assert "PRECHECK FAIL" not in joined
+
+    def test_result_view_model_overall_matches_ui_title(self, app):
+        page = SplineFitPage()
+        page._on_calculate()
+        app.processEvents()
+
+        view = from_spline(page._last_result, page._last_payload)
+        assert page.result_title.text() == view.title_zh
+        assert SPLINE_SCOPE.model_level in view.title_zh
+        assert view.overall_status in ("pass", "fail")
+        assert page._result_labels["a_badge"].text() == status_label_zh(view.checks[0].status)
+        assert view.checks[0].id == "flank_ok"
+        assert view.checks[1].id == "slip_ok"
+        assert view.checks[1].status == "not_checked"
+        assert view.checks[2].id == "stress_ok"
+        assert view.checks[2].status == "not_checked"
+        assert page._result_labels["b_badge"].text() == status_label_zh("not_checked")
+        report = "\n".join(page._build_report_lines())
+        assert f"总体结论: {view.title_zh}" in report
+        assert "软件版本" in report
+        assert "输入摘要哈希" in report
+        assert "预校核" in report
 
     def test_application_factor_ka_live_error_below_one(self, app):
         page = SplineFitPage()

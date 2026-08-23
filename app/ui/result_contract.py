@@ -8,6 +8,7 @@ from typing import Any, Literal
 from app.ui.model_scope import (
     HERTZ_ALLOWABLE_SOURCE_NOTE,
     HERTZ_SCOPE,
+    SPLINE_SCOPE,
     ModuleScope,
 )
 
@@ -38,7 +39,27 @@ HERTZ_CHECK_LABELS: dict[str, str] = {
     "contact_stress_ok": "最大接触应力校核",
 }
 
+SPLINE_CHECK_LABELS: dict[str, str] = {
+    "flank_ok": "齿面承压校核",
+    "slip_ok": "光滑段防滑校核",
+    "stress_ok": "光滑段应力校核",
+}
+
+_SPLINE_OVERALL_TITLE_ZH: dict[str, str] = {
+    "pass": "预校核通过",
+    "fail": "预校核不通过",
+    "incomplete": "预校核不完整",
+}
+
 _MODE_ZH = {"line": "线接触", "point": "点接触"}
+_SPLINE_MODE_ZH = {
+    "spline_only": "仅花键齿面承压",
+    "combined": "联合模式 (花键齿面 + 光滑段过盈)",
+}
+_SPLINE_GEO_MODE_ZH = {
+    "approximate": "近似推导",
+    "reference_dimensions": "公开/图纸尺寸",
+}
 
 
 @dataclass(frozen=True)
@@ -195,6 +216,264 @@ def from_hertz(
         recommendations=_hertz_recommendations(result),
         verdict_subtitle_zh=f"模型等级: {model_level} | 模型: {mode_zh}",
     )
+
+
+def from_spline(
+    result: dict[str, Any],
+    payload: dict[str, Any] | None = None,
+) -> ResultViewModel:
+    """Build the spline UI/PDF view model from calculator output."""
+    scenario_a = result.get("scenario_a")
+    if not isinstance(scenario_a, dict):
+        raise TypeError("scenario_a")
+    scenario_b = result.get("scenario_b")
+    if scenario_b is not None and not isinstance(scenario_b, dict):
+        raise TypeError("scenario_b")
+
+    overall_status: OverallStatus = (
+        "pass" if bool(result.get("overall_pass")) else "fail"
+    )
+    mode = result.get("mode")
+    mode_zh = _SPLINE_MODE_ZH.get(str(mode), str(mode or "-"))
+    model_level = SPLINE_SCOPE.model_level
+    title = _spline_overall_title(overall_status, model_level)
+    if overall_status == "pass":
+        summary = (
+            "该工况满足简化预校核要求。"
+            f"{SPLINE_SCOPE.applicability}"
+        )
+    else:
+        summary = (
+            "简化预校核不通过，请调整几何、载荷或材料。"
+            f"{SPLINE_SCOPE.applicability}"
+        )
+
+    checks = (
+        _spline_flank_check(scenario_a, model_level),
+        *_spline_scenario_b_checks(mode, scenario_b, payload, result, model_level),
+    )
+    metrics = _spline_metrics(result, scenario_a, scenario_b, mode_zh)
+    warnings = tuple(
+        str(msg) for msg in result.get("messages", []) if msg is not None
+    )
+    return ResultViewModel(
+        overall_status=overall_status,
+        title_zh=title,
+        summary_zh=summary,
+        checks=checks,
+        metrics=metrics,
+        warnings=warnings,
+        model_scope=SPLINE_SCOPE,
+        source_notes=(SPLINE_SCOPE.applicability,),
+        recommendations=_spline_recommendations(result),
+        verdict_subtitle_zh=f"{mode_zh} | 模型等级: {model_level}",
+    )
+
+
+def _spline_overall_title(status: str, model_level: str = "") -> str:
+    title = _SPLINE_OVERALL_TITLE_ZH.get(status, _SPLINE_OVERALL_TITLE_ZH["fail"])
+    if model_level:
+        return f"{title}（{model_level}）"
+    return title
+
+
+def _spline_input_source(
+    payload: dict[str, Any] | None,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    if isinstance(payload, dict) and payload:
+        return payload
+    echo = result.get("inputs_echo")
+    return echo if isinstance(echo, dict) else {}
+
+
+def _spline_flank_check(scenario_a: dict[str, Any], model_level: str) -> CheckView:
+    status: CheckStatus = "pass" if scenario_a.get("flank_ok") else "fail"
+    return CheckView(
+        id="flank_ok",
+        label_zh=SPLINE_CHECK_LABELS["flank_ok"],
+        status=status,
+        actual=_as_float(scenario_a.get("flank_safety")),
+        limit=_as_float(scenario_a.get("flank_safety_min")),
+        unit="",
+        model_level=model_level,
+        source_kind="user",
+    )
+
+
+def _spline_scenario_b_checks(
+    mode: Any,
+    scenario_b: dict[str, Any] | None,
+    payload: dict[str, Any] | None,
+    result: dict[str, Any],
+    model_level: str,
+) -> tuple[CheckView, CheckView]:
+    skipped_message = "仅花键模式，光滑段过盈校核已跳过。"
+    combined = mode == "combined" and scenario_b is not None
+    if not combined:
+        return (
+            CheckView(
+                id="slip_ok",
+                label_zh=SPLINE_CHECK_LABELS["slip_ok"],
+                status="not_checked",
+                model_level=model_level,
+                message=skipped_message,
+            ),
+            CheckView(
+                id="stress_ok",
+                label_zh=SPLINE_CHECK_LABELS["stress_ok"],
+                status="not_checked",
+                model_level=model_level,
+                message=skipped_message,
+            ),
+        )
+
+    assert scenario_b is not None
+    b_checks = scenario_b.get("checks")
+    if not isinstance(b_checks, dict):
+        b_checks = {}
+    safety = scenario_b.get("safety")
+    if not isinstance(safety, dict):
+        safety = {}
+    source = _spline_input_source(payload, result)
+    source_checks = source.get("checks")
+    if not isinstance(source_checks, dict):
+        source_checks = {}
+
+    slip_ok = all(
+        bool(b_checks.get(key)) for key in ("torque_ok", "axial_ok", "combined_ok")
+    )
+    stress_ok = all(
+        bool(b_checks.get(key)) for key in ("shaft_stress_ok", "hub_stress_ok")
+    )
+    return (
+        CheckView(
+            id="slip_ok",
+            label_zh=SPLINE_CHECK_LABELS["slip_ok"],
+            status="pass" if slip_ok else "fail",
+            actual=_as_float(safety.get("slip_safety_min")),
+            limit=_as_float(source_checks.get("slip_safety_min")),
+            unit="",
+            model_level=model_level,
+            source_kind="user",
+        ),
+        CheckView(
+            id="stress_ok",
+            label_zh=SPLINE_CHECK_LABELS["stress_ok"],
+            status="pass" if stress_ok else "fail",
+            actual=_as_float(safety.get("stress_safety_min")),
+            limit=_as_float(source_checks.get("stress_safety_min")),
+            unit="",
+            model_level=model_level,
+            source_kind="user",
+        ),
+    )
+
+
+def _spline_metrics(
+    result: dict[str, Any],
+    scenario_a: dict[str, Any],
+    scenario_b: dict[str, Any] | None,
+    mode_zh: str,
+) -> tuple[MetricView, ...]:
+    geo = scenario_a.get("geometry")
+    if not isinstance(geo, dict):
+        geo = {}
+    loads = result.get("loads")
+    if not isinstance(loads, dict):
+        loads = {}
+    geo_mode = scenario_a.get("geometry_mode", "")
+    geo_mode_zh = _SPLINE_GEO_MODE_ZH.get(str(geo_mode), str(geo_mode or "-"))
+
+    metrics: list[MetricView] = [
+        MetricView("校核模式", mode_zh),
+        MetricView("几何模式", geo_mode_zh),
+        *_optional_metric("参考直径 d_B", geo.get("reference_diameter_mm"), "mm", 2),
+        *_optional_metric(
+            "有效齿高 h_w", geo.get("effective_tooth_height_mm"), "mm", 2
+        ),
+        *_optional_metric("平均直径 d_m", geo.get("mean_diameter_mm"), "mm", 2),
+        *_optional_metric(
+            "啮合长度 L", scenario_a.get("engagement_length_mm"), "mm", 2
+        ),
+        *_optional_metric("载荷分布系数 K_alpha", scenario_a.get("k_alpha"), "", 2),
+        *_optional_metric("齿面压力 p", scenario_a.get("flank_pressure_mpa"), "MPa", 2),
+        *_optional_metric(
+            "许用齿面压力 p_zul", scenario_a.get("p_allowable_mpa"), "MPa", 1
+        ),
+        *_optional_metric("安全系数 S", scenario_a.get("flank_safety"), "", 2),
+        *_optional_metric(
+            "扭矩容量 T_cap", scenario_a.get("torque_capacity_nm"), "N*m", 1
+        ),
+        *_optional_metric("设计扭矩 T_d", loads.get("torque_design_nm"), "N*m", 1),
+        *_optional_metric(
+            "扭矩容量比 T_cap/T_d", scenario_a.get("torque_capacity_sf"), "", 2
+        ),
+        *_optional_metric("工况系数 K_A", loads.get("application_factor_ka"), "", 2),
+        *_optional_metric("名义扭矩 T", loads.get("torque_required_nm"), "N*m", 1),
+    ]
+    if scenario_b is None:
+        return tuple(metrics)
+
+    pressure = scenario_b.get("pressure_mpa")
+    if not isinstance(pressure, dict):
+        pressure = {}
+    safety = scenario_b.get("safety")
+    if not isinstance(safety, dict):
+        safety = {}
+    metrics.extend(
+        _optional_metric(
+            "有效配合长度", scenario_b.get("effective_fit_length_mm"), "mm", 1
+        )
+    )
+    metrics.extend(_optional_metric("面压 p_min", pressure.get("p_min"), "MPa", 2))
+    metrics.extend(_optional_metric("面压 p_mean", pressure.get("p_mean"), "MPa", 2))
+    metrics.extend(_optional_metric("面压 p_max", pressure.get("p_max"), "MPa", 2))
+    metrics.extend(_optional_metric("扭矩安全系数", safety.get("torque_sf"), "", 2))
+    metrics.extend(_optional_metric("轴向力安全系数", safety.get("axial_sf"), "", 2))
+    metrics.extend(_optional_metric("联合安全系数", safety.get("combined_sf"), "", 2))
+    metrics.extend(_optional_metric("轴侧安全系数", safety.get("shaft_sf"), "", 2))
+    metrics.extend(_optional_metric("轮毂安全系数", safety.get("hub_sf"), "", 2))
+    return tuple(metrics)
+
+
+def _spline_recommendations(result: dict[str, Any]) -> tuple[str, ...]:
+    recs: list[str] = []
+    scenario_a = result.get("scenario_a")
+    if isinstance(scenario_a, dict) and scenario_a.get("flank_ok") is False:
+        recs.append(
+            "齿面承压安全系数不足：可增大啮合长度、增大齿数或降低设计扭矩。"
+        )
+
+    scenario_b = result.get("scenario_b")
+    if isinstance(scenario_b, dict):
+        checks = scenario_b.get("checks")
+        if not isinstance(checks, dict):
+            checks = {}
+        if checks.get("torque_ok") is False:
+            recs.append(
+                "光滑段扭矩能力不足：可增大过盈量、增大配合长度或提高摩擦系数。"
+            )
+        if checks.get("axial_ok") is False:
+            recs.append(
+                "光滑段轴向力能力不足：可增大过盈量、增大配合长度或提高摩擦系数。"
+            )
+        if checks.get("combined_ok") is False:
+            recs.append(
+                "光滑段联合作用校核不通过：扭矩和轴向力组合超限，需增大过盈量或减小载荷。"
+            )
+        if checks.get("shaft_stress_ok") is False:
+            recs.append(
+                "轴侧应力安全系数不足：可更换更高强度的轴材料或减小过盈量。"
+            )
+        if checks.get("hub_stress_ok") is False:
+            recs.append(
+                "轮毂应力安全系数不足：可增大轮毂外径、更换更高强度材料或减小过盈量。"
+            )
+
+    if not recs:
+        recs.append("所有校核均通过，当前设计满足要求。")
+    return tuple(recs)
 
 
 def _hertz_recommendations(result: dict[str, Any]) -> tuple[str, ...]:

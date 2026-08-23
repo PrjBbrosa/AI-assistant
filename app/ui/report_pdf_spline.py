@@ -8,7 +8,6 @@ Uses reportlab to produce a modern, visually designed A4 report with:
 
 from __future__ import annotations
 
-import datetime as dt
 from pathlib import Path
 from typing import Any, Dict
 
@@ -21,62 +20,44 @@ from reportlab.platypus import (
 from app.ui.model_scope import SPLINE_SCOPE, scope_kv_rows
 from app.ui.report_pdf_common import (
     _build_styles,
+    _check_pills,
     _fmt,
     _header_bar,
     _input_table,
     _kv_table,
     _metric_cards,
-    _pass_text,
     _register_fonts,
     _rstep_card,
     _section_title,
+    _trace_block,
     _verdict_block,
     build_pdf,
 )
+from app.ui.report_trace import build_report_trace, trace_kv_rows
+from app.ui.result_contract import from_spline, status_label_zh
 
 
 # ---------------------------------------------------------------------------
 # Recommendations
 # ---------------------------------------------------------------------------
 def build_spline_recommendations(result: Dict[str, Any]) -> list[str]:
-    """Build recommendation strings from spline result dict."""
-    recs: list[str] = []
+    """Build recommendation strings from the shared spline view model."""
+    return list(from_spline(result).recommendations)
 
-    # Scenario A checks
-    a = result.get("scenario_a", {})
-    if not a.get("flank_ok", True):
-        recs.append(
-            "齿面承压安全系数不足：可增大啮合长度、增大齿数或降低设计扭矩。"
-        )
 
-    # Scenario B checks (only if combined mode)
-    b = result.get("scenario_b")
-    if b is not None:
-        checks = b.get("checks", {})
-        if not checks.get("torque_ok", True):
-            recs.append(
-                "光滑段扭矩能力不足：可增大过盈量、增大配合长度或提高摩擦系数。"
-            )
-        if not checks.get("axial_ok", True):
-            recs.append(
-                "光滑段轴向力能力不足：可增大过盈量、增大配合长度或提高摩擦系数。"
-            )
-        if not checks.get("combined_ok", True):
-            recs.append(
-                "光滑段联合作用校核不通过：扭矩和轴向力组合超限，需增大过盈量或减小载荷。"
-            )
-        if not checks.get("shaft_stress_ok", True):
-            recs.append(
-                "轴侧应力安全系数不足：可更换更高强度的轴材料或减小过盈量。"
-            )
-        if not checks.get("hub_stress_ok", True):
-            recs.append(
-                "轮毂应力安全系数不足：可增大轮毂外径、更换更高强度材料或减小过盈量。"
-            )
+def _check_pill_state(status: str) -> bool | None:
+    if status == "pass":
+        return True
+    if status == "fail":
+        return False
+    return None
 
-    if not recs:
-        recs.append("所有校核均通过，当前设计满足要求。")
-    return recs
+
+def _check_by_id(view, check_id: str):
+    for item in view.checks:
+        if item.id == check_id:
+            return item
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -91,38 +72,29 @@ def generate_spline_report(
     _register_fonts()
     styles = _build_styles()
     elems: list = []
+    view = from_spline(result, payload)
 
-    overall = result.get("overall_pass", False)
-    mode = result.get("mode", "spline_only")
     loads = result.get("loads", {})
     a = result.get("scenario_a", {})
     b = result.get("scenario_b")
-    messages = result.get("messages", [])
-    verdict_level = result.get("overall_verdict_level", "")
-
-    date_str = dt.datetime.now().strftime("%Y-%m-%d %H:%M")
-
-    # Mode description
-    if mode == "combined":
-        mode_desc = "联合模式 (花键齿面 + 光滑段过盈)"
-    else:
-        mode_desc = "仅花键齿面承压"
-    level_text = (
-        SPLINE_SCOPE.model_level
-        if verdict_level == "simplified_precheck" or not verdict_level
-        else str(verdict_level)
+    messages = list(view.warnings)
+    trace = build_report_trace(
+        SPLINE_SCOPE.module_id,
+        payload,
+        model_level=SPLINE_SCOPE.model_level,
     )
-    subtitle = f"{mode_desc} | 模型等级: {level_text}"
+    date_str = trace.generated_at
 
     # 1. Header bar
     elems.append(_header_bar(styles, "花键连接校核报告", date_str))
     elems.append(Spacer(1, 8))
+    elems.extend(_trace_block(styles, trace_kv_rows(trace)))
 
     # 2. Verdict block
-    elems.append(_verdict_block(styles, overall, subtitle))
+    elems.append(_verdict_block(styles, view.overall_status, view.verdict_subtitle_zh))
     elems.append(Spacer(1, 8))
     elems.append(_section_title(styles, "模型范围"))
-    elems.append(_kv_table(styles, scope_kv_rows(SPLINE_SCOPE), 0.28))
+    elems.append(_kv_table(styles, scope_kv_rows(view.model_scope), 0.28))
     elems.append(Spacer(1, 10))
 
     # 3. Metric cards
@@ -135,6 +107,10 @@ def generate_spline_report(
         metrics.append(("p_min (MPa)", _fmt(p_min, 2)))
     metrics.append(("设计扭矩 (N*m)", _fmt(loads.get("torque_design_nm"), 1)))
     elems.append(_metric_cards(styles, metrics))
+    elems.append(Spacer(1, 8))
+    check_states = {item.id: _check_pill_state(item.status) for item in view.checks}
+    check_labels = {item.id: item.label_zh for item in view.checks}
+    elems.append(_check_pills(styles, check_states, check_labels, {}))
     elems.append(Spacer(1, 10))
 
     # 4. Scenario A section
@@ -159,6 +135,10 @@ def generate_spline_report(
     geo = a.get("geometry", {})
     geo_mode = a.get("geometry_mode", "")
     geo_mode_label = "近似推导" if geo_mode == "approximate" else "公开/图纸尺寸"
+    flank = _check_by_id(view, "flank_ok")
+    flank_label = flank.label_zh if flank is not None else "齿面承压校核"
+    flank_pass = flank.status == "pass" if flank is not None else bool(a.get("flank_ok"))
+    flank_verdict = status_label_zh(flank.status) if flank is not None else status_label_zh("fail")
     a_values = [
         f"几何模式: {geo_mode_label}",
         f"参考直径 d_B = {_fmt(geo.get('reference_diameter_mm'), 2, 'mm')}",
@@ -168,9 +148,10 @@ def generate_spline_report(
         f"安全系数 S = {_fmt(a.get('flank_safety'), 2)} (最小 {_fmt(a.get('flank_safety_min'), 2)})",
         f"扭矩容量 T_cap = {_fmt(a.get('torque_capacity_nm'), 1, 'N*m')}",
         f"扭矩容量比 T_cap/T_d = {_fmt(a.get('torque_capacity_sf'), 2)} (与 S 等价)",
+        f"结论: {flank_verdict}",
     ]
     elems.append(KeepTogether([
-        _rstep_card(styles, "齿面承压校核", a_values, passed=a.get("flank_ok")),
+        _rstep_card(styles, flank_label, a_values, passed=flank_pass),
         Spacer(1, 6),
     ]))
 
@@ -232,10 +213,14 @@ def generate_spline_report(
             f"{_fmt(asm.get('press_force_mean_n'), 0)} / "
             f"{_fmt(asm.get('press_force_max_n'), 0)} N",
         ]
-        b_checks = b.get("checks", {})
-        cap_pass = b_checks.get("torque_ok", True) and b_checks.get("axial_ok", True)
+        slip = _check_by_id(view, "slip_ok")
+        stress = _check_by_id(view, "stress_ok")
+        slip_pass = slip.status == "pass" if slip is not None else bool(b.get("overall_pass"))
+        stress_pass = stress.status == "pass" if stress is not None else bool(b.get("overall_pass"))
+        slip_label = slip.label_zh if slip is not None else "光滑段防滑校核"
+        stress_label = stress.label_zh if stress is not None else "光滑段应力校核"
         elems.append(KeepTogether([
-            _rstep_card(styles, "传力能力", cap_values, passed=cap_pass),
+            _rstep_card(styles, slip_label, cap_values, passed=slip_pass),
             Spacer(1, 6),
         ]))
 
@@ -249,11 +234,11 @@ def generate_spline_report(
             f"联合安全系数: {_fmt(safety.get('combined_sf'), 2)}",
             f"轴侧安全系数: {_fmt(safety.get('shaft_sf'), 2)}",
             f"轮毂安全系数: {_fmt(safety.get('hub_sf'), 2)}",
+            f"结论: {status_label_zh(stress.status) if stress is not None else status_label_zh('fail')}",
         ]
-        safety_pass = b.get("overall_pass", False)
         elems.append(KeepTogether([
             _rstep_card(
-                styles, "安全系数", safety_values, passed=safety_pass,
+                styles, stress_label, safety_values, passed=stress_pass,
                 note=f"最小滑移安全系数: {_fmt(slip_min, 2)} | 最小应力安全系数: {_fmt(stress_min, 2)}",
             ),
             Spacer(1, 6),
@@ -274,9 +259,8 @@ def generate_spline_report(
         elems.append(Spacer(1, 8))
 
     # 7. Recommendations
-    recs = build_spline_recommendations(result)
     elems.append(_section_title(styles, "建议"))
-    for rec in recs:
+    for rec in view.recommendations:
         elems.append(Paragraph(f"- {rec}", styles["body"]))
 
     build_pdf(path, elems, "花键连接校核")
