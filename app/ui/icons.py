@@ -30,8 +30,19 @@ def load_app_icon() -> QIcon:
     return QIcon(str(app_icon_path()))
 
 
-# Cache for the processed brand-mark pixmap keyed by size.
+# Cache for processed pixmaps keyed by (size, variant).
 _BRAND_MARK_CACHE: dict[tuple[int, str], QPixmap] = {}
+
+
+def app_icon_pixmap(size: int) -> QPixmap:
+    """Scale the existing app icon for chrome tiles. No pixel-loop remap."""
+    cache_key = (size, "app-icon")
+    cached = _BRAND_MARK_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    pixmap = load_app_icon().pixmap(size, size)
+    _BRAND_MARK_CACHE[cache_key] = pixmap
+    return pixmap
 
 
 def brand_mark_pixmap(size: int) -> QPixmap:

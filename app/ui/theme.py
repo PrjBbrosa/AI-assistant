@@ -143,45 +143,93 @@ _STYLE_TEMPLATE = """
         QFrame#SidebarPanel {
             background-color: ${surface_glass};
             border: 1px solid ${line_structural};
+            border-top-color: ${line_highlight};
             border-radius: ${radius_sidebar}px;
         }
+        QWidget#BrandRow {
+            background: transparent;
+        }
+        QLabel#BrandTile {
+            border-radius: 12px;
+            background-color: ${accent};
+            border: none;
+            padding: 0px;
+        }
         QLabel#BrandTitle {
-            font-size: 18px;
+            font-size: 13px;
             font-weight: 700;
             color: ${ink_primary};
             background: transparent;
         }
         QLabel#BrandSubtitle {
             color: ${ink_muted};
-            font-size: 12px;
+            font-size: 10px;
             background: transparent;
         }
-        QLabel#SidebarBrandMark {
+        QLabel#NavLabel {
+            color: ${ink_quiet};
+            font-size: 9px;
+            font-weight: 700;
             background: transparent;
-            padding: 6px 0 4px 0;
+            padding: 2px 2px 0px 2px;
+        }
+        QFrame#SidebarInfoCard {
+            background-color: ${surface_glass_soft};
+            border: 1px solid ${line_structural};
+            border-radius: ${radius_panel}px;
+        }
+        QLabel#SidebarInfoTitle {
+            font-size: 11px;
+            font-weight: 700;
+            color: ${ink_primary};
+            background: transparent;
+        }
+        QLabel#SidebarInfoBody {
+            font-size: 10px;
+            color: ${ink_muted};
+            background: transparent;
+        }
+        QWidget#WorkspaceColumn {
+            background: transparent;
+        }
+        QFrame#WorkspaceChrome {
+            background: transparent;
+            min-height: 36px;
+            max-height: 40px;
+        }
+        QLabel#WorkspaceBreadcrumb {
+            color: ${ink_muted};
+            font-size: 11px;
+            background: transparent;
+        }
+        QLabel#WorkspaceRunState {
+            color: ${ink_muted};
+            font-size: 10px;
+            background-color: ${surface_glass_soft};
+            border: 1px solid ${line_structural};
+            border-radius: ${radius_badge}px;
+            padding: 4px 10px;
         }
         QListWidget#ModuleList {
             border: none;
             background: transparent;
             outline: 0;
-            padding: 6px;
+            padding: 4px 0px;
         }
         QListWidget#ModuleList::item {
-            border: 1px solid transparent;
+            border: none;
             border-radius: ${radius_control}px;
-            padding: 10px 10px;
-            margin-bottom: 4px;
+            padding: 0px;
+            margin-bottom: 3px;
+            min-height: 40px;
             background: transparent;
         }
         QListWidget#ModuleList::item:hover {
-            background: ${surface_glass_soft};
-            border: 1px solid ${line_structural};
+            background: transparent;
         }
         QListWidget#ModuleList::item:selected {
-            background: ${accent_soft};
-            border: 1px solid ${accent};
+            background: transparent;
             color: ${accent_ink};
-            font-weight: 600;
         }
         QListWidget#ChapterList {
             border: none;
@@ -850,6 +898,10 @@ _STYLE_TEMPLATE = """
             border-top: 1px solid ${line_structural};
             background-color: ${canvas_base};
             color: ${ink_muted};
+        }
+        QStatusBar::item {
+            border: none;
+            background: transparent;
         }
         QScrollArea {
             border: none;
