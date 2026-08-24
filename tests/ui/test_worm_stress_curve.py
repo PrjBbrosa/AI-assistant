@@ -46,6 +46,32 @@ class WormStressCurveWidgetTests(unittest.TestCase):
         )
         self.assertEqual(widget._theta_deg, [])
 
+    def test_stress_curve_data_survives_redraw(self) -> None:
+        widget = WormStressCurveWidget()
+        theta = [0.0, 90.0, 180.0, 270.0, 360.0]
+        sigma_h = [30.0, 45.0, 30.0, 45.0, 30.0]
+        sigma_f = [20.0, 35.0, 20.0, 35.0, 20.0]
+        widget.set_curves(
+            theta_deg=theta,
+            sigma_h_mpa=sigma_h,
+            sigma_f_mpa=sigma_f,
+            sigma_h_nominal_mpa=35.0,
+            sigma_f_nominal_mpa=25.0,
+        )
+        stored = widget.curve_data()
+        self.assertEqual(stored[0], theta)
+        self.assertEqual(stored[1], sigma_h)
+        self.assertEqual(stored[2], sigma_f)
+        self.assertEqual(stored[3], 35.0)
+        self.assertEqual(stored[4], 25.0)
+        widget.resize(800, 400)
+        widget.show()
+        self.app.processEvents()
+        widget.grab()
+        self.assertEqual(widget.curve_data(), stored)
+        self.assertIn("accent", widget._palette)
+        self.assertNotEqual(widget._palette["accent"], "#D97757")
+
 
 if __name__ == "__main__":
     unittest.main()

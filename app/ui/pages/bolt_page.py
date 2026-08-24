@@ -23,11 +23,13 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from app.ui.design_tokens import cloud_porcelain_controls
 from app.ui.field_schema import FieldSchema, FieldSpec, validate_text
 from app.ui.input_condition_store import (
     InputConditionError,
@@ -40,7 +42,9 @@ from app.ui.input_condition_store import (
     validate_snapshot,
     write_input_conditions,
 )
+from app.ui.widgets.action_overflow import ActionOverflowController
 from app.ui.widgets.app_combo_box import AppComboBox
+from app.ui.widgets.chapter_delegate import ChapterNavigationDelegate
 from app.ui.widgets.clamping_diagram import ClampingDiagramWidget, ThreadForceTriangleWidget
 from app.ui.widgets.help_button import HelpButton
 from app.ui.widgets.beginner_guide_dialog import BeginnerGuideDialog
@@ -283,25 +287,37 @@ class BoltPage(QWidget):
         self._chapter_step_index = 0
         self._suspend_live_feedback = False
 
+        controls = cloud_porcelain_controls()
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 10, 12, 10)
         root.setSpacing(8)
 
         header = QFrame(self)
-        header.setObjectName("Card")
-        header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(12, 8, 12, 8)
-        header_layout.setSpacing(2)
-        title = QLabel("螺栓连接 · VDI 2230", header)
-        title.setObjectName("SectionTitle")
-        hint = QLabel("预紧螺栓连接的预紧力、工作载荷、疲劳与滑移校核。", header)
+        header.setObjectName("ChapterHeader")
+        header.setMinimumHeight(controls.header_min_height)
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(16, 12, 16, 12)
+        header_layout.setSpacing(12)
+
+        title_block = QWidget(header)
+        title_block.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
+        title_layout = QVBoxLayout(title_block)
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        title_layout.setSpacing(2)
+        title = QLabel("螺栓连接 · VDI 2230", title_block)
+        title.setObjectName("ChapterTitle")
+        hint = QLabel("预紧螺栓连接的预紧力、工作载荷、疲劳与滑移校核。", title_block)
         hint.setObjectName("SectionHint")
         hint.setWordWrap(True)
-        header_layout.addWidget(title)
-        header_layout.addWidget(hint)
-        root.addWidget(header)
+        title_layout.addWidget(title)
+        title_layout.addWidget(hint)
+        header_layout.addWidget(title_block, 1)
 
-        actions = QFrame(self)
+        actions = QWidget(header)
+        actions.setObjectName("ChapterActions")
+        actions.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
         actions_layout = QHBoxLayout(actions)
         actions_layout.setContentsMargins(0, 0, 0, 0)
         actions_layout.setSpacing(8)
@@ -315,6 +331,7 @@ class BoltPage(QWidget):
         self.btn_load_inputs = QPushButton("加载输入条件", actions)
         self.btn_calculate = QPushButton("执行校核", actions)
         self.btn_calculate.setObjectName("PrimaryButton")
+        self.btn_calculate.setMinimumHeight(controls.primary_button_height)
         self.btn_clear = QPushButton("清空参数", actions)
         self.btn_save = QPushButton("导出结果说明", actions)
         self.btn_load_1 = QPushButton("测试案例 1", actions)
@@ -322,19 +339,46 @@ class BoltPage(QWidget):
         self.check_level_combo = AppComboBox(self)
         for text, value in CHECK_LEVELS:
             self.check_level_combo.addItem(text, value)
+        for button in (
+            self.btn_save_inputs,
+            self.btn_load_inputs,
+            self.btn_clear,
+            self.btn_save,
+            self.btn_load_1,
+            self.btn_load_2,
+        ):
+            button.setMinimumHeight(controls.button_height)
         left_actions.addWidget(self.btn_save_inputs)
         left_actions.addWidget(self.btn_load_inputs)
         left_actions.addWidget(self.btn_calculate)
         left_actions.addWidget(self.btn_clear)
         left_actions.addWidget(self.btn_save)
         self.btn_help_guide = QPushButton("校核指南", actions)
+        self.btn_help_guide.setMinimumHeight(controls.button_height)
         right_actions.addWidget(self.btn_help_guide)
         right_actions.addWidget(self.btn_load_1)
         right_actions.addWidget(self.btn_load_2)
         actions_layout.addLayout(left_actions)
         actions_layout.addStretch(1)
         actions_layout.addLayout(right_actions)
-        root.addWidget(actions)
+        self.overflow_button = QPushButton("更多", actions)
+        actions_layout.addWidget(self.overflow_button)
+        header_layout.addWidget(actions, 0)
+        root.addWidget(header)
+
+        self.chapter_header = header
+        self._action_overflow = ActionOverflowController(header, self.overflow_button, self)
+        for button in (
+            self.btn_save_inputs,
+            self.btn_load_inputs,
+            self.btn_calculate,
+            self.btn_clear,
+            self.btn_save,
+            self.btn_help_guide,
+            self.btn_load_1,
+            self.btn_load_2,
+        ):
+            self._action_overflow.register(button)
 
         content = QHBoxLayout()
         content.setSpacing(12)
@@ -351,6 +395,15 @@ class BoltPage(QWidget):
         nav_title.setObjectName("SectionTitle")
         self.chapter_list = QListWidget(nav_card)
         self.chapter_list.setObjectName("ChapterList")
+        self.chapter_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.chapter_list.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.chapter_list.setUniformItemSizes(True)
+        self.chapter_list.setMouseTracking(True)
+        self.chapter_list.viewport().setMouseTracking(True)
+        self.chapter_list.viewport().setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        self.chapter_list.setItemDelegate(ChapterNavigationDelegate(self.chapter_list))
+        self.chapter_list.setSpacing(0)
+        self.chapter_list.setFrameShape(QFrame.Shape.NoFrame)
         nav_layout.addWidget(nav_title)
 
         # Tab buttons

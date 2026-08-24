@@ -391,7 +391,7 @@ class WormGearPage(BaseChapterPage):
         # Step 3: dirty-state status label (reuses the base info area but also
         # keeps a dedicated QLabel we can show inline in the action row)
         self._result_status_label = QLabel("", self)
-        self._result_status_label.setObjectName("SectionHint")
+        self._result_status_label.setObjectName("ResultStaleHint")
         self._result_status_label.setWordWrap(True)
         # Export button starts disabled until a calculation completes
         self.btn_save.setEnabled(False)
@@ -643,8 +643,7 @@ class WormGearPage(BaseChapterPage):
             label.setObjectName("SubSectionTitle")
             value_label = QLabel("待输入", row_card)
             value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            value_label.setObjectName("SectionHint")
-            value_label.setStyleSheet("color: #3A4F63; font-weight: 600;")
+            value_label.setObjectName("DerivedValue")
             unit = QLabel(unit_text, row_card)
             unit.setObjectName("SectionHint")
             hint = QLabel(hint_text, row_card)
@@ -942,9 +941,8 @@ class WormGearPage(BaseChapterPage):
             row_name = QLabel(row_label_text, row_frame)
             row_name.setObjectName("SectionHint")
             row_val = QLabel("—", row_frame)
-            row_val.setObjectName("SectionHint")
+            row_val.setObjectName("MetricValue")
             row_val.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            row_val.setStyleSheet("color: #4A4135; font-weight: 600;")
             row_h.addWidget(row_name)
             row_h.addStretch(1)
             row_h.addWidget(row_val)
@@ -1315,7 +1313,9 @@ class WormGearPage(BaseChapterPage):
         """Called on any input change: disable export, show stale warning."""
         self.btn_save.setEnabled(False)
         self._result_status_label.setText("结果已过期，请重新执行计算。")
-        self._result_status_label.setStyleSheet("color: #C44536;")
+        self._result_status_label.setObjectName("ResultStaleHint")
+        self._result_status_label.style().unpolish(self._result_status_label)
+        self._result_status_label.style().polish(self._result_status_label)
 
     def _mark_results_fresh(self) -> None:
         """Called after successful calculation: enable export, clear warning."""

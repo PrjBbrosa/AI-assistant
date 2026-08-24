@@ -11,6 +11,7 @@ from PySide6.QtCore import QCoreApplication, QEvent, QPoint, Qt
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QPushButton, QWidget
 
 from app.ui.pages.base_chapter_page import BaseChapterPage
+from app.ui.pages.bolt_page import BoltPage
 from app.ui.pages.bolt_tapped_axial_page import BoltTappedAxialPage
 from app.ui.pages.buffer_energy_page import BufferEnergyPage
 from app.ui.pages.hertz_contact_page import HertzContactPage
@@ -260,6 +261,60 @@ def test_six_base_chapter_pages_construct(qapp, page_cls):
     assert primaries == [calculate]
     page.deleteLater()
     qapp.processEvents()
+
+
+def test_bolt_page_p0_visible_at_1180_and_export_proxy_stays_disabled(qapp):
+    page = BoltPage()
+    host = _show_in_supported_host(qapp, page, 1180, 720)
+    try:
+        qapp.processEvents()
+        page._action_overflow.relayout()
+        qapp.processEvents()
+        calc = page.btn_calculate
+        assert calc.objectName() == "PrimaryButton"
+        assert isinstance(calc, QPushButton)
+        assert not calc.isHidden()
+        x, y, width, height = _mapped_rect(calc, host)
+        assert width > 0 and height > 0
+        assert x >= 0
+        assert x + width <= host.width()
+        assert y >= 0
+        assert y + height <= host.height()
+        assert page.chapter_list.objectName() == "ChapterList"
+        assert page.overflow_button.accessibleName() == "更多操作"
+        export_action = page._action_overflow.action_for(page.btn_save)
+        assert export_action is not None
+        assert not page.btn_save.isEnabled()
+        hits: list[str] = []
+        page.btn_save.clicked.connect(lambda: hits.append("export"))
+        if page.btn_save.isHidden():
+            assert not export_action.isEnabled()
+            export_action.trigger()
+            qapp.processEvents()
+            assert hits == []
+        else:
+            assert not page.btn_save.isEnabled()
+        overflowed = page._action_overflow.overflowed_buttons()
+        assert (
+            page.btn_clear in overflowed
+            or page.btn_load_1 in overflowed
+            or page.btn_save in overflowed
+            or not page.overflow_button.isHidden()
+            or not page.btn_clear.isHidden()
+        )
+        if page.btn_clear.isHidden():
+            clear_action = page._action_overflow.action_for(page.btn_clear)
+            assert clear_action is not None
+            assert clear_action.isEnabled()
+            clear_hits: list[str] = []
+            page.btn_clear.clicked.connect(lambda: clear_hits.append("clear"))
+            clear_action.trigger()
+            qapp.processEvents()
+            assert clear_hits == ["clear"]
+    finally:
+        _close_host(qapp, host, page)
+        page.deleteLater()
+        qapp.processEvents()
 
 
 def test_buffer_import_curve_is_p0_but_not_primary(qapp):

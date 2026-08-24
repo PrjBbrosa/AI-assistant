@@ -434,6 +434,20 @@ _STYLE_TEMPLATE = """
             font-size: 12px;
             background: transparent;
         }
+        QLabel#DerivedValue {
+            color: ${secondary};
+            font-weight: 600;
+            background: transparent;
+        }
+        QLabel#MetricValue {
+            color: ${ink_primary};
+            font-weight: 600;
+            background: transparent;
+        }
+        QLabel#ResultStaleHint {
+            color: ${fail_fg};
+            background: transparent;
+        }
         QLabel#WarningTitle {
             color: ${warning_fg};
             font-size: 13px;

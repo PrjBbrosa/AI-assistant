@@ -8,6 +8,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
+from app.ui.design_tokens import qcolor, qpen
 from app.ui.fonts import make_ui_font
 
 
@@ -20,6 +21,15 @@ DEFAULT_GEOM_STATE: dict = {
     "z2": 40,
     "handedness": "right",
 }
+
+
+def _token(name: str, alpha: int | float | None = None) -> QColor:
+    color = qcolor(name)
+    if isinstance(alpha, float):
+        color.setAlphaF(alpha)
+    elif isinstance(alpha, int):
+        color.setAlpha(alpha)
+    return color
 
 
 class WormGeometryOverviewWidget(QWidget):
@@ -62,6 +72,10 @@ class WormGeometryOverviewWidget(QWidget):
             "handedness": str(handedness).strip().lower() or "right",
         }
         self.update()
+
+    def geometry_state(self) -> dict:
+        """Stored geometry parameters consumed by paintEvent (no derived safety)."""
+        return dict(self._geom_state)
 
     def _panel_rect(self) -> QRectF:
         return QRectF(14.0, 14.0, self.width() - 28.0, self.height() - 28.0)
@@ -130,11 +144,11 @@ class WormGeometryOverviewWidget(QWidget):
             painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
             panel = self._panel_rect()
-            painter.setPen(QPen(QColor("#D9D3CA"), 1.0))
-            painter.setBrush(QColor("#FBF8F3"))
+            painter.setPen(qpen("line_structural", 1.0))
+            painter.setBrush(_token("surface_glass_soft"))
             painter.drawRoundedRect(panel, 12, 12)
 
-            painter.setPen(QPen(QColor("#2B2723"), 1.0))
+            painter.setPen(qpen("ink_primary", 1.0))
             painter.setFont(make_ui_font(12, 600))
             painter.drawText(
                 QRectF(panel.left() + 18, panel.top() + 12, panel.width() - 36, 20),
@@ -145,8 +159,8 @@ class WormGeometryOverviewWidget(QWidget):
             diagram = self._diagram_rect_for_testing()
             info = QRectF(diagram.right() + 16, diagram.top(), panel.right() - diagram.right() - 24, diagram.height())
 
-            painter.setPen(QPen(QColor("#E4DDD2"), 1.0))
-            painter.setBrush(QColor("#FBF8F3"))
+            painter.setPen(qpen("line_structural", 1.0))
+            painter.setBrush(_token("surface_glass_soft"))
             painter.drawRoundedRect(diagram, 10, 10)
             painter.drawRoundedRect(info, 10, 10)
 
@@ -170,21 +184,21 @@ class WormGeometryOverviewWidget(QWidget):
         center_distance = layout["center_distance"]
 
         # Axes first, behind the shapes.
-        painter.setPen(QPen(QColor("#8B7C67"), 1.1, Qt.PenStyle.DashLine))
+        painter.setPen(QPen(_token("ink_quiet"), 1.1, Qt.PenStyle.DashLine))
         painter.drawLine(QPointF(worm_rect.left() - 36, worm_axis_y), QPointF(worm_rect.right() + 36, worm_axis_y))
         painter.drawLine(QPointF(wheel_center.x(), wheel_rect.top() - 18), QPointF(wheel_center.x(), worm_rect.bottom() + 28))
 
         # Wheel body with subtle tooth ticks.
-        painter.setPen(QPen(QColor("#7F7260"), 2.0))
-        painter.setBrush(QColor("#E3D3C0"))
+        painter.setPen(qpen("ink_muted", 2.0))
+        painter.setBrush(_token("secondary_soft"))
         painter.drawEllipse(wheel_rect)
         bore = wheel_rect.adjusted(wheel_rect.width() * 0.32, wheel_rect.height() * 0.32, -wheel_rect.width() * 0.32, -wheel_rect.height() * 0.32)
-        painter.setBrush(QColor("#FBF8F3"))
+        painter.setBrush(_token("surface_glass_soft"))
         painter.drawEllipse(bore)
 
         outer_radius = wheel_rect.width() * 0.5
         inner_radius = bore.width() * 0.5 + 7.0
-        painter.setPen(QPen(QColor("#8D6E63"), 1.2))
+        painter.setPen(qpen("secondary", 1.2))
         for idx in range(24):
             angle = math.radians(idx * 15.0)
             cos_a = math.cos(angle)
@@ -195,12 +209,12 @@ class WormGeometryOverviewWidget(QWidget):
             )
 
         # Worm body and helix.
-        painter.setPen(QPen(QColor("#7F7260"), 2.0))
-        painter.setBrush(QColor("#E6DCCE"))
+        painter.setPen(qpen("ink_muted", 2.0))
+        painter.setBrush(_token("surface_glass"))
         painter.drawRoundedRect(worm_rect, min(worm_rect.height() * 0.45, 18), min(worm_rect.height() * 0.45, 18))
 
         hand_sign = 1.0 if handedness == "right" else -1.0
-        painter.setPen(QPen(QColor("#B65E2C"), 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.setPen(QPen(_token("accent"), 2.0, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         line_count = max(5, min(11, int(worm_rect.width() / 18)))
         for idx in range(line_count):
             x0 = worm_rect.left() + 12 + idx * (worm_rect.width() - 24) / max(line_count - 1, 1)
@@ -211,8 +225,8 @@ class WormGeometryOverviewWidget(QWidget):
 
         # Mesh patch: placed between wheel pitch circle and worm crown.
         mesh = QPointF(wheel_center.x(), (wheel_rect.bottom() + worm_rect.top()) * 0.5)
-        painter.setPen(QPen(QColor("#C55A11"), 1.8))
-        painter.setBrush(QColor(197, 90, 17, 48))
+        painter.setPen(qpen("accent", 1.8))
+        painter.setBrush(_token("accent", 48))
         painter.drawEllipse(mesh, 15.0, 9.0)
         self._draw_badge(painter, QRectF(mesh.x() - 78, mesh.y() - 34, 56, 22), "啮合区")
 
@@ -222,7 +236,7 @@ class WormGeometryOverviewWidget(QWidget):
             center_distance["p0"],
             center_distance["p1"],
             f"a={a_mm:.1f}mm",
-            QColor("#35637A"),
+            _token("secondary"),
             label_rect=center_distance["label"],
         )
 
@@ -233,7 +247,7 @@ class WormGeometryOverviewWidget(QWidget):
             QPointF(d1_x, worm_rect.top()),
             QPointF(d1_x, worm_rect.bottom()),
             f"d1={d1_mm:.0f}",
-            QColor("#58707E"),
+            _token("secondary"),
         )
         d2_x = wheel_rect.right() + 20.0
         self._draw_dimension(
@@ -241,12 +255,12 @@ class WormGeometryOverviewWidget(QWidget):
             QPointF(d2_x, wheel_rect.top()),
             QPointF(d2_x, wheel_rect.bottom()),
             f"d2={d2_mm:.0f}",
-            QColor("#58707E"),
+            _token("secondary"),
         )
 
         # Lead angle guide near the worm, offset from the mesh label.
         gamma_center = QPointF(worm_rect.right() - 34, worm_rect.top() - 8)
-        painter.setPen(QPen(QColor("#A6472A"), 1.4))
+        painter.setPen(qpen("accent_ink", 1.4))
         painter.drawLine(gamma_center, QPointF(gamma_center.x() + 56, gamma_center.y()))
         slope = 56.0 * math.tan(math.radians(max(0.0, min(abs(gamma_deg), 38.0))))
         painter.drawLine(gamma_center, QPointF(gamma_center.x() + 56, gamma_center.y() + slope))
@@ -255,7 +269,7 @@ class WormGeometryOverviewWidget(QWidget):
 
         direction = "右旋" if handedness == "right" else "左旋"
         arrow_y = min(diagram.bottom() - 20, worm_rect.bottom() + 22)
-        painter.setPen(QPen(QColor("#7A3E2B"), 1.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.setPen(QPen(_token("accent_ink"), 1.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         x_start = worm_rect.left() + 16
         x_end = worm_rect.right() - 16
         if handedness != "right":
@@ -263,7 +277,7 @@ class WormGeometryOverviewWidget(QWidget):
         painter.drawLine(QPointF(x_start, arrow_y), QPointF(x_end, arrow_y))
         self._draw_arrow_head(painter, QPointF(x_end, arrow_y), 1.0 if handedness == "right" else -1.0)
         painter.setFont(make_ui_font(9))
-        painter.setPen(QPen(QColor("#7A3E2B"), 1.0))
+        painter.setPen(qpen("accent_ink", 1.0))
         painter.drawText(QRectF(worm_rect.left() + 10, arrow_y + 4, 112, 18), Qt.AlignmentFlag.AlignLeft, f"{direction}蜗杆")
 
     def _draw_info_panel(self, painter: QPainter, info: QRectF) -> None:
@@ -275,7 +289,7 @@ class WormGeometryOverviewWidget(QWidget):
         gamma_deg = self._geom_state["gamma_deg"]
         handedness = self._geom_state["handedness"]
 
-        painter.setPen(QPen(QColor("#5F584F"), 1.0))
+        painter.setPen(qpen("ink_muted", 1.0))
         painter.setFont(make_ui_font(9))
         painter.drawText(
             info.adjusted(14, 14, -14, -14),
@@ -316,10 +330,10 @@ class WormGeometryOverviewWidget(QWidget):
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, label)
 
     def _draw_badge(self, painter: QPainter, rect: QRectF, text: str) -> None:
-        painter.setPen(QPen(QColor("#CDBFAA"), 1.0))
-        painter.setBrush(QColor(251, 248, 243, 235))
+        painter.setPen(qpen("line_structural", 1.0))
+        painter.setBrush(_token("surface_glass_strong", 235))
         painter.drawRoundedRect(rect, 5, 5)
-        painter.setPen(QPen(QColor("#5C574F"), 1.0))
+        painter.setPen(qpen("ink_muted", 1.0))
         painter.setFont(make_ui_font(8, 600))
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
 
