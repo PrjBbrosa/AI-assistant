@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication, QLineEdit
 
 from app.ui.pages.bolt_page import BoltPage
 from app.ui.pages.bolt_tapped_axial_page import BoltTappedAxialPage
+from app.ui.pages.buffer_energy_page import BufferEnergyPage
 from app.ui.pages.hertz_contact_page import HertzContactPage
 from app.ui.pages.interference_fit_page import InterferenceFitPage
 from app.ui.pages.spline_fit_page import SplineFitPage
@@ -33,10 +34,9 @@ class ExportDirtyContract:
     export_button_names: tuple[str, ...]
     widget_map_name: str
     edit_field_id: str
+    sample: str | None = None
 
 
-# BufferEnergyPage keeps a different export button contract (btn_save_report)
-# and has curve-import side effects, so it stays under its dedicated tests.
 EXPORT_DIRTY_CONTRACTS = (
     ExportDirtyContract(
         name="bolt",
@@ -60,7 +60,7 @@ EXPORT_DIRTY_CONTRACTS = (
         calculate_method="_calculate",
         export_button_names=("btn_save",),
         widget_map_name="_field_widgets",
-        edit_field_id="geometry.shaft_d_mm",
+        edit_field_id="loads.torque_required_nm",
     ),
     ExportDirtyContract(
         name="spline",
@@ -86,6 +86,15 @@ EXPORT_DIRTY_CONTRACTS = (
         widget_map_name="_field_widgets",
         edit_field_id="fastener.d",
     ),
+    ExportDirtyContract(
+        name="buffer",
+        page_cls=BufferEnergyPage,
+        calculate_method="_on_calculate",
+        export_button_names=("btn_save_report",),
+        widget_map_name="_field_widgets",
+        edit_field_id="impact.mass_kg",
+        sample="buffer_energy_case_01.csv",
+    ),
 )
 
 
@@ -98,6 +107,24 @@ def _make_page(page_cls: type[Any]) -> Any:
 
 def _export_buttons(page: Any, button_names: tuple[str, ...]) -> list[Any]:
     return [getattr(page, name) for name in button_names]
+
+
+def _assert_overflow_matches_buttons(page: Any, buttons: list[Any]) -> None:
+    page.show()
+    page.resize(640, 400)
+    _app().processEvents()
+    controller = getattr(page, "_action_overflow", None)
+    assert controller is not None
+    controller.relayout()
+    _app().processEvents()
+    for button in buttons:
+        action = controller.action_for(button)
+        assert action is not None
+        controller.sync_button(button)
+        if button in controller.overflowed_buttons() or action.isVisible():
+            assert action.isEnabled() == button.isEnabled()
+        else:
+            assert not action.isVisible()
 
 
 def _changed_text(raw: str) -> str:
@@ -125,21 +152,30 @@ def test_export_buttons_disable_until_calculate_and_dirty_on_edit(
     contract: ExportDirtyContract,
 ) -> None:
     page = _make_page(contract.page_cls)
+    if contract.sample:
+        page._load_sample(contract.sample)
+        _app().processEvents()
     buttons = _export_buttons(page, contract.export_button_names)
 
     assert all(not button.isEnabled() for button in buttons)
+    _assert_overflow_matches_buttons(page, buttons)
 
     getattr(page, contract.calculate_method)()
     _app().processEvents()
     assert all(button.isEnabled() for button in buttons)
+    _assert_overflow_matches_buttons(page, buttons)
 
     widget_map = getattr(page, contract.widget_map_name)
     field = widget_map[contract.edit_field_id]
     assert isinstance(field, QLineEdit)
     _edit_line(field)
     _app().processEvents()
+    timer = getattr(page, "_recalc_timer", None)
+    if timer is not None:
+        timer.stop()
 
     assert all(not button.isEnabled() for button in buttons)
+    _assert_overflow_matches_buttons(page, buttons)
 
 
 def test_spline_export_stays_disabled_after_clear() -> None:
@@ -154,3 +190,4 @@ def test_spline_export_stays_disabled_after_clear() -> None:
     assert page._last_payload is None
     assert page._last_result is None
     assert not page.btn_save.isEnabled()
+    _assert_overflow_matches_buttons(page, [page.btn_save])

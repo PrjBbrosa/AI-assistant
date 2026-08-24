@@ -1311,11 +1311,15 @@ class WormGearPage(BaseChapterPage):
     # ------------------------------------------------------------------
     def _mark_results_dirty(self) -> None:
         """Called on any input change: disable export, show stale warning."""
+        self._last_payload = None
+        self._last_result = None
         self.btn_save.setEnabled(False)
         self._result_status_label.setText("结果已过期，请重新执行计算。")
         self._result_status_label.setObjectName("ResultStaleHint")
         self._result_status_label.style().unpolish(self._result_status_label)
         self._result_status_label.style().polish(self._result_status_label)
+        if getattr(self, "result_title", None) is not None:
+            self._reset_result_panels()
 
     def _mark_results_fresh(self) -> None:
         """Called after successful calculation: enable export, clear warning."""

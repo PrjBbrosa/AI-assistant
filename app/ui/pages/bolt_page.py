@@ -42,7 +42,7 @@ from app.ui.input_condition_store import (
     validate_snapshot,
     write_input_conditions,
 )
-from app.ui.widgets.action_overflow import ActionOverflowController
+from app.ui.widgets.action_overflow import ActionOverflowController, ChapterActionButton
 from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.chapter_delegate import ChapterNavigationDelegate
 from app.ui.widgets.clamping_diagram import ClampingDiagramWidget, ThreadForceTriangleWidget
@@ -327,15 +327,15 @@ class BoltPage(QWidget):
         right_actions = QHBoxLayout()
         right_actions.setContentsMargins(0, 0, 0, 0)
         right_actions.setSpacing(8)
-        self.btn_save_inputs = QPushButton("保存输入条件", actions)
-        self.btn_load_inputs = QPushButton("加载输入条件", actions)
-        self.btn_calculate = QPushButton("执行校核", actions)
+        self.btn_save_inputs = ChapterActionButton("保存输入条件", actions)
+        self.btn_load_inputs = ChapterActionButton("加载输入条件", actions)
+        self.btn_calculate = ChapterActionButton("执行校核", actions)
         self.btn_calculate.setObjectName("PrimaryButton")
         self.btn_calculate.setMinimumHeight(controls.primary_button_height)
-        self.btn_clear = QPushButton("清空参数", actions)
-        self.btn_save = QPushButton("导出结果说明", actions)
-        self.btn_load_1 = QPushButton("测试案例 1", actions)
-        self.btn_load_2 = QPushButton("测试案例 2", actions)
+        self.btn_clear = ChapterActionButton("清空参数", actions)
+        self.btn_save = ChapterActionButton("导出结果说明", actions)
+        self.btn_load_1 = ChapterActionButton("测试案例 1", actions)
+        self.btn_load_2 = ChapterActionButton("测试案例 2", actions)
         self.check_level_combo = AppComboBox(self)
         for text, value in CHECK_LEVELS:
             self.check_level_combo.addItem(text, value)
@@ -1378,7 +1378,7 @@ class BoltPage(QWidget):
         for key, text in CHECK_LABELS.items():
             name = QLabel(text, checks_card)
             status = QLabel("待计算", checks_card)
-            status.setObjectName("FailBadge")
+            status.setObjectName("WaitBadge")
             status.setAlignment(Qt.AlignmentFlag.AlignCenter)
             status.setMinimumWidth(64)
             status.setFixedHeight(24)
@@ -1929,6 +1929,18 @@ class BoltPage(QWidget):
         self._apply_defaults()
         self._last_payload = None
         self._last_result = None
+        self._reset_result_display()
+        self._apply_check_level_visibility()
+        self._suspend_live_feedback = previous
+        if not self._suspend_live_feedback:
+            self._refresh_all_field_errors()
+        self.info_label.setText("参数已重置为默认值。")
+        self._mark_results_dirty()
+
+    def _reset_result_display(self) -> None:
+        """Clear every result surface so a stale PASS cannot remain visible."""
+        if getattr(self, "result_title", None) is None:
+            return
         self.result_title.setText("尚未执行计算")
         self.result_summary.setText("填写参数并点击执行校核后，这里显示可读结论。")
         self.metrics_text.setText("尚无结果。")
@@ -1937,16 +1949,17 @@ class BoltPage(QWidget):
             self._set_badge(badge, "待计算", "wait")
         self.diagram_widget.set_forces(0.0, 0.0, 0.0)
         self.thread_triangle_widget.set_thread_forces(0.0, 0.0, 0.0)
-        self._apply_check_level_visibility()
-        self._suspend_live_feedback = previous
-        if not self._suspend_live_feedback:
-            self._refresh_all_field_errors()
-        self.info_label.setText("参数已重置为默认值。")
-        self._mark_results_dirty()
+        if hasattr(self, "flowchart_nav"):
+            self.flowchart_nav.reset()
+        for r_page in getattr(self, "_r_pages", []):
+            r_page.reset()
 
     def _mark_results_dirty(self) -> None:
-        """输入变更后禁用导出，防止报告与当前屏幕输入不一致。"""
+        """输入变更后禁用导出并清掉旧成功视觉，防止报告与当前屏幕输入不一致。"""
+        self._last_payload = None
+        self._last_result = None
         self.btn_save.setEnabled(False)
+        self._reset_result_display()
 
     def _mark_results_fresh(self) -> None:
         """计算和渲染完整成功后允许导出。"""
@@ -2272,9 +2285,17 @@ class BoltPage(QWidget):
             payload.setdefault("options", {})["check_level"] = self._current_check_level()
             result = calculate_vdi2230_core(payload)
         except InputError as exc:
+            self._last_payload = None
+            self._last_result = None
+            self._reset_result_display()
+            self._mark_results_dirty()
             QMessageBox.critical(self, "输入参数错误", str(exc))
             return
         except Exception as exc:  # pragma: no cover
+            self._last_payload = None
+            self._last_result = None
+            self._reset_result_display()
+            self._mark_results_dirty()
             QMessageBox.critical(self, "计算异常", str(exc))
             return
 
@@ -2287,6 +2308,7 @@ class BoltPage(QWidget):
         except Exception as exc:  # noqa: BLE001
             self._last_payload = None
             self._last_result = None
+            self._reset_result_display()
             self._mark_results_dirty()
             QMessageBox.critical(self, "渲染异常", f"结果展示失败：{exc}")
             self.info_label.setText(f"结果渲染失败：{exc}")

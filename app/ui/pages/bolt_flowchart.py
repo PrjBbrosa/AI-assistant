@@ -155,10 +155,10 @@ class FlowchartNavWidget(QWidget):
             self._nodes.append(node)
 
         # Verdict node at bottom
-        verdict_arrow = QLabel("↓", container)
-        verdict_arrow.setObjectName("FlowArrow")
-        verdict_arrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._layout.addWidget(verdict_arrow)
+        self._verdict_arrow = QLabel("↓", container)
+        self._verdict_arrow.setObjectName("FlowArrow")
+        self._verdict_arrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._layout.addWidget(self._verdict_arrow)
 
         self._verdict_node = QFrame(container)
         self._verdict_node.setObjectName("VerdictNode")
@@ -281,6 +281,29 @@ class FlowchartNavWidget(QWidget):
         self._nodes[r6_index].setVisible(visible)
         if r6_index in self._arrows_for_index:
             self._arrows_for_index[r6_index].setVisible(visible)
+
+    def reset(self) -> None:
+        """Clear success/fail paint so stale PASS cannot linger after dirty/error."""
+        for node in self._nodes:
+            if node.badge is not None:
+                node.badge.setText("—")
+                node.badge.setObjectName("WaitBadge")
+                node.badge.style().unpolish(node.badge)
+                node.badge.style().polish(node.badge)
+            node.summary_label.setText("—")
+        for arrow in self._arrows_for_index.values():
+            arrow.setText("↓")
+            arrow.setObjectName("FlowArrow")
+            arrow.style().unpolish(arrow)
+            arrow.style().polish(arrow)
+        self._verdict_arrow.setText("↓")
+        self._verdict_arrow.setObjectName("FlowArrow")
+        self._verdict_arrow.style().unpolish(self._verdict_arrow)
+        self._verdict_arrow.style().polish(self._verdict_arrow)
+        self._verdict_badge.setText("等待计算")
+        self._verdict_badge.setObjectName("WaitBadge")
+        self._verdict_badge.style().unpolish(self._verdict_badge)
+        self._verdict_badge.style().polish(self._verdict_badge)
 
 
 # 中间值字段的显示名称和单位映射
@@ -586,3 +609,14 @@ class RStepDetailPage(QFrame):
             self._result_badge.setObjectName("FailBadge")
             self._result_badge.setText("不通过")
         self._result_badge.style().polish(self._result_badge)
+
+    def reset(self) -> None:
+        """Clear R-step conclusion paint after stale/error."""
+        self._calc_text.setText("—")
+        badge = getattr(self, "_result_badge", None)
+        if badge is None:
+            return
+        badge.setText("等待计算")
+        badge.setObjectName("WaitBadge")
+        badge.style().unpolish(badge)
+        badge.style().polish(badge)

@@ -1055,7 +1055,11 @@ class HertzContactPage(BaseChapterPage):
             self._set_badge(badge, "待计算", "wait")
 
     def _mark_results_dirty(self) -> None:
+        self._last_payload = None
+        self._last_result = None
         self.btn_save.setEnabled(False)
+        if getattr(self, "result_title", None) is not None:
+            self._reset_result_display()
 
     def _mark_results_fresh(self) -> None:
         self.btn_save.setEnabled(True)

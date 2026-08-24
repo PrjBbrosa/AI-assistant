@@ -849,6 +849,7 @@ class SplineFitPage(BaseChapterPage):
         self._last_payload = None
         self._last_result = None
         self.btn_save.setEnabled(False)
+        self._reset_scenario_cards()
         self._recalc_timer.start()
 
     def _set_chapter_title(self, chapter_key: str, title: str) -> None:

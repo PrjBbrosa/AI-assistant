@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QApplication
 
 from app.ui.pages.bolt_page import BoltPage
 from app.ui.pages.bolt_tapped_axial_page import BoltTappedAxialPage
+from app.ui.pages.buffer_energy_page import BufferEnergyPage
 from app.ui.pages.hertz_contact_page import HertzContactPage
 from app.ui.pages.interference_fit_page import InterferenceFitPage
 from app.ui.pages.spline_fit_page import SplineFitPage
@@ -24,6 +25,23 @@ def _app() -> QApplication:
     global _QT_APP
     _QT_APP = QApplication.instance() or _QT_APP or QApplication([])
     return _QT_APP
+
+
+def _assert_overflow_export_disabled(page: object, *button_names: str) -> None:
+    page.show()  # type: ignore[union-attr]
+    page.resize(640, 400)  # type: ignore[union-attr]
+    _app().processEvents()
+    controller = getattr(page, "_action_overflow", None)
+    assert controller is not None
+    controller.relayout()
+    _app().processEvents()
+    for name in button_names:
+        button = getattr(page, name)
+        assert not button.isEnabled()
+        action = controller.action_for(button)
+        assert action is not None
+        controller.sync_button(button)
+        assert not action.isEnabled()
 
 
 def test_interference_render_failure_rolls_back_result_and_disables_export() -> None:
@@ -50,7 +68,7 @@ def test_interference_render_failure_rolls_back_result_and_disables_export() -> 
     assert critical.call_args.args[1] == "渲染异常"
     assert page._last_payload is None
     assert page._last_result is None
-    assert not page.btn_save.isEnabled()
+    _assert_overflow_export_disabled(page, "btn_save")
     assert "结果渲染失败" in page.info_label.text()
     assert page.result_title.text() == "尚未执行计算"
     assert page.metrics_text.text() == "尚无结果。"
@@ -78,7 +96,7 @@ def test_hertz_render_failure_rolls_back_result_and_disables_export() -> None:
     assert critical.call_args.args[1] == "渲染异常"
     assert page._last_payload is None
     assert page._last_result is None
-    assert not page.btn_save.isEnabled()
+    _assert_overflow_export_disabled(page, "btn_save")
     assert "结果渲染失败" in page.info_label.text()
     assert page.result_title.text() == "尚未执行计算"
     assert page.metrics_text.text() == "尚无结果。"
@@ -110,7 +128,7 @@ def test_worm_render_failure_rolls_back_result_and_disables_export() -> None:
     assert critical.call_args.args[1] == "渲染异常"
     assert page._last_payload is None
     assert page._last_result is None
-    assert not page.btn_save.isEnabled()
+    _assert_overflow_export_disabled(page, "btn_save")
     assert "结果渲染失败" in page.info_label.text()
     assert page.result_title.text() == "尚未执行计算"
     assert page.result_metrics.toPlainText() == "尚无结果。"
@@ -132,6 +150,7 @@ def test_spline_render_failure_rolls_back_result_without_escaping() -> None:
 
     assert page._last_payload is None
     assert page._last_result is None
+    _assert_overflow_export_disabled(page, "btn_save")
     assert "内部错误" in page.info_label.text()
     assert "broken spline render" in page.info_label.text()
 
@@ -156,8 +175,10 @@ def test_bolt_render_failure_rolls_back_result_and_disables_export() -> None:
     assert critical.call_args.args[1] == "渲染异常"
     assert page._last_payload is None
     assert page._last_result is None
-    assert not page.btn_save.isEnabled()
+    _assert_overflow_export_disabled(page, "btn_save")
     assert "结果渲染失败" in page.info_label.text()
+    assert page.result_title.text() == "尚未执行计算"
+    assert all(badge.text() == "待计算" for badge in page._check_badges.values())
 
 
 def test_bolt_tapped_axial_render_failure_rolls_back_result_and_disables_export() -> None:
@@ -190,5 +211,32 @@ def test_bolt_tapped_axial_render_failure_rolls_back_result_and_disables_export(
     assert "结果展示失败" in critical.call_args.args[2]
     assert page._last_payload is None
     assert page._last_result is None
-    assert not page.btn_export_text.isEnabled()
-    assert not page.btn_export_pdf.isEnabled()
+    _assert_overflow_export_disabled(page, "btn_export_text", "btn_export_pdf")
+
+
+def test_buffer_render_failure_rolls_back_result_and_disables_export() -> None:
+    app = _app()
+    page = BufferEnergyPage()
+    app.processEvents()
+    page._load_sample("buffer_energy_case_01.csv")
+    page._on_calculate()
+    assert page._last_result is not None
+    assert page.btn_save_report.isEnabled()
+
+    def fail_render(_result: dict) -> None:
+        raise RuntimeError("broken buffer render")
+
+    with patch.object(page, "_render_result", side_effect=fail_render), patch(
+        "app.ui.pages.buffer_energy_page.QMessageBox.warning",
+        return_value=None,
+    ) as warning:
+        page._on_calculate()
+
+    warning.assert_called_once()
+    assert page._last_payload is None
+    assert page._last_result is None
+    _assert_overflow_export_disabled(page, "btn_save_report")
+    assert page.overall_verdict_label.text() == "总体结论: 待计算"
+    assert all("待计算" in badge.text() for badge in page.check_badges.values())
+    assert page.response_widget.response_data()[1] is None
+    assert page.compare_table.rowCount() == 0

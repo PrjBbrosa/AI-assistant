@@ -59,6 +59,10 @@ def test_worm_clear_resets_badges_cards_and_curves() -> None:
     assert page.stress_curve._sigma_f_mpa == []
     assert page.geometry_overview._geom_state["d1_mm"] == 40.0
     assert page.geometry_overview._geom_state["d2_mm"] == 160.0
+    export_action = page._action_overflow.action_for(page.btn_save)
+    assert export_action is not None
+    assert not page.btn_save.isEnabled()
+    assert not export_action.isEnabled()
 
 
 def test_tapped_clear_resets_visible_result_panels() -> None:
@@ -80,6 +84,13 @@ def test_tapped_clear_resets_visible_result_panels() -> None:
         assert badge.text() == "待计算"
         assert badge.objectName() == "WaitBadge"
     assert not hasattr(page, "overall_badge")
+    text_action = page._action_overflow.action_for(page.btn_export_text)
+    pdf_action = page._action_overflow.action_for(page.btn_export_pdf)
+    assert text_action is not None and pdf_action is not None
+    assert not page.btn_export_text.isEnabled()
+    assert not page.btn_export_pdf.isEnabled()
+    assert not text_action.isEnabled()
+    assert not pdf_action.isEnabled()
 
 
 def test_tapped_apply_input_data_resets_visible_result_panels() -> None:
@@ -99,6 +110,13 @@ def test_tapped_apply_input_data_resets_visible_result_panels() -> None:
         assert badge.text() == "待计算"
         assert badge.objectName() == "WaitBadge"
     assert not hasattr(page, "overall_badge")
+    text_action = page._action_overflow.action_for(page.btn_export_text)
+    pdf_action = page._action_overflow.action_for(page.btn_export_pdf)
+    assert text_action is not None and pdf_action is not None
+    assert not page.btn_export_text.isEnabled()
+    assert not page.btn_export_pdf.isEnabled()
+    assert not text_action.isEnabled()
+    assert not pdf_action.isEnabled()
 
 
 def test_tapped_input_change_marks_footer_info_stale() -> None:
@@ -112,6 +130,15 @@ def test_tapped_input_change_marks_footer_info_stale() -> None:
     assert page.info_label.text() == "输入已变更，待重新计算"
     assert page._last_result is None
     assert page._last_payload is None
+    text_action = page._action_overflow.action_for(page.btn_export_text)
+    pdf_action = page._action_overflow.action_for(page.btn_export_pdf)
+    assert text_action is not None and pdf_action is not None
+    assert not page.btn_export_text.isEnabled()
+    assert not page.btn_export_pdf.isEnabled()
+    assert not text_action.isEnabled()
+    assert not pdf_action.isEnabled()
+    for badge in page._check_badges.values():
+        assert badge.objectName() != "PassBadge"
 
 
 def test_spline_input_error_resets_scenario_cards() -> None:
@@ -143,6 +170,10 @@ def test_spline_input_error_resets_scenario_cards() -> None:
     assert page.message_box is not None
     assert page.message_box.toPlainText() == ""
     assert "花键输入错误" in page.info_label.text()
+    export_action = page._action_overflow.action_for(page.btn_save)
+    assert export_action is not None
+    assert not page.btn_save.isEnabled()
+    assert not export_action.isEnabled()
 
 
 def test_spline_combined_mode_reset_shows_pending_for_scenario_b() -> None:

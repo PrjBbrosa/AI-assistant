@@ -771,6 +771,8 @@ class BoltTappedAxialPage(BaseChapterPage):
         self._last_result = None
         self.btn_export_text.setEnabled(False)
         self.btn_export_pdf.setEnabled(False)
+        if getattr(self, "result_title", None) is not None:
+            self._reset_result_panels()
 
     def _reset_result_panels(self) -> None:
         self.result_title.setText("尚未执行计算")
