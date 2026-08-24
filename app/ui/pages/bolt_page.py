@@ -11,7 +11,6 @@ from typing import Any, Callable
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import (
     QComboBox,
-    QDialog,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -44,6 +43,7 @@ from app.ui.input_condition_store import (
 from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.clamping_diagram import ClampingDiagramWidget, ThreadForceTriangleWidget
 from app.ui.widgets.help_button import HelpButton
+from app.ui.widgets.beginner_guide_dialog import BeginnerGuideDialog
 from app.ui.model_scope import BOLT_SCOPE, make_scope_banner, scope_report_lines
 from app.ui.report_export import ReportExportError, write_text_report
 from app.ui.report_trace import build_report_trace, trace_report_lines
@@ -741,75 +741,14 @@ class BoltPage(QWidget):
     # ------------------------------------------------------------------
     def _show_logic_guide(self) -> None:
         """弹出校核逻辑链路指南，帮助新手理解输入→计算→校核的完整思路。"""
-        dlg = QDialog(self)
-        dlg.setWindowTitle("VDI 2230 螺栓校核指南")
-        dlg.resize(720, 780)
-
-        root = QVBoxLayout(dlg)
-        root.setContentsMargins(0, 0, 0, 0)
-
-        scroll = QScrollArea(dlg)
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-
-        container = QWidget(scroll)
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(24, 20, 24, 20)
-        layout.setSpacing(16)
-
-        # ---------- 标题 ----------
-        title = QLabel(bolt_help.LOGIC_GUIDE_TITLE, container)
-        title.setObjectName("SectionTitle")
-        title.setStyleSheet("font-size: 18px;")
-        layout.addWidget(title)
-
-        intro = QLabel(bolt_help.LOGIC_GUIDE_INTRO, container)
-        intro.setObjectName("SectionHint")
-        intro.setWordWrap(True)
-        layout.addWidget(intro)
-
-        # ---------- 辅助函数 ----------
-        def _section(title_text: str, body_text: str) -> QFrame:
-            card = QFrame(container)
-            card.setObjectName("SubCard")
-            card_layout = QVBoxLayout(card)
-            card_layout.setContentsMargins(14, 12, 14, 12)
-            card_layout.setSpacing(6)
-            t = QLabel(title_text, card)
-            t.setObjectName("SubSectionTitle")
-            t.setStyleSheet("font-size: 14px;")
-            b = QLabel(body_text, card)
-            b.setObjectName("SectionHint")
-            b.setWordWrap(True)
-            card_layout.addWidget(t)
-            card_layout.addWidget(b)
-            return card
-
-        def _flow_arrow() -> QLabel:
-            arrow = QLabel("  ▼", container)
-            arrow.setStyleSheet("color: #D97757; font-size: 18px; font-weight: bold;")
-            return arrow
-
-        for index, (section_title, section_body) in enumerate(bolt_help.LOGIC_GUIDE_SECTIONS):
-            if index > 0 and index < len(bolt_help.LOGIC_GUIDE_SECTIONS) - 1:
-                layout.addWidget(_flow_arrow())
-            layout.addWidget(_section(section_title, section_body))
-
-        layout.addStretch(1)
-        scroll.setWidget(container)
-        root.addWidget(scroll)
-
-        close_btn = QPushButton("我明白了", dlg)
-        close_btn.setObjectName("PrimaryButton")
-        close_btn.clicked.connect(dlg.accept)
-        btn_layout = QHBoxLayout()
-        btn_layout.setContentsMargins(24, 8, 24, 16)
-        btn_layout.addStretch(1)
-        btn_layout.addWidget(close_btn)
-        btn_layout.addStretch(1)
-        root.addLayout(btn_layout)
-
-        dlg.exec()
+        dialog = BeginnerGuideDialog(
+            window_title="VDI 2230 螺栓校核指南",
+            guide_title=bolt_help.LOGIC_GUIDE_TITLE,
+            intro=bolt_help.LOGIC_GUIDE_INTRO,
+            sections=bolt_help.LOGIC_GUIDE_SECTIONS,
+            parent=self,
+        )
+        dialog.exec()
 
     def _create_editor(self, spec: FieldSchema, parent: QWidget) -> QWidget:
         if spec.widget_type == "choice":

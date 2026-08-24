@@ -52,6 +52,7 @@ def test_infer_category_from_ref_prefixes():
         "terms/unknown_topic": "通用 · 术语",
         "modules/bolt_vdi/chapter1": "螺栓 · 章节",
         "modules/bolt_tapped_axial/chapter1": "螺纹连接 · 章节",
+        "modules/buffer/chapter1": "缓冲块 · 章节",
         "modules/hertz/chapter1": "赫兹 · 章节",
         "modules/interference/chapter1": "过盈 · 章节",
         "modules/spline/chapter1": "花键 · 章节",

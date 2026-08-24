@@ -27,6 +27,7 @@ def _default_root() -> Path:
 _MODULE_CATEGORY: Dict[str, str] = {
     "bolt_vdi": "螺栓 · 章节",
     "bolt_tapped_axial": "螺纹连接 · 章节",
+    "buffer": "缓冲块 · 章节",
     "hertz": "赫兹 · 章节",
     "interference": "过盈 · 章节",
     "spline": "花键 · 章节",

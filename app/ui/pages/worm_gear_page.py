@@ -111,7 +111,7 @@ BASIC_SETTINGS_FIELDS = [
         "load_capacity.method",
         "校核方法",
         "-",
-        "当前版本各方法计算逻辑相同，仅作标记用途。",
+        "Method B 使用当前解析预校核；Method A 叠加经验修正；Method C 需要 FEA 输入，当前版本会拒绝计算。",
         widget_type="choice",
         options=LOAD_CAPACITY_OPTIONS,
         default="DIN 3996 Method B -- 标准解析计算（推荐）",
@@ -385,6 +385,7 @@ class WormGearPage(BaseChapterPage):
         self.btn_calculate = self.add_action_button("执行校核", primary=True)
         self.btn_clear = self.add_action_button("清空参数")
         self.btn_save = self.add_action_button("导出结果说明")
+        self.btn_help_guide = self.add_guide_button("modules/worm/beginner_guide")
         self.btn_load_1 = self.add_action_button("测试案例 1", side="right")
         self.btn_load_2 = self.add_action_button("测试案例 2", side="right")
         # Step 3: dirty-state status label (reuses the base info area but also

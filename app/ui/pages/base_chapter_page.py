@@ -118,6 +118,24 @@ class BaseChapterPage(QWidget):
             self.left_actions_layout.addWidget(button)
         return button
 
+    def add_guide_button(
+        self,
+        help_ref: str,
+        button_text: str = "校核指南",
+    ) -> QPushButton:
+        """Add a VDI-style modal walkthrough entry to the right action group."""
+        button = self.add_action_button(button_text, side="right")
+        button.setProperty("helpRef", help_ref)
+
+        def _show_guide() -> None:
+            from app.ui.widgets.beginner_guide_dialog import BeginnerGuideDialog
+
+            dialog = BeginnerGuideDialog.from_help_ref(help_ref, parent=self)
+            dialog.exec()
+
+        button.clicked.connect(_show_guide)
+        return button
+
     def add_action_stretch(self) -> None:
         # Retained for backwards compatibility with pages created before
         # the shared action bar was split into fixed left/right groups.

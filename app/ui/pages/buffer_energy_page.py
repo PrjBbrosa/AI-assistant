@@ -178,6 +178,10 @@ class BufferEnergyPage(BaseChapterPage):
         self.btn_calculate = self.add_action_button("执行仿真", primary=True)
         self.btn_clear = self.add_action_button("清空参数")
         self.btn_save_report = self.add_action_button("导出结果说明")
+        self.btn_help_guide = self.add_guide_button(
+            "modules/buffer/beginner_guide",
+            button_text="仿真指南",
+        )
         self.btn_load_1 = self.add_action_button("测试案例 1", side="right")
         self.btn_load_2 = self.add_action_button("测试案例 2", side="right")
         self.btn_save_report.setEnabled(False)

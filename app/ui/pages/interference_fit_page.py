@@ -934,6 +934,9 @@ class InterferenceFitPage(BaseChapterPage):
         self.btn_calculate = self.add_action_button("执行校核", primary=True)
         self.btn_clear = self.add_action_button("清空参数")
         self.btn_save = self.add_action_button("导出结果说明")
+        self.btn_help_guide = self.add_guide_button(
+            "modules/interference/beginner_guide"
+        )
         self.btn_load_1 = self.add_action_button("测试案例 1", side="right")
         self.btn_load_2 = self.add_action_button("测试案例 2", side="right")
 
