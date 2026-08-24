@@ -1,0 +1,961 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>Engineering Assistant · 悬浮毛玻璃主题提案</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #dfe3e5;
+      --canvas: #eff0ef;
+      --glass: rgba(252, 252, 250, 0.68);
+      --glass-strong: rgba(253, 252, 249, 0.88);
+      --glass-soft: rgba(249, 249, 247, 0.50);
+      --field: rgba(255, 255, 253, 0.76);
+      --ink: #282624;
+      --muted: #716d68;
+      --quiet: #96908a;
+      --line: rgba(255, 255, 255, 0.86);
+      --line-deep: rgba(91, 82, 74, 0.16);
+      --accent: #c76c4d;
+      --accent-deep: #a95338;
+      --accent-soft: #f2d8cf;
+      --accent-ink: #733c2b;
+      --secondary: #71868a;
+      --secondary-soft: #dce7e8;
+      --success: #2f7661;
+      --success-soft: #d8ebe4;
+      --warning: #b9783d;
+      --shadow: rgba(70, 63, 57, 0.16);
+      --shadow-soft: rgba(70, 63, 57, 0.08);
+      --glow-a: rgba(213, 125, 91, 0.18);
+      --glow-b: rgba(113, 139, 146, 0.18);
+      --chart-grid: rgba(79, 74, 69, 0.10);
+      --chart-fill: rgba(199, 108, 77, 0.14);
+      --radius-xl: 26px;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --ease: 230ms cubic-bezier(.2, .75, .3, 1);
+    }
+
+    body[data-theme="violet"] {
+      --page: #dedfe8;
+      --canvas: #edecf2;
+      --glass: rgba(249, 248, 253, 0.68);
+      --glass-strong: rgba(251, 250, 254, 0.89);
+      --glass-soft: rgba(247, 246, 251, 0.52);
+      --field: rgba(253, 252, 255, 0.76);
+      --ink: #292936;
+      --muted: #6c6b7d;
+      --quiet: #9593a3;
+      --line: rgba(255, 255, 255, 0.84);
+      --line-deep: rgba(71, 68, 97, 0.15);
+      --accent: #756fa7;
+      --accent-deep: #5d578e;
+      --accent-soft: #dfdcf2;
+      --accent-ink: #49446f;
+      --secondary: #bd705b;
+      --secondary-soft: #f1dcd6;
+      --success: #477568;
+      --success-soft: #dceae5;
+      --warning: #b2764c;
+      --shadow: rgba(59, 57, 82, 0.17);
+      --shadow-soft: rgba(59, 57, 82, 0.08);
+      --glow-a: rgba(117, 111, 167, 0.22);
+      --glow-b: rgba(199, 116, 91, 0.15);
+      --chart-grid: rgba(72, 68, 97, 0.10);
+      --chart-fill: rgba(117, 111, 167, 0.14);
+    }
+
+    body[data-theme="jade"] {
+      --page: #dce5e1;
+      --canvas: #eaf0ed;
+      --glass: rgba(248, 252, 249, 0.68);
+      --glass-strong: rgba(250, 253, 250, 0.90);
+      --glass-soft: rgba(244, 250, 247, 0.52);
+      --field: rgba(252, 255, 253, 0.78);
+      --ink: #21302d;
+      --muted: #63736f;
+      --quiet: #8d9a96;
+      --line: rgba(255, 255, 255, 0.86);
+      --line-deep: rgba(49, 87, 78, 0.15);
+      --accent: #377b72;
+      --accent-deep: #28645c;
+      --accent-soft: #d3e8e2;
+      --accent-ink: #22544e;
+      --secondary: #b87754;
+      --secondary-soft: #f1ddd2;
+      --success: #377b5d;
+      --success-soft: #d8ebdf;
+      --warning: #b7793f;
+      --shadow: rgba(42, 73, 65, 0.16);
+      --shadow-soft: rgba(42, 73, 65, 0.08);
+      --glow-a: rgba(55, 123, 114, 0.19);
+      --glow-b: rgba(184, 119, 84, 0.15);
+      --chart-grid: rgba(42, 79, 70, 0.10);
+      --chart-fill: rgba(55, 123, 114, 0.14);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      min-width: 1080px;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 17% 3%, var(--glow-a), transparent 28rem),
+        radial-gradient(circle at 92% 16%, var(--glow-b), transparent 30rem),
+        var(--page);
+      font-family: "SF Pro Text", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      font-size: 13px;
+      transition: background var(--ease), color var(--ease);
+    }
+
+    button, input, select { font: inherit; }
+    button { color: inherit; }
+
+    .review-page {
+      width: min(1536px, calc(100vw - 32px));
+      margin: 0 auto;
+      padding: 28px 0 48px;
+    }
+
+    .review-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      gap: 28px;
+      margin: 0 4px 18px;
+    }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 9px;
+      color: var(--accent-deep);
+      font-size: 11px;
+      font-weight: 760;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 22px;
+      height: 1px;
+      background: var(--accent);
+    }
+
+    h1 {
+      margin: 0;
+      font-family: "SF Pro Display", "PingFang SC", system-ui, sans-serif;
+      font-size: clamp(28px, 3vw, 43px);
+      line-height: 1.06;
+      letter-spacing: -.045em;
+      font-weight: 650;
+    }
+
+    .review-lead {
+      max-width: 760px;
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .theme-switcher {
+      display: flex;
+      gap: 5px;
+      padding: 5px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--glass);
+      box-shadow: 0 10px 30px var(--shadow-soft), inset 0 1px 0 rgba(255,255,255,.56);
+      backdrop-filter: blur(22px) saturate(112%);
+    }
+
+    .theme-button {
+      min-width: 112px;
+      min-height: 42px;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      padding: 7px 12px;
+      background: transparent;
+      cursor: pointer;
+      transition: transform var(--ease), background var(--ease), border-color var(--ease);
+      text-align: left;
+    }
+
+    .theme-button strong,
+    .theme-button small { display: block; }
+
+    .theme-button strong { font-size: 12px; }
+    .theme-button small { margin-top: 2px; color: var(--muted); font-size: 10px; }
+    .theme-button:hover { transform: translateY(-1px); }
+    .theme-button.active {
+      background: var(--glass-strong);
+      border-color: var(--line-deep);
+      box-shadow: 0 6px 14px var(--shadow-soft);
+    }
+
+    .window {
+      position: relative;
+      height: 810px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,.76);
+      border-radius: 30px;
+      background:
+        linear-gradient(142deg, rgba(255,255,255,.20), transparent 40%),
+        var(--canvas);
+      box-shadow:
+        0 32px 80px var(--shadow),
+        0 4px 16px var(--shadow-soft),
+        inset 0 1px 0 rgba(255,255,255,.90);
+      isolation: isolate;
+      transition: background var(--ease), box-shadow var(--ease);
+    }
+
+    .stress-field {
+      position: absolute;
+      z-index: -1;
+      border-radius: 50%;
+      pointer-events: none;
+      filter: blur(.1px);
+      opacity: .82;
+    }
+
+    .stress-field.one {
+      right: -140px;
+      top: -190px;
+      width: 680px;
+      height: 680px;
+      background:
+        repeating-radial-gradient(circle, transparent 0 35px, rgba(255,255,255,.30) 36px 37px),
+        radial-gradient(circle, var(--glow-a), transparent 66%);
+    }
+
+    .stress-field.two {
+      left: 12%;
+      bottom: -330px;
+      width: 680px;
+      height: 680px;
+      background: radial-gradient(circle, var(--glow-b), transparent 66%);
+      filter: blur(14px);
+    }
+
+    .app-grid {
+      display: grid;
+      grid-template-columns: 226px minmax(0, 1fr);
+      gap: 13px;
+      height: 100%;
+      padding: 13px;
+    }
+
+    .glass {
+      border: 1px solid var(--line);
+      background: var(--glass);
+      box-shadow:
+        0 16px 32px var(--shadow-soft),
+        inset 0 1px 0 rgba(255,255,255,.72);
+      backdrop-filter: blur(25px) saturate(112%);
+    }
+
+    .sidebar {
+      display: flex;
+      min-height: 0;
+      flex-direction: column;
+      padding: 19px 13px 14px;
+      border-radius: 22px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 7px 17px;
+    }
+
+    .brand-mark {
+      position: relative;
+      display: grid;
+      width: 35px;
+      height: 35px;
+      flex: 0 0 auto;
+      place-items: center;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      color: #fff;
+      background: var(--accent);
+      box-shadow: 0 8px 16px color-mix(in srgb, var(--accent) 24%, transparent);
+    }
+
+    .brand-mark svg { width: 22px; height: 22px; }
+    .brand-copy strong { display: block; font-size: 14px; letter-spacing: -.015em; }
+    .brand-copy span { display: block; margin-top: 2px; color: var(--muted); font-size: 9px; letter-spacing: .06em; }
+
+    .nav-label,
+    .micro-label {
+      color: var(--quiet);
+      font-size: 9px;
+      font-weight: 760;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+
+    .nav-label { padding: 0 9px 7px; }
+    .module-nav { display: grid; gap: 3px; }
+
+    .module-item {
+      display: grid;
+      grid-template-columns: 23px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 7px;
+      min-height: 39px;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      padding: 6px 8px;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      transition: all var(--ease);
+      text-align: left;
+    }
+
+    .module-item:hover { color: var(--ink); background: var(--glass-soft); }
+    .module-item.active {
+      color: var(--accent-ink);
+      border-color: color-mix(in srgb, var(--accent) 24%, transparent);
+      background: var(--accent-soft);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.48);
+      font-weight: 650;
+    }
+
+    .module-index {
+      display: grid;
+      width: 22px;
+      height: 22px;
+      place-items: center;
+      border-radius: 8px;
+      color: var(--quiet);
+      background: rgba(255,255,255,.33);
+      font-family: "SF Mono", Menlo, monospace;
+      font-size: 9px;
+    }
+
+    .module-item.active .module-index { color: #fff; background: var(--accent); }
+    .module-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+    .module-state { width: 5px; height: 5px; border-radius: 50%; background: var(--success); opacity: .65; }
+
+    .sidebar-foot {
+      position: relative;
+      overflow: hidden;
+      margin-top: auto;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      background: rgba(255,255,255,.28);
+    }
+
+    .sidebar-foot::after {
+      content: "";
+      position: absolute;
+      right: -28px;
+      bottom: -34px;
+      width: 88px;
+      height: 88px;
+      border: 14px solid var(--accent-soft);
+      border-radius: 50%;
+    }
+
+    .sidebar-foot strong { display: block; font-size: 11px; }
+    .sidebar-foot span { display: block; width: 132px; margin-top: 4px; color: var(--muted); font-size: 9px; line-height: 1.5; }
+
+    .workspace {
+      display: grid;
+      grid-template-rows: 42px auto 1fr 35px;
+      gap: 9px;
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 7px 0 10px;
+    }
+
+    .window-dots { display: flex; gap: 6px; }
+    .window-dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-deep); }
+
+    .breadcrumb { margin-left: 16px; color: var(--muted); font-size: 10px; }
+    .breadcrumb b { color: var(--ink); font-weight: 650; }
+    .topbar-left { display: flex; align-items: center; }
+
+    .sync-state {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 99px;
+      color: var(--muted);
+      background: var(--glass-soft);
+      font-size: 9px;
+    }
+
+    .sync-state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px var(--success-soft); }
+
+    .module-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 18px;
+      padding: 15px 17px;
+      border-radius: 19px;
+    }
+
+    .module-head h2 { margin: 2px 0 0; font-size: 19px; line-height: 1.2; letter-spacing: -.025em; font-weight: 680; }
+    .module-head p { margin: 5px 0 0; color: var(--muted); font-size: 10px; }
+    .head-actions { display: flex; gap: 7px; }
+
+    .btn {
+      min-height: 31px;
+      border: 1px solid var(--line-deep);
+      border-radius: 10px;
+      padding: 6px 11px;
+      background: var(--glass-strong);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.74);
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 620;
+      transition: transform var(--ease), box-shadow var(--ease), background var(--ease);
+    }
+
+    .btn:hover { transform: translateY(-1px); box-shadow: 0 7px 15px var(--shadow-soft), inset 0 1px 0 white; }
+    .btn:active { transform: translateY(0); }
+    .btn.primary { border-color: transparent; color: #fff; background: var(--accent); box-shadow: 0 8px 18px color-mix(in srgb, var(--accent) 26%, transparent); }
+    .btn.primary:hover { background: var(--accent-deep); }
+
+    .content-grid {
+      display: grid;
+      grid-template-columns: 232px minmax(0, 1fr);
+      gap: 9px;
+      min-height: 0;
+    }
+
+    .chapter-card {
+      display: flex;
+      min-height: 0;
+      flex-direction: column;
+      padding: 14px 11px;
+      border-radius: 19px;
+    }
+
+    .chapter-head { display: flex; align-items: center; justify-content: space-between; padding: 0 5px 10px; }
+    .chapter-head strong { font-size: 12px; }
+    .step-count { color: var(--quiet); font-family: "SF Mono", Menlo, monospace; font-size: 9px; }
+    .chapter-list { display: grid; gap: 3px; }
+
+    .chapter-step {
+      position: relative;
+      display: grid;
+      grid-template-columns: 20px minmax(0, 1fr);
+      align-items: center;
+      gap: 6px;
+      min-height: 34px;
+      border: 1px solid transparent;
+      border-radius: 11px;
+      padding: 5px 7px;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      text-align: left;
+      font-size: 10px;
+    }
+
+    .chapter-step::after {
+      content: "";
+      position: absolute;
+      left: 17px;
+      top: 28px;
+      width: 1px;
+      height: 10px;
+      background: var(--line-deep);
+    }
+
+    .chapter-step:last-child::after { display: none; }
+    .chapter-step:hover { color: var(--ink); background: var(--glass-soft); }
+    .chapter-step.active { color: var(--accent-ink); border-color: var(--line); background: var(--accent-soft); font-weight: 650; }
+
+    .step-dot {
+      display: grid;
+      width: 19px;
+      height: 19px;
+      place-items: center;
+      border: 1px solid var(--line-deep);
+      border-radius: 7px;
+      background: var(--glass-strong);
+      font-family: "SF Mono", Menlo, monospace;
+      font-size: 8px;
+    }
+
+    .chapter-step.active .step-dot { border-color: var(--accent); color: #fff; background: var(--accent); }
+
+    .chapter-progress {
+      margin-top: auto;
+      padding: 12px 7px 1px;
+    }
+
+    .progress-row { display: flex; justify-content: space-between; color: var(--muted); font-size: 9px; }
+    .progress-track { height: 4px; margin-top: 7px; overflow: hidden; border-radius: 99px; background: var(--line-deep); }
+    .progress-track i { display: block; width: 22%; height: 100%; border-radius: inherit; background: var(--accent); transition: width var(--ease); }
+
+    .work-card {
+      min-width: 0;
+      min-height: 0;
+      padding: 15px;
+      border-radius: 19px;
+      overflow: auto;
+    }
+
+    .work-title {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .work-title h3 { margin: 0; font-size: 14px; font-weight: 670; }
+    .work-title p { margin: 4px 0 0; color: var(--muted); font-size: 9px; }
+
+    .mode-pill {
+      padding: 5px 8px;
+      border: 1px solid var(--line-deep);
+      border-radius: 99px;
+      color: var(--accent-ink);
+      background: var(--accent-soft);
+      font-size: 8px;
+      font-weight: 700;
+    }
+
+    .work-columns { display: grid; grid-template-columns: minmax(310px, .96fr) minmax(335px, 1.04fr); gap: 10px; }
+
+    .sub-panel {
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      background: rgba(255,255,255,.28);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.50);
+    }
+
+    .panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 11px; }
+    .panel-head strong { font-size: 11px; }
+    .panel-hint { color: var(--quiet); font-size: 8px; }
+
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .field { min-width: 0; }
+    .field label { display: flex; justify-content: space-between; margin: 0 2px 5px; color: var(--muted); font-size: 9px; }
+    .field label span { color: var(--quiet); font-family: "SF Mono", Menlo, monospace; }
+
+    .field-control {
+      display: flex;
+      align-items: center;
+      min-height: 35px;
+      overflow: hidden;
+      border: 1px solid var(--line-deep);
+      border-radius: 10px;
+      background: var(--field);
+      box-shadow: inset 0 1px 1px rgba(80,72,64,.04), 0 1px 0 rgba(255,255,255,.72);
+      transition: border-color var(--ease), box-shadow var(--ease);
+    }
+
+    .field-control:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent); }
+    .field-control input,
+    .field-control select { width: 100%; min-width: 0; border: 0; outline: 0; padding: 7px 9px; color: var(--ink); background: transparent; font-size: 10px; }
+    .field-control b { padding: 0 9px 0 2px; color: var(--quiet); font-family: "SF Mono", Menlo, monospace; font-size: 8px; font-weight: 500; }
+
+    .auto-strip {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-top: 10px;
+      padding: 9px 10px;
+      border: 1px solid color-mix(in srgb, var(--secondary) 20%, transparent);
+      border-radius: 11px;
+      color: var(--muted);
+      background: var(--secondary-soft);
+      font-size: 8px;
+      line-height: 1.5;
+    }
+
+    .auto-icon { display: grid; width: 21px; height: 21px; flex: 0 0 auto; place-items: center; border-radius: 8px; color: #fff; background: var(--secondary); font-size: 10px; }
+
+    .result-panel { display: grid; grid-template-rows: auto 1fr; gap: 10px; }
+    .result-summary { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 7px; }
+
+    .metric {
+      min-height: 66px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: rgba(255,255,255,.30);
+    }
+
+    .metric.primary-metric { background: var(--success-soft); border-color: color-mix(in srgb, var(--success) 19%, transparent); }
+    .metric span { display: block; color: var(--muted); font-size: 8px; }
+    .metric strong { display: block; margin-top: 7px; font-family: "SF Mono", Menlo, monospace; font-size: 16px; line-height: 1; letter-spacing: -.04em; }
+    .metric strong small { margin-left: 3px; color: var(--quiet); font-size: 8px; letter-spacing: 0; }
+    .metric.primary-metric strong { color: var(--success); }
+
+    .chart-box {
+      position: relative;
+      min-height: 181px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background:
+        linear-gradient(var(--chart-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--chart-grid) 1px, transparent 1px),
+        rgba(255,255,255,.22);
+      background-size: 100% 36px, 52px 100%, auto;
+    }
+
+    .chart-label { position: absolute; top: 9px; left: 11px; z-index: 2; }
+    .chart-label strong { display: block; font-size: 9px; }
+    .chart-label span { display: block; margin-top: 2px; color: var(--quiet); font-size: 7px; }
+    .chart-box svg { position: absolute; inset: 27px 8px 4px; width: calc(100% - 16px); height: calc(100% - 31px); overflow: visible; }
+    .area-path { fill: var(--chart-fill); transition: fill var(--ease); }
+    .line-path { fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 520; stroke-dashoffset: 0; filter: drop-shadow(0 4px 5px color-mix(in srgb, var(--accent) 20%, transparent)); transition: stroke var(--ease); }
+    .target-line { fill: none; stroke: var(--secondary); stroke-width: 1.1; stroke-dasharray: 5 5; opacity: .7; }
+    .point { fill: var(--glass-strong); stroke: var(--accent); stroke-width: 2; }
+
+    .chart-box.replay .line-path { animation: draw 850ms ease both; }
+    @keyframes draw { from { stroke-dashoffset: 520; } to { stroke-dashoffset: 0; } }
+
+    .statusbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 13px;
+      border-radius: 13px;
+      color: var(--muted);
+      font-size: 8px;
+    }
+
+    .status-left { display: flex; align-items: center; gap: 7px; }
+    .status-left i { width: 5px; height: 5px; border-radius: 50%; background: var(--success); }
+    .statusbar code { color: var(--quiet); font-family: "SF Mono", Menlo, monospace; }
+
+    .theme-notes {
+      display: grid;
+      grid-template-columns: 1fr 1.25fr .9fr;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .note-card {
+      min-height: 126px;
+      padding: 17px;
+      border: 1px solid var(--line);
+      border-radius: 19px;
+      background: var(--glass);
+      box-shadow: 0 12px 30px var(--shadow-soft), inset 0 1px 0 rgba(255,255,255,.64);
+      backdrop-filter: blur(20px);
+    }
+
+    .note-card h3 { margin: 7px 0 5px; font-size: 13px; }
+    .note-card p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+    .palette { display: flex; gap: 7px; margin-top: 13px; }
+    .swatch { width: 35px; height: 24px; border: 1px solid rgba(255,255,255,.82); border-radius: 8px; box-shadow: 0 3px 8px var(--shadow-soft); }
+    .swatch:nth-child(1) { background: var(--canvas); }
+    .swatch:nth-child(2) { background: var(--glass-strong); }
+    .swatch:nth-child(3) { background: var(--accent); }
+    .swatch:nth-child(4) { background: var(--secondary); }
+    .swatch:nth-child(5) { background: var(--ink); }
+
+    .qt-map { display: grid; grid-template-columns: auto 1fr; gap: 7px 11px; margin-top: 10px; font-size: 9px; }
+    .qt-map dt { color: var(--accent-deep); font-family: "SF Mono", Menlo, monospace; }
+    .qt-map dd { margin: 0; color: var(--muted); }
+
+    .fit-score { display: flex; align-items: flex-end; gap: 7px; margin-top: 13px; }
+    .fit-score strong { font-family: "SF Mono", Menlo, monospace; font-size: 27px; line-height: .9; letter-spacing: -.06em; }
+    .fit-score span { color: var(--muted); font-size: 9px; }
+
+    .shortcut { display: inline-grid; min-width: 18px; height: 18px; margin-left: 4px; place-items: center; border: 1px solid var(--line-deep); border-radius: 5px; background: var(--glass-strong); font-family: "SF Mono", Menlo, monospace; font-size: 8px; }
+
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    @media (max-width: 1240px) {
+      .review-head { grid-template-columns: 1fr; }
+      .theme-switcher { width: max-content; }
+      .window { height: 770px; }
+      .app-grid { grid-template-columns: 205px minmax(0, 1fr); }
+      .content-grid { grid-template-columns: 210px minmax(0, 1fr); }
+      .work-columns { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body data-theme="cloud">
+  <main class="review-page">
+    <header class="review-head">
+      <div>
+        <div class="eyebrow">Engineering Assistant · Visual study</div>
+        <h1>把计算桌面，放进一层空气里。</h1>
+        <p class="review-lead">保留当前软件结构，用低饱和色、悬浮层级与“应力云谱”背景建立轻盈感。三套方案都按 PySide6 的真实能力收敛，可用 QSS + QPainter + 阴影效果实现。</p>
+      </div>
+      <nav class="theme-switcher" aria-label="主题方案">
+        <button class="theme-button active" data-set-theme="cloud" aria-pressed="true">
+          <strong>A · 云瓷</strong><small>暖灰 / 珊瑚</small>
+        </button>
+        <button class="theme-button" data-set-theme="violet" aria-pressed="false">
+          <strong>B · 暮紫</strong><small>雾紫 / 赤陶</small>
+        </button>
+        <button class="theme-button" data-set-theme="jade" aria-pressed="false">
+          <strong>C · 霁青</strong><small>灰青 / 铜砂</small>
+        </button>
+      </nav>
+    </header>
+
+    <section class="window" aria-label="软件主题效果预览">
+      <div class="stress-field one"></div>
+      <div class="stress-field two"></div>
+      <div class="app-grid">
+        <aside class="sidebar glass">
+          <div class="brand">
+            <div class="brand-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M5.2 8.1 9 5.9l4.3 1 3.4 3.5-.8 4.6-4 2.7-4.4-1.1-2.6-3.8.3-4.7Z" stroke="currentColor" stroke-width="1.3"/>
+                <circle cx="10.8" cy="11.8" r="2.5" stroke="currentColor" stroke-width="1.3"/>
+                <path d="m14.8 5.4.8-2m3.2 5.4 1.8-1.2m-2 5.8 2.2.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="brand-copy">
+              <strong>Engineering Assistant</strong>
+              <span>MECHANICAL WORKBENCH</span>
+            </div>
+          </div>
+
+          <div class="nav-label">设计模块</div>
+          <nav class="module-nav" aria-label="设计模块">
+            <button class="module-item active"><span class="module-index">01</span><span class="module-name">螺栓连接</span><i class="module-state"></i></button>
+            <button class="module-item"><span class="module-index">02</span><span class="module-name">轴向受力螺纹连接</span><i class="module-state"></i></button>
+            <button class="module-item"><span class="module-index">03</span><span class="module-name">过盈配合</span><i class="module-state"></i></button>
+            <button class="module-item"><span class="module-index">04</span><span class="module-name">花键连接校核</span><i class="module-state"></i></button>
+            <button class="module-item"><span class="module-index">05</span><span class="module-name">蜗轮蜗杆设计</span><i class="module-state"></i></button>
+            <button class="module-item"><span class="module-index">06</span><span class="module-name">赫兹应力</span><i class="module-state"></i></button>
+            <button class="module-item"><span class="module-index">07</span><span class="module-name">缓冲块吸能仿真</span><i class="module-state"></i></button>
+          </nav>
+
+          <div class="sidebar-foot">
+            <div class="micro-label">Workspace</div>
+            <strong>本地工程计算</strong>
+            <span>计算、校核与报告均保留在本机。</span>
+          </div>
+        </aside>
+
+        <section class="workspace">
+          <div class="topbar">
+            <div class="topbar-left">
+              <div class="window-dots"><i></i><i></i><i></i></div>
+              <div class="breadcrumb">项目 / <b>连接设计</b> / CASE-024</div>
+            </div>
+            <div class="sync-state">本地数据已就绪</div>
+          </div>
+
+          <header class="module-head glass">
+            <div>
+              <div class="micro-label">VDI 2230 · SYSTEMATIC CALCULATION</div>
+              <h2>螺栓连接校核</h2>
+              <p>预紧螺栓连接的预紧力、工作载荷、疲劳与滑移校核</p>
+            </div>
+            <div class="head-actions">
+              <button class="btn">保存输入条件</button>
+              <button class="btn">加载输入条件</button>
+              <button class="btn primary" id="calculateButton">执行校核</button>
+              <button class="btn">校核指南</button>
+            </div>
+          </header>
+
+          <div class="content-grid">
+            <aside class="chapter-card glass">
+              <div class="chapter-head"><strong>计算顺序</strong><span class="step-count">02 / 09</span></div>
+              <div class="chapter-list">
+                <button class="chapter-step"><span class="step-dot">01</span><span>校核层级设置</span></button>
+                <button class="chapter-step active"><span class="step-dot">02</span><span>连接件参数</span></button>
+                <button class="chapter-step"><span class="step-dot">03</span><span>被夹紧件和实体</span></button>
+                <button class="chapter-step"><span class="step-dot">04</span><span>装配属性</span></button>
+                <button class="chapter-step"><span class="step-dot">05</span><span>工况数据</span></button>
+                <button class="chapter-step"><span class="step-dot">06</span><span>载荷导入</span></button>
+                <button class="chapter-step"><span class="step-dot">07</span><span>螺纹脱扣校核</span></button>
+                <button class="chapter-step"><span class="step-dot">08</span><span>连接示意图</span></button>
+                <button class="chapter-step"><span class="step-dot">09</span><span>校核结果与消息</span></button>
+              </div>
+              <div class="chapter-progress">
+                <div class="progress-row"><span>输入完整度</span><b>22%</b></div>
+                <div class="progress-track"><i></i></div>
+              </div>
+            </aside>
+
+            <section class="work-card glass">
+              <div class="work-title">
+                <div><h3>连接件参数</h3><p>定义螺栓、螺母与螺纹几何；派生参数会自动更新。</p></div>
+                <span class="mode-pill">设计模式</span>
+              </div>
+
+              <div class="work-columns">
+                <section class="sub-panel">
+                  <div class="panel-head"><strong>螺栓与螺纹</strong><span class="panel-hint">输入条件</span></div>
+                  <div class="form-grid">
+                    <div class="field"><label>公称直径 <span>d</span></label><div class="field-control"><input value="12.0" aria-label="公称直径"><b>mm</b></div></div>
+                    <div class="field"><label>螺距 <span>p</span></label><div class="field-control"><input value="1.75" aria-label="螺距"><b>mm</b></div></div>
+                    <div class="field"><label>强度等级 <span>class</span></label><div class="field-control"><select aria-label="强度等级"><option>10.9</option><option>8.8</option><option>12.9</option></select></div></div>
+                    <div class="field"><label>摩擦系数 <span>μG</span></label><div class="field-control"><input value="0.12" aria-label="摩擦系数"></div></div>
+                    <div class="field"><label>夹紧长度 <span>lk</span></label><div class="field-control"><input value="42.0" aria-label="夹紧长度"><b>mm</b></div></div>
+                    <div class="field"><label>外加载荷 <span>FA</span></label><div class="field-control"><input value="18.5" aria-label="外加载荷"><b>kN</b></div></div>
+                  </div>
+                  <div class="auto-strip"><span class="auto-icon">↗</span><span><b>自动派生</b><br>As = 84.3 mm² · d₂ = 10.86 mm · d₃ = 9.85 mm</span></div>
+                </section>
+
+                <section class="sub-panel result-panel">
+                  <div>
+                    <div class="panel-head"><strong>即时校核摘要</strong><span class="panel-hint" id="resultState">上次计算 14:32</span></div>
+                    <div class="result-summary">
+                      <div class="metric primary-metric"><span>总体状态</span><strong id="verdict">PASS</strong></div>
+                      <div class="metric"><span>装配利用率</span><strong id="assemblyValue">72.4<small>%</small></strong></div>
+                      <div class="metric"><span>疲劳安全系数</span><strong id="fatigueValue">1.68</strong></div>
+                    </div>
+                  </div>
+                  <div class="chart-box" id="chartBox">
+                    <div class="chart-label"><strong>载荷—位移响应</strong><span>设计点与许用边界</span></div>
+                    <svg viewBox="0 0 440 150" preserveAspectRatio="none" aria-label="载荷位移响应曲线">
+                      <path class="area-path" d="M8 142 C60 132 88 119 122 101 S194 80 230 73 S302 44 338 39 S396 28 432 17 L432 148 L8 148 Z"/>
+                      <path class="target-line" d="M8 53 L432 53"/>
+                      <path class="line-path" d="M8 142 C60 132 88 119 122 101 S194 80 230 73 S302 44 338 39 S396 28 432 17"/>
+                      <circle class="point" cx="338" cy="39" r="4"/>
+                    </svg>
+                  </div>
+                </section>
+              </div>
+            </section>
+          </div>
+
+          <footer class="statusbar glass">
+            <div class="status-left"><i></i><span>输入参数完整 · 结果可导出</span></div>
+            <code>runtime 128 ms · local</code>
+          </footer>
+        </section>
+      </div>
+    </section>
+
+    <section class="theme-notes" aria-label="方案说明">
+      <article class="note-card">
+        <div class="micro-label">当前方案</div>
+        <h3 id="themeName">A · 云瓷 / Cloud Porcelain</h3>
+        <p id="themeDescription">最接近 Claude 的温和克制：暖灰瓷面、低饱和珊瑚、蓝灰辅助色。轻盈但仍有工程软件的可靠感。</p>
+        <div class="palette" aria-label="色板"><i class="swatch"></i><i class="swatch"></i><i class="swatch"></i><i class="swatch"></i><i class="swatch"></i></div>
+      </article>
+
+      <article class="note-card">
+        <div class="micro-label">PySide6 落地映射</div>
+        <dl class="qt-map">
+          <dt>QSS</dt><dd>卡片透明浅色、1px 高光边、字段/按钮状态与圆角</dd>
+          <dt>QPainter</dt><dd>窗口底色、应力云谱渐变；不依赖 Web backdrop-filter</dd>
+          <dt>QGraphicsDropShadowEffect</dt><dd>只用于三层大容器，避免每个小控件都加阴影</dd>
+          <dt>QPropertyAnimation</dt><dd>悬浮/选择只做 120–180ms 颜色和位移反馈</dd>
+        </dl>
+      </article>
+
+      <article class="note-card">
+        <div class="micro-label">还原可行性</div>
+        <div class="fit-score"><strong>94%</strong><span>跨平台视觉还原</span></div>
+        <p style="margin-top:11px">推荐用“拟态毛玻璃”而非实时背景模糊，Windows/macOS 表现更稳定。切换方案：<kbd class="shortcut">1</kbd><kbd class="shortcut">2</kbd><kbd class="shortcut">3</kbd></p>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const themeContent = {
+      cloud: {
+        name: "A · 云瓷 / Cloud Porcelain",
+        description: "最接近 Claude 的温和克制：暖灰瓷面、低饱和珊瑚、蓝灰辅助色。轻盈但仍有工程软件的可靠感。"
+      },
+      violet: {
+        name: "B · 暮紫 / Violet Dusk",
+        description: "更空灵、更数字化：灰紫雾面配少量赤陶，识别度最高，适合希望产品气质更独立的方向。"
+      },
+      jade: {
+        name: "C · 霁青 / Mineral Jade",
+        description: "更工程、更沉静：矿物灰青配铜砂暖色，长时间工作最耐看，和机械设计语境结合最自然。"
+      }
+    };
+
+    const setTheme = (theme) => {
+      if (!themeContent[theme]) return;
+      document.body.dataset.theme = theme;
+      document.querySelectorAll("[data-set-theme]").forEach((button) => {
+        const active = button.dataset.setTheme === theme;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
+      document.getElementById("themeName").textContent = themeContent[theme].name;
+      document.getElementById("themeDescription").textContent = themeContent[theme].description;
+    };
+
+    document.querySelectorAll("[data-set-theme]").forEach((button) => {
+      button.addEventListener("click", () => setTheme(button.dataset.setTheme));
+    });
+
+    document.querySelectorAll(".module-item").forEach((item) => {
+      item.addEventListener("click", () => {
+        document.querySelectorAll(".module-item").forEach((button) => button.classList.remove("active"));
+        item.classList.add("active");
+      });
+    });
+
+    document.querySelectorAll(".chapter-step").forEach((item, index) => {
+      item.addEventListener("click", () => {
+        document.querySelectorAll(".chapter-step").forEach((button) => button.classList.remove("active"));
+        item.classList.add("active");
+        document.querySelector(".step-count").textContent = `${String(index + 1).padStart(2, "0")} / 09`;
+        document.querySelector(".progress-track i").style.width = `${((index + 1) / 9) * 100}%`;
+        document.querySelector(".progress-row b").textContent = `${Math.round(((index + 1) / 9) * 100)}%`;
+      });
+    });
+
+    document.getElementById("calculateButton").addEventListener("click", (event) => {
+      const button = event.currentTarget;
+      const resultState = document.getElementById("resultState");
+      const chart = document.getElementById("chartBox");
+      button.textContent = "计算中…";
+      button.disabled = true;
+      resultState.textContent = "正在更新计算链";
+      window.setTimeout(() => {
+        document.getElementById("assemblyValue").innerHTML = "71.8<small>%</small>";
+        document.getElementById("fatigueValue").textContent = "1.72";
+        resultState.textContent = "刚刚完成 · 126 ms";
+        button.textContent = "执行校核";
+        button.disabled = false;
+        chart.classList.remove("replay");
+        void chart.offsetWidth;
+        chart.classList.add("replay");
+      }, 620);
+    });
+
+    window.addEventListener("keydown", (event) => {
+      const keyMap = { "1": "cloud", "2": "violet", "3": "jade" };
+      if (keyMap[event.key]) setTheme(keyMap[event.key]);
+    });
+  </script>
+</body>
+</html>
