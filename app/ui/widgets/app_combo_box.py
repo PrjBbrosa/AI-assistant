@@ -47,6 +47,7 @@ class AppComboBox(QComboBox):
         container.setWindowFlag(Qt.FramelessWindowHint, True)
         container.setWindowFlag(Qt.NoDropShadowWindowHint, True)
         container.setAttribute(Qt.WA_TranslucentBackground, True)
+        container.setAutoFillBackground(False)
         container.setProperty("themePolishApplied", True)
 
     def _widen_view(self) -> None:

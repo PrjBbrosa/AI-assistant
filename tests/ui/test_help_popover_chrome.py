@@ -4,15 +4,20 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from pathlib import Path
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QWidget, QSizeGrip, QTextBrowser, QLabel
 
+from app.ui.design_tokens import qcolor
 from app.ui.help_provider import HelpProvider
+from app.ui.theme import apply_theme
 from app.ui.widgets.help_popover import HelpPopover
 
 
 @pytest.fixture(scope="module")
 def app():
-    return QApplication.instance() or QApplication([])
+    instance = QApplication.instance() or QApplication([])
+    apply_theme(instance)
+    return instance
 
 
 @pytest.fixture
@@ -43,11 +48,21 @@ def _isolate_popover_settings(tmp_path, monkeypatch):
 def test_popover_has_named_chrome_widgets(app, fixture_help_provider):
     anchor = QWidget()
     popover = HelpPopover.show_for("terms/_sample", anchor=anchor)
+    assert popover.objectName() == "HelpPopover"
     assert popover.findChild(QWidget, "HelpPopoverRoot") is not None
     assert popover.findChild(QWidget, "HelpPopoverHeader") is not None
     assert popover.findChild(QWidget, "HelpPopoverFooter") is not None
     body = popover.findChild(QTextBrowser, "HelpPopoverBody")
     assert body is not None
+    popover.close()
+
+
+def test_popover_outer_is_frameless_and_translucent(app, fixture_help_provider):
+    anchor = QWidget()
+    popover = HelpPopover.show_for("terms/_sample", anchor=anchor)
+    assert popover.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+    assert bool(popover.windowFlags() & Qt.WindowType.FramelessWindowHint)
+    assert not popover.autoFillBackground()
     popover.close()
 
 
@@ -191,8 +206,9 @@ def test_body_html_contains_styled_code_block(app, fixture_help_provider):
         category=None, source=None,
     ))
     html = popover._browser.toHtml()
-    # Accent bar table should be present (Qt normalises hex colours to lowercase)
-    assert "d97757" in html.lower()
+    accent = qcolor("accent").name().lstrip("#").lower()
+    assert accent in html.lower()
+    assert "d97757" not in html.lower()
     assert "hello = 1" in html
     popover.close()
 
@@ -224,6 +240,8 @@ def test_body_html_styles_blockquote(app, fixture_help_provider):
     # Qt's markdown parser renders "> text" as indented <p>, not <blockquote>,
     # so we pre-process the markdown.  The accent bar colour ends up lowercased
     # by Qt's HTML normaliser.
-    assert "8a8782" in html.lower()  # accent bar color
+    secondary = qcolor("secondary").name().lstrip("#").lower()
+    assert secondary in html.lower()
+    assert "8a8782" not in html.lower()
     assert "引用内容" in html
     popover.close()

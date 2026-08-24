@@ -6,11 +6,13 @@ from typing import Optional
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QToolButton, QWidget
 
+from app.ui.design_tokens import cloud_porcelain_controls
+
 
 class HelpButton(QToolButton):
-    """32x32 hit-area '?' 按钮；字形约 14px。objectName='HelpButton' 由 theme.py 提供样式。"""
+    """24x24 的紧凑帮助入口；与相邻标题按视觉重量而非触控块对齐。"""
 
-    _HIT_SIZE = 32
+    _HIT_SIZE = cloud_porcelain_controls().help_button_outer
 
     def __init__(self, help_ref: str, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)

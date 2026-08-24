@@ -82,6 +82,7 @@ def build_style_sheet(palette: CloudPorcelainPalette | None = None) -> str:
         "secondary": qss_rgba(pal.secondary),
         "secondary_soft": qss_rgba(pal.secondary_soft),
         "focus_ring": qss_rgba(pal.focus_ring),
+        "surface_pressed": _darken_qss(pal.surface_glass_strong, 118),
         "pass_fg": qss_rgba(pal.pass_fg),
         "pass_bg": qss_rgba(pal.pass_bg),
         "fail_fg": qss_rgba(pal.fail_fg),
@@ -107,6 +108,7 @@ def build_style_sheet(palette: CloudPorcelainPalette | None = None) -> str:
         "header_min_height": controls.header_min_height,
         "button_height": controls.button_height,
         "primary_button_height": controls.primary_button_height,
+        "icon_hit_min": controls.icon_hit_min,
     }
 
     return _interpolate(_STYLE_TEMPLATE, values)
@@ -273,6 +275,7 @@ _STYLE_TEMPLATE = """
         }
         QPushButton#OverflowButton {
             min-height: ${button_height}px;
+            min-width: ${icon_hit_min}px;
         }
         QFrame#Card {
             background-color: ${surface_glass_strong};
@@ -402,6 +405,24 @@ _STYLE_TEMPLATE = """
             color: ${ink_primary};
             background: transparent;
         }
+        QLabel#GuideTitle {
+            font-size: 16pt;
+            font-weight: 600;
+            color: ${ink_primary};
+            background: transparent;
+        }
+        QLabel#GuideFlowArrow {
+            color: ${accent};
+            font-size: 18px;
+            font-weight: 700;
+            background: transparent;
+        }
+        QLabel#GuideSectionTitle {
+            font-size: 14px;
+            font-weight: 700;
+            color: ${ink_primary};
+            background: transparent;
+        }
         QLabel#SubSectionTitle {
             font-size: 13px;
             font-weight: 700;
@@ -427,6 +448,8 @@ _STYLE_TEMPLATE = """
             font-size: 12px;
         }
         QLineEdit#InputField {
+            /* 6+22+6 padding plus 1px borders = 36px input_height token.
+               Do not set min-height to the full token or padding doubles it. */
             background-color: ${surface_field};
             border: 1px solid ${line_structural};
             border-radius: ${radius_small}px;
@@ -434,6 +457,9 @@ _STYLE_TEMPLATE = """
             min-height: 22px;
             selection-background-color: ${accent_soft};
             selection-color: ${accent_ink};
+        }
+        QLineEdit#InputField:hover {
+            border: 1px solid ${secondary};
         }
         QLineEdit#InputField:focus {
             /* WHY: Qt Style Sheets do not implement CSS box-shadow. A 4px
@@ -450,6 +476,10 @@ _STYLE_TEMPLATE = """
             border: 1px solid ${input_error_fg};
             background-color: ${input_error_bg};
         }
+        QLineEdit#InputField[fieldError="true"]:hover {
+            border: 1px solid ${input_error_fg};
+            background-color: ${input_error_bg};
+        }
         QLineEdit#InputField[fieldError="true"]:focus {
             border: 4px solid ${input_error_fg};
             padding: 3px 7px;
@@ -457,8 +487,19 @@ _STYLE_TEMPLATE = """
         }
         QLineEdit#InputField:read-only {
             background-color: ${surface_glass_soft};
-            color: ${ink_muted};
+            color: ${ink_primary};
             border-color: ${line_structural};
+        }
+        QLineEdit#InputField:read-only:hover {
+            border: 1px solid ${line_structural};
+            background-color: ${surface_glass_soft};
+            color: ${ink_primary};
+        }
+        QLineEdit#InputField:read-only:focus {
+            border: 4px solid ${focus_ring};
+            padding: 3px 7px;
+            background-color: ${surface_glass_soft};
+            color: ${ink_primary};
         }
         QLineEdit#InputField:disabled {
             background-color: ${not_checked_bg};
@@ -487,6 +528,12 @@ _STYLE_TEMPLATE = """
         }
         QComboBox[fieldError="true"] {
             border: 1px solid ${input_error_fg};
+            background-color: ${input_error_bg};
+        }
+        QComboBox[fieldError="true"]:focus, QComboBox[fieldError="true"]:on {
+            border: 4px solid ${input_error_fg};
+            padding: 3px 7px;
+            background-color: ${input_error_bg};
         }
         QComboBox:disabled {
             background-color: ${not_checked_bg};
@@ -567,12 +614,34 @@ _STYLE_TEMPLATE = """
             border-color: ${secondary};
         }
         QPushButton:pressed {
-            background-color: ${surface_glass_soft};
+            background-color: ${surface_pressed};
+            border-color: ${secondary};
+        }
+        QPushButton:focus {
+            border-color: ${accent};
         }
         QPushButton:disabled {
             background-color: ${not_checked_bg};
             color: ${ink_quiet};
-            border-color: ${line_structural};
+            border: 1px solid ${line_structural};
+        }
+        QPushButton#SecondaryButton {
+            background-color: ${surface_glass_strong};
+            color: ${ink_primary};
+            border: 1px solid ${line_structural};
+        }
+        QPushButton#SecondaryButton:hover {
+            background-color: ${surface_glass};
+            border-color: ${secondary};
+        }
+        QPushButton#SecondaryButton:pressed {
+            background-color: ${surface_pressed};
+            border-color: ${secondary};
+        }
+        QPushButton#SecondaryButton:disabled {
+            background-color: ${not_checked_bg};
+            color: ${ink_quiet};
+            border: 1px solid ${line_structural};
         }
         QPushButton#LinkButton {
             background: transparent;
@@ -584,6 +653,16 @@ _STYLE_TEMPLATE = """
             border: none;
             color: ${accent_hover};
             text-decoration: underline;
+        }
+        QPushButton#LinkButton:pressed {
+            background: transparent;
+            border: none;
+            color: ${accent_pressed};
+        }
+        QPushButton#LinkButton:disabled {
+            background: transparent;
+            color: ${ink_quiet};
+            border: 1px solid ${line_structural};
         }
         QPushButton#PrimaryButton {
             background-color: ${accent_action};
@@ -598,10 +677,13 @@ _STYLE_TEMPLATE = """
             background-color: ${accent_pressed};
             border-color: ${accent_pressed};
         }
+        QPushButton#PrimaryButton:focus {
+            border-color: ${accent_hover};
+        }
         QPushButton#PrimaryButton:disabled {
-            background-color: ${accent_soft};
-            color: ${white};
-            border-color: ${accent_soft};
+            background-color: ${not_checked_bg};
+            color: ${ink_quiet};
+            border: 1px solid ${line_structural};
         }
 
         /* ===== Scrollbars ===== */
@@ -744,13 +826,24 @@ _STYLE_TEMPLATE = """
             padding: 4px 8px;
         }
 
-        /* ===== MessageBox / Dialog ===== */
-        QMessageBox, QDialog {
+        /* ===== MessageBox / Dialog =====
+           App dialogs inherit canvas_base. HelpPopover is frameless +
+           translucent so its rounded root is the only opaque surface.
+           Native OS file/font/color dialogs are not styled here. */
+        QMessageBox, QDialog#BeginnerGuideDialog {
             background-color: ${canvas_base};
+        }
+        QDialog#HelpPopover {
+            background-color: transparent;
+            border: none;
         }
         QMessageBox QLabel {
             background: transparent;
             color: ${ink_primary};
+        }
+        QComboBoxPrivateContainer {
+            background-color: transparent;
+            border: none;
         }
 
         /* ===== Spin boxes ===== */
@@ -787,6 +880,11 @@ _STYLE_TEMPLATE = """
         }
 
         /* ===== TabBar (for any future tab widgets) ===== */
+        QTabWidget::pane {
+            background: ${surface_glass};
+            border: 1px solid ${line_structural};
+            border-radius: ${radius_control}px;
+        }
         QTabBar::tab {
             background: ${surface_glass};
             color: ${ink_muted};

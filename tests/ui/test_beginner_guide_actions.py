@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import pytest
-from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtWidgets import QApplication, QLabel, QWidget
 
 from app.ui.pages.bolt_tapped_axial_page import BoltTappedAxialPage
 from app.ui.pages.bolt_page import BoltPage
@@ -78,9 +78,13 @@ def test_guide_action_opens_expected_vdi_style_dialog(qapp, monkeypatch, case):
     assert dialog.size().width() == 720
     assert dialog.size().height() == 780
     assert dialog.close_button.text() == "我明白了"
+    assert dialog.close_button.objectName() == "PrimaryButton"
+    assert dialog.guide_title_label.objectName() == "GuideTitle"
     assert dialog.intro_label.isVisibleTo(dialog)
     assert dialog.intro_label.text()
     assert len(dialog.section_cards) >= 5
+    arrows = dialog.findChildren(QLabel, "GuideFlowArrow")
+    assert arrows
     page.deleteLater()
 
 

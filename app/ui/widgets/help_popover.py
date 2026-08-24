@@ -5,7 +5,7 @@ import re
 from typing import Optional
 
 from PySide6.QtCore import Qt, QPoint, QPointF, QRect, QSettings, QSize, QPropertyAnimation, QEasingCurve
-from PySide6.QtGui import QColor, QKeyEvent, QCursor, QMouseEvent, QPainter, QPen
+from PySide6.QtGui import QKeyEvent, QCursor, QMouseEvent, QPainter
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -20,21 +20,30 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.design_tokens import cloud_porcelain_shadows, qcolor, qss_rgba
 from app.ui.help_provider import HelpEntry, HelpProvider
 
 
-# QTextBrowser.setDefaultStyleSheet only supports a subset of CSS:
-# - background-color: supported; background: shorthand is ignored
-# - border-left on block elements (pre/blockquote): NOT rendered
-# - Table borders: use border="1" HTML attribute instead of CSS
-_DOC_CSS = """
-h2 { color: #2F2E2C; font-size: 14pt; margin-top: 18px; margin-bottom: 8px; }
-h3 { color: #2F2E2C; font-size: 12pt; margin-top: 14px; margin-bottom: 6px; }
-p  { color: #2F2E2C; margin: 0 0 10px 0; }
-code { background-color: #F4EFE8; color: #8A4A2E; }
-th { background-color: #FAF1EC; color: #2F2E2C; }
-ul, ol { margin: 0 0 10px 18px; }
-"""
+def _html_hex(token: str) -> str:
+    """Opaque #RRGGBB for Qt rich-text bgcolor / inline CSS."""
+    parsed = qcolor(token)
+    return f"#{parsed.red():02X}{parsed.green():02X}{parsed.blue():02X}"
+
+
+def _doc_css() -> str:
+    """Qt rich-text CSS subset. Do not copy browser CSS into QTextBrowser."""
+    ink = qss_rgba("ink_primary")
+    code_bg = qss_rgba("surface_field")
+    code_fg = qss_rgba("accent_ink")
+    th_bg = qss_rgba("accent_soft")
+    return (
+        f"h2 {{ color: {ink}; font-size: 14pt; margin-top: 18px; margin-bottom: 8px; }}\n"
+        f"h3 {{ color: {ink}; font-size: 12pt; margin-top: 14px; margin-bottom: 6px; }}\n"
+        f"p  {{ color: {ink}; margin: 0 0 10px 0; }}\n"
+        f"code {{ background-color: {code_bg}; color: {code_fg}; }}\n"
+        f"th {{ background-color: {th_bg}; color: {ink}; }}\n"
+        "ul, ol { margin: 0 0 10px 18px; }\n"
+    )
 
 _PRE_RE = re.compile(r'<pre([^>]*)>(.*?)</pre>', re.DOTALL)
 _BLOCKQUOTE_RE = re.compile(r'<blockquote([^>]*)>(.*?)</blockquote>', re.DOTALL)
@@ -75,11 +84,14 @@ def _preprocess_md_blockquotes(md: str) -> str:
             .replace('<', '&lt;')
             .replace('>', '&gt;')
         )
+        quote_bar = _html_hex("secondary")
+        quote_bg = _html_hex("surface_glass_soft")
+        quote_fg = _html_hex("ink_muted")
         return (
             '<table cellspacing="0" cellpadding="0" border="0" width="100%">'
             '<tr>'
-            '<td width="3" bgcolor="#8A8782"></td>'
-            '<td bgcolor="#FBF8F4" style="padding:6px 12px; color:#5F5E5B; font-style:italic;">'
+            f'<td width="3" bgcolor="{quote_bar}"></td>'
+            f'<td bgcolor="{quote_bg}" style="padding:6px 12px; color:{quote_fg}; font-style:italic;">'
             f'{inner_text}'
             '</td>'
             '</tr></table>\n\n'
@@ -104,11 +116,13 @@ def _decorate_html(html: str) -> str:
     # Code blocks: wrap in accent-bar table
     def _wrap_pre(m: re.Match) -> str:
         attrs, inner = m.group(1), m.group(2)
+        pre_bar = _html_hex("accent")
+        pre_bg = _html_hex("surface_field")
         return (
             '<table cellspacing="0" cellpadding="0" border="0" width="100%">'
             '<tr>'
-            '<td width="3" bgcolor="#D97757"></td>'
-            '<td bgcolor="#FAF7F4" style="padding:8px 12px;">'
+            f'<td width="3" bgcolor="{pre_bar}"></td>'
+            f'<td bgcolor="{pre_bg}" style="padding:8px 12px;">'
             f'<pre{attrs} style="margin:0;">{inner}</pre>'
             '</td>'
             '</tr></table>'
@@ -119,11 +133,14 @@ def _decorate_html(html: str) -> str:
     # (only reachable if the HTML source already contains them, e.g. raw HTML in md)
     def _wrap_blockquote(m: re.Match) -> str:
         attrs, inner = m.group(1), m.group(2)
+        quote_bar = _html_hex("secondary")
+        quote_bg = _html_hex("surface_glass_soft")
+        quote_fg = _html_hex("ink_muted")
         return (
             '<table cellspacing="0" cellpadding="0" border="0" width="100%">'
             '<tr>'
-            '<td width="3" bgcolor="#8A8782"></td>'
-            '<td bgcolor="#FBF8F4" style="padding:6px 12px; color:#5F5E5B; font-style:italic;">'
+            f'<td width="3" bgcolor="{quote_bar}"></td>'
+            f'<td bgcolor="{quote_bg}" style="padding:6px 12px; color:{quote_fg}; font-style:italic;">'
             f'<blockquote{attrs} style="margin:0;">{inner}</blockquote>'
             '</td>'
             '</tr></table>'
@@ -195,8 +212,7 @@ class _SizeGrip(QSizeGrip):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         # 3 小圆点，沿右下对角线排布
-        color = QColor(138, 135, 130)  # #8A8782
-        painter.setBrush(color)
+        painter.setBrush(qcolor("ink_quiet"))
         painter.setPen(Qt.NoPen)
         w = self.width()
         h = self.height()
@@ -223,9 +239,11 @@ class HelpPopover(QDialog):
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
+        self.setObjectName("HelpPopover")
         self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
         self.setAttribute(Qt.WA_DeleteOnClose)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAutoFillBackground(False)
         self.setModal(False)
         self.setMinimumSize(self._MIN_SIZE)
         self.resize(self._DEFAULT_SIZE)
@@ -240,10 +258,11 @@ class HelpPopover(QDialog):
         self._root = QFrame(self)
         self._root.setObjectName("HelpPopoverRoot")
 
+        shadows = cloud_porcelain_shadows()
         shadow = QGraphicsDropShadowEffect(self._root)
-        shadow.setBlurRadius(32)
-        shadow.setOffset(0, 6)
-        shadow.setColor(QColor(0, 0, 0, 80))
+        shadow.setBlurRadius(shadows.raised_blur)
+        shadow.setOffset(0, shadows.raised_y_offset)
+        shadow.setColor(qcolor(shadows.color))
         self._root.setGraphicsEffect(shadow)
 
         root_layout = QVBoxLayout(self)
@@ -294,7 +313,7 @@ class HelpPopover(QDialog):
         self._browser = QTextBrowser()
         self._browser.setObjectName("HelpPopoverBody")
         self._browser.setOpenExternalLinks(True)
-        self._browser.document().setDefaultStyleSheet(_DOC_CSS)
+        self._browser.document().setDefaultStyleSheet(_doc_css())
 
         # ----- Footer -----
         self._footer = QFrame()

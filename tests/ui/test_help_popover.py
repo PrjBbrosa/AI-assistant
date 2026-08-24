@@ -53,18 +53,15 @@ def test_help_button_objectname(app):
     assert btn.help_ref == "terms/_sample"
 
 
-def test_help_button_hit_area_at_least_28px(app):
+def test_help_button_uses_compact_24px_control(app):
     from app.ui.theme import apply_theme
 
     apply_theme(app)
     btn = HelpButton("terms/_sample")
     btn.show()
     app.processEvents()
-    hint = btn.sizeHint()
-    assert hint.width() >= 28
-    assert hint.height() >= 28
-    assert btn.width() >= 28
-    assert btn.height() >= 28
+    assert btn.width() == 24
+    assert btn.height() == 24
     assert btn.accessibleName() == "帮助"
     assert btn.focusPolicy() == Qt.FocusPolicy.StrongFocus
     btn.close()

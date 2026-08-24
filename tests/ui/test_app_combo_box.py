@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QComboBox
 
 from app.ui.theme import apply_theme
@@ -64,6 +65,15 @@ def test_app_combo_box_show_popup_widens_view(app):
     try:
         view = combo.view()
         assert view is not None
+        longest = max(
+            view.fontMetrics().horizontalAdvance(combo.itemText(i))
+            for i in range(combo.count())
+        )
         assert view.minimumWidth() >= combo.width()
+        assert view.minimumWidth() >= longest + 56
+        container = view.window()
+        assert container is not combo.window()
+        assert container.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        assert bool(container.windowFlags() & Qt.WindowType.FramelessWindowHint)
     finally:
         combo.hidePopup()

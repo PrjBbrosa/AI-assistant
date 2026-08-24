@@ -91,8 +91,7 @@ class BeginnerGuideDialog(QDialog):
         layout.setSpacing(16)
 
         self.guide_title_label = QLabel(guide_title, container)
-        self.guide_title_label.setObjectName("SectionTitle")
-        self.guide_title_label.setStyleSheet("font-size: 18px;")
+        self.guide_title_label.setObjectName("GuideTitle")
         self.guide_title_label.setWordWrap(True)
         layout.addWidget(self.guide_title_label)
 
@@ -108,9 +107,6 @@ class BeginnerGuideDialog(QDialog):
             if index > 0 and index < len(section_items) - 1:
                 arrow = QLabel("  ▼", container)
                 arrow.setObjectName("GuideFlowArrow")
-                arrow.setStyleSheet(
-                    "color: #D97757; font-size: 18px; font-weight: bold;"
-                )
                 layout.addWidget(arrow)
 
             card = QFrame(container)
@@ -120,8 +116,7 @@ class BeginnerGuideDialog(QDialog):
             card_layout.setSpacing(6)
 
             title_label = QLabel(section_title, card)
-            title_label.setObjectName("SubSectionTitle")
-            title_label.setStyleSheet("font-size: 14px;")
+            title_label.setObjectName("GuideSectionTitle")
             title_label.setWordWrap(True)
             body_label = QLabel(section_body, card)
             body_label.setObjectName("SectionHint")
