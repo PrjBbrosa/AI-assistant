@@ -231,9 +231,10 @@ def format_source_label(kind: str, detail: str = "") -> str:
 
 def make_scope_banner(parent, scope: ModuleScope):
     """Create a word-wrapped result-header banner. Imports Qt lazily."""
-    from PySide6.QtWidgets import QLabel
+    from PySide6.QtWidgets import QLabel, QSizePolicy
 
     label = QLabel(format_scope_banner_text(scope), parent)
     label.setObjectName("ModelScopeBanner")
     label.setWordWrap(True)
+    label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
     return label

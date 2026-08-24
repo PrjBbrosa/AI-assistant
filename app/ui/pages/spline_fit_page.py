@@ -45,6 +45,7 @@ from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, write_text_report
 from app.ui.report_trace import build_report_trace, trace_report_lines
 from app.ui.result_contract import from_spline, status_label_zh
+from app.ui.status_badge import badge_object_name
 from app.ui.theme import mark_input_field_label_wrap, mark_input_field_surface
 from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.help_button import HelpButton
@@ -1129,14 +1130,8 @@ class SplineFitPage(BaseChapterPage):
         self._run_calculation(strict=True)
 
     def _set_badge(self, label: QLabel, text: str, state: str) -> None:
-        if state == "pass":
-            obj = "PassBadge"
-        elif state == "fail":
-            obj = "FailBadge"
-        else:
-            obj = "WaitBadge"
         label.setText(text)
-        label.setObjectName(obj)
+        label.setObjectName(badge_object_name(state))
         label.style().unpolish(label)
         label.style().polish(label)
 

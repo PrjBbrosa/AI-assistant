@@ -52,7 +52,10 @@ from core.worm.calculator import InputError as WormInputError
 _QT_APP: QApplication | None = None
 PASS_BADGE = "PassBadge"
 FAIL_BADGE = "FailBadge"
-NEUTRAL_BADGES = frozenset({"WaitBadge", "RefBadge", "IncompleteBadge"})
+WAIT_BADGE = "WaitBadge"
+REF_BADGE = "RefBadge"
+INCOMPLETE_BADGE = "IncompleteBadge"
+NEUTRAL_BADGES = frozenset({WAIT_BADGE, REF_BADGE, INCOMPLETE_BADGE})
 WAIT_COPY = ("尚未执行计算", "待计算", "尚无结果", "等待计算", "待仿真")
 
 
@@ -350,6 +353,17 @@ def _assert_badge_matches_status(badge: QLabel, status: str) -> None:
     elif status == "fail":
         assert name == FAIL_BADGE, (badge.text(), name)
         assert "不通过" in badge.text() or "超限" in badge.text()
+    elif status == "incomplete":
+        assert name == INCOMPLETE_BADGE, (status, badge.text(), name)
+        assert name != WAIT_BADGE, (status, badge.text(), name)
+        assert name not in {PASS_BADGE, FAIL_BADGE}, (status, badge.text(), name)
+    elif status in {"reference_only", "reference"}:
+        assert name == REF_BADGE, (status, badge.text(), name)
+        assert name != WAIT_BADGE, (status, badge.text(), name)
+        assert name not in {PASS_BADGE, FAIL_BADGE}, (status, badge.text(), name)
+    elif status in {"not_checked", "wait"}:
+        assert name == WAIT_BADGE, (status, badge.text(), name)
+        assert name not in {PASS_BADGE, FAIL_BADGE}, (status, badge.text(), name)
     else:
         assert name != PASS_BADGE, (status, badge.text(), name)
         assert name != FAIL_BADGE, (status, badge.text(), name)

@@ -47,6 +47,7 @@ from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, write_text_report
 from app.ui.report_trace import build_report_trace, trace_report_lines
 from app.ui.result_contract import from_buffer, status_label_zh
+from app.ui.status_badge import badge_object_name
 from app.ui.theme import mark_input_field_surface
 from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.buffer_energy_curve import BufferEnergyCurveWidget
@@ -800,13 +801,13 @@ class BufferEnergyPage(BaseChapterPage):
     def _set_check_badge(self, key: str, name: str, status: Any) -> None:
         badge = self.check_badges[key]
         if status in (True, "pass"):
-            text, obj = f"{name}: 通过", "PassBadge"
+            text = f"{name}: 通过"
         elif status in (False, "fail"):
-            text, obj = f"{name}: 不通过", "FailBadge"
+            text = f"{name}: 不通过"
         else:
-            text, obj = f"{name}: 不可判定", "WaitBadge"
+            text = f"{name}: 不可判定"
         badge.setText(text)
-        badge.setObjectName(obj)
+        badge.setObjectName(badge_object_name(status))
         badge.style().unpolish(badge)
         badge.style().polish(badge)
 

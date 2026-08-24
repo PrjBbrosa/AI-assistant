@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.fonts import MONO_FONT_FAMILY_CSS, make_mono_font
+from app.ui.status_badge import badge_object_name
 
 
 R_STEPS: list[dict[str, Any]] = [
@@ -222,17 +223,15 @@ class FlowchartNavWidget(QWidget):
                 continue
             check_key = step["check_key"]
             if check_key == "residual_clamp_ok" and calc_mode == "design":
-                node.badge.setObjectName("PassBadge")
+                node.badge.setObjectName(badge_object_name(True))
                 node.badge.setText("通过（自动满足）")
             elif check_key not in checks:
-                node.badge.setObjectName("WaitBadge")
+                node.badge.setObjectName(badge_object_name("not_checked"))
                 node.badge.setText("已跳过")
-            elif checks[check_key]:
-                node.badge.setObjectName("PassBadge")
-                node.badge.setText("通过")
             else:
-                node.badge.setObjectName("FailBadge")
-                node.badge.setText("不通过")
+                passed = bool(checks[check_key])
+                node.badge.setObjectName(badge_object_name(passed))
+                node.badge.setText("通过" if passed else "不通过")
             node.badge.style().polish(node.badge)
 
         # Update pass-flow arrows between check nodes
@@ -261,17 +260,14 @@ class FlowchartNavWidget(QWidget):
         overall_status = str(
             result.get("overall_status", "pass" if result.get("overall_pass") else "fail")
         )
+        self._verdict_badge.setObjectName(badge_object_name(overall_status))
         if overall_status == "pass":
-            self._verdict_badge.setObjectName("PassBadge")
             self._verdict_badge.setText("全部通过")
         elif overall_status == "incomplete":
-            self._verdict_badge.setObjectName("WaitBadge")
             self._verdict_badge.setText("结论不完整")
         elif overall_status == "fail":
-            self._verdict_badge.setObjectName("FailBadge")
             self._verdict_badge.setText("存在不通过")
         else:
-            self._verdict_badge.setObjectName("WaitBadge")
             self._verdict_badge.setText("等待计算")
         self._verdict_badge.style().polish(self._verdict_badge)
 
@@ -287,7 +283,7 @@ class FlowchartNavWidget(QWidget):
         for node in self._nodes:
             if node.badge is not None:
                 node.badge.setText("—")
-                node.badge.setObjectName("WaitBadge")
+                node.badge.setObjectName(badge_object_name("wait"))
                 node.badge.style().unpolish(node.badge)
                 node.badge.style().polish(node.badge)
             node.summary_label.setText("—")
@@ -301,7 +297,7 @@ class FlowchartNavWidget(QWidget):
         self._verdict_arrow.style().unpolish(self._verdict_arrow)
         self._verdict_arrow.style().polish(self._verdict_arrow)
         self._verdict_badge.setText("等待计算")
-        self._verdict_badge.setObjectName("WaitBadge")
+        self._verdict_badge.setObjectName(badge_object_name("wait"))
         self._verdict_badge.style().unpolish(self._verdict_badge)
         self._verdict_badge.style().polish(self._verdict_badge)
 
@@ -597,17 +593,15 @@ class RStepDetailPage(QFrame):
         check_key = self._step["check_key"]
 
         if check_key == "residual_clamp_ok" and calc_mode == "design":
-            self._result_badge.setObjectName("PassBadge")
+            self._result_badge.setObjectName(badge_object_name(True))
             self._result_badge.setText("通过（设计模式自动满足）")
         elif check_key not in checks:
-            self._result_badge.setObjectName("WaitBadge")
+            self._result_badge.setObjectName(badge_object_name("not_checked"))
             self._result_badge.setText("已跳过")
-        elif checks[check_key]:
-            self._result_badge.setObjectName("PassBadge")
-            self._result_badge.setText("通过")
         else:
-            self._result_badge.setObjectName("FailBadge")
-            self._result_badge.setText("不通过")
+            passed = bool(checks[check_key])
+            self._result_badge.setObjectName(badge_object_name(passed))
+            self._result_badge.setText("通过" if passed else "不通过")
         self._result_badge.style().polish(self._result_badge)
 
     def reset(self) -> None:
@@ -617,6 +611,6 @@ class RStepDetailPage(QFrame):
         if badge is None:
             return
         badge.setText("等待计算")
-        badge.setObjectName("WaitBadge")
+        badge.setObjectName(badge_object_name("wait"))
         badge.style().unpolish(badge)
         badge.style().polish(badge)

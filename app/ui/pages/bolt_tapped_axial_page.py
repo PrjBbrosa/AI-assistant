@@ -48,6 +48,7 @@ from app.ui.result_contract import (
     from_tapped_axial,
     status_label_zh,
 )
+from app.ui.status_badge import badge_object_name
 from app.ui.theme import mark_input_field_label_wrap, mark_input_field_surface
 from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.help_button import HelpButton
@@ -419,14 +420,22 @@ class BoltTappedAxialPage(BaseChapterPage):
         page = QFrame(self)
         page.setObjectName("Card")
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(10)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
 
-        self.model_scope_banner = make_scope_banner(page, TAPPED_SCOPE)
-        layout.addWidget(self.model_scope_banner)
+        scroll = QScrollArea(page)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        container = QWidget(scroll)
+        content = QVBoxLayout(container)
+        content.setContentsMargins(8, 8, 8, 8)
+        content.setSpacing(10)
+
+        self.model_scope_banner = make_scope_banner(container, TAPPED_SCOPE)
+        content.addWidget(self.model_scope_banner)
 
         # --- 摘要卡片 ---
-        summary_card = QFrame(page)
+        summary_card = QFrame(container)
         summary_card.setObjectName("SubCard")
         summary_layout = QVBoxLayout(summary_card)
         summary_layout.setContentsMargins(12, 10, 12, 10)
@@ -440,10 +449,10 @@ class BoltTappedAxialPage(BaseChapterPage):
         self.result_summary.setWordWrap(True)
         summary_layout.addWidget(self.result_title)
         summary_layout.addWidget(self.result_summary)
-        layout.addWidget(summary_card)
+        content.addWidget(summary_card)
 
         # --- 分项校核卡片 ---
-        checks_card = QFrame(page)
+        checks_card = QFrame(container)
         checks_card.setObjectName("SubCard")
         checks_layout = QGridLayout(checks_card)
         checks_layout.setContentsMargins(12, 10, 12, 10)
@@ -464,10 +473,10 @@ class BoltTappedAxialPage(BaseChapterPage):
             checks_layout.addWidget(status_label, row, 1)
             self._check_badges[key] = status_label
             row += 1
-        layout.addWidget(checks_card)
+        content.addWidget(checks_card)
 
         # --- 关键结果值卡片 ---
-        metrics_card = QFrame(page)
+        metrics_card = QFrame(container)
         metrics_card.setObjectName("SubCard")
         metrics_layout = QVBoxLayout(metrics_card)
         metrics_layout.setContentsMargins(12, 10, 12, 10)
@@ -479,10 +488,10 @@ class BoltTappedAxialPage(BaseChapterPage):
         self.metrics_text.setWordWrap(True)
         metrics_layout.addWidget(metrics_title)
         metrics_layout.addWidget(self.metrics_text)
-        layout.addWidget(metrics_card)
+        content.addWidget(metrics_card)
 
         # --- 消息与建议卡片 ---
-        msg_card = QFrame(page)
+        msg_card = QFrame(container)
         msg_card.setObjectName("SubCard")
         msg_layout = QVBoxLayout(msg_card)
         msg_layout.setContentsMargins(12, 10, 12, 10)
@@ -494,8 +503,10 @@ class BoltTappedAxialPage(BaseChapterPage):
         self.message_box.setMinimumHeight(140)
         msg_layout.addWidget(msg_title_label)
         msg_layout.addWidget(self.message_box)
-        layout.addWidget(msg_card)
+        content.addWidget(msg_card)
 
+        scroll.setWidget(container)
+        layout.addWidget(scroll, 1)
         self.add_chapter("校核结果", page)
 
     def _create_editor(self, spec: FieldSchema, parent: QWidget) -> QWidget:
@@ -906,14 +917,8 @@ class BoltTappedAxialPage(BaseChapterPage):
             self._refresh_field_error(dependent_id)
 
     def _set_badge(self, label: QLabel, text: str, state: str) -> None:
-        if state == "pass":
-            obj = "PassBadge"
-        elif state == "fail":
-            obj = "FailBadge"
-        else:
-            obj = "WaitBadge"
         label.setText(text)
-        label.setObjectName(obj)
+        label.setObjectName(badge_object_name(state))
         label.style().unpolish(label)
         label.style().polish(label)
 

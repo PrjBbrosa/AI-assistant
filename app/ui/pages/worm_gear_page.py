@@ -62,6 +62,7 @@ from app.ui.pages.base_chapter_page import BaseChapterPage
 from app.ui.report_export import ReportExportError, write_text_report
 from app.ui.report_trace import build_report_trace, trace_report_lines
 from app.ui.result_contract import ResultViewModel, from_worm, status_label_zh
+from app.ui.status_badge import badge_object_name
 from app.ui.theme import mark_input_field_surface
 from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.worm_geometry_overview import WormGeometryOverviewWidget
@@ -1428,8 +1429,7 @@ class WormGearPage(BaseChapterPage):
 
     def _set_badge(self, label: QLabel, text: str, level: str) -> None:
         label.setText(text)
-        obj_name = "PassBadge" if level == "pass" else ("FailBadge" if level == "fail" else "WaitBadge")
-        label.setObjectName(obj_name)
+        label.setObjectName(badge_object_name(level))
         label.style().unpolish(label)
         label.style().polish(label)
 

@@ -26,8 +26,11 @@
 | W6 状态矩阵测试 | COMPLETE | `4a57f22fa6f0afabee0f33a33ebed4510f6bb9ef` | `test: cover stale error dpi and render parity states` |
 | W7 几何 / HTML parity | PARTIAL | `07ab1a2692f13317cc923000051af3eabb08e97e` | `test: add cloud-porcelain render geometry matrix`。Windows 与用户截图签字仍未验证，故该 wave 不得 COMPLETE。 |
 | W8 本报告 | 验证 + 文档 | 见第 9 节 | 本提交只归档验收文档与已批准 spec/plan/HTML。 |
+| W8+ P1 follow-up | PARTIAL | 见第 9 节本提交 | 独立 status badge objectName；轴向螺纹结果章 QScrollArea。Windows / 用户签字仍未验证。 |
 
 W8 未改 `core/**`。未放宽测试。未把项目标为 COMPLETE。
+
+独立 review P1.1 / P1.2 已在产品页处理：`badge_object_name` 把 `incomplete` → `IncompleteBadge`、`reference_only` → `RefBadge`、`not_checked`/`wait` → `WaitBadge`（未知值不得映射为 PassBadge）；轴向螺纹结果章用 `QScrollArea` 包住，避免 `ModelScopeBanner` 画进章节导航。这不改变 calculator 状态，也不代替第 5、6 节前景。
 
 ---
 
@@ -260,7 +263,7 @@ EMPTY 合同不能代替前景或用户签字。
 | 3 | 七个模块都完成输入页与结果页检查 | **PARTIAL** | 第 3 节 offscreen 七模块测试绿；cocoa 仅 bolt shell/input/result；其余六模块前景未拍 |
 | 4 | macOS 前景通过；Windows 100/125/150% 至少正式 smoke | **PARTIAL** / **未验证** | 第 5 节 macOS 子集；第 6 节 Windows 未跑 |
 | 5 | payload、calculator result、report lines 与冻结基线一致 | **PASS** | 第 8 节 EMPTY；core diff 空 |
-| 6 | pass/fail/incomplete/not_checked/reference_only/stale/render-error 均有独立正确视觉 | **PARTIAL** | W6 矩阵核心场景测试绿；interference/spline/hertz/buffer 的 incomplete、部分 not_checked/reference_only 单元格在 W6 记录为 未验证 |
+| 6 | pass/fail/incomplete/not_checked/reference_only/stale/render-error 均有独立正确视觉 | **PARTIAL** | P1.1：产品页徽标 objectName 已按状态独立映射（incomplete≠WaitBadge，reference_only≠WaitBadge）。stale/render-error 仍由 W6 覆盖。Windows / 用户签字未验证；部分模块 incomplete 单元格仍未 live-driven |
 | 7 | 输入变化、渲染失败、加载/清空不留下旧成功结果或可导出状态 | **PASS** | `test_stale_and_status_matrix` / `test_export_dirty_tracking` / `test_render_exception_guard` 含于第 2、4 节 |
 | 8 | 自绘图和 matplotlib 只改视觉，不改数据/限值/工作点/判定 | **PASS** | 第 8 节 EMPTY；W5A/W5B 未改 `_build_payload` / calculate / `_build_report_lines` |
 | 9 | 相关测试和全量测试通过，没有放宽旧断言 | **PASS** | 第 2–4 节 0 failed；相对 W0 +135 passed |

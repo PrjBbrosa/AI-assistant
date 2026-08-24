@@ -56,6 +56,7 @@ from app.ui.result_contract import (
     from_bolt,
     status_label_zh,
 )
+from app.ui.status_badge import badge_object_name
 from app.ui.pages import bolt_help_content as bolt_help
 from app.ui.pages.bolt_fields import (
     CHAPTERS,
@@ -1455,14 +1456,8 @@ class BoltPage(QWidget):
             self._on_clamped_material_changed(cm_w.currentText())
 
     def _set_badge(self, label: QLabel, text: str, state: str | bool) -> None:
-        if state is True or state == "pass":
-            obj = "PassBadge"
-        elif state is False or state == "fail":
-            obj = "FailBadge"
-        else:
-            obj = "WaitBadge"
         label.setText(text)
-        label.setObjectName(obj)
+        label.setObjectName(badge_object_name(state))
         label.style().unpolish(label)
         label.style().polish(label)
 

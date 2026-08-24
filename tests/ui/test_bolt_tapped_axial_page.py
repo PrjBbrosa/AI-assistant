@@ -8,7 +8,8 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QMessageBox
+from PySide6.QtCore import QRect
+from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QMessageBox, QScrollArea
 
 from app.ui.field_schema import FieldSpec
 from app.ui.model_scope import MODEL_LEVEL_FORMAL_SUBSET, TAPPED_SCOPE
@@ -554,6 +555,55 @@ class BoltTappedAxialPageTests(unittest.TestCase):
         dumped = json.dumps(payload, ensure_ascii=False)
         self.assertNotIn("should-not-land", dumped)
         self.assertIn("fastener", payload)
+
+    def test_result_chapter_scroll_keeps_banner_out_of_chapter_nav(self) -> None:
+        page = BoltTappedAxialPage()
+        try:
+            page.resize(1400, 860)
+            page.show()
+            self.app.processEvents()
+            result_index = next(
+                i
+                for i in range(page.chapter_list.count())
+                if "校核结果" in page.chapter_list.item(i).text()
+            )
+            page.set_current_chapter(result_index)
+            self.app.processEvents()
+
+            result_page = page.chapter_page_at(result_index)
+            self.assertTrue(result_page.isAncestorOf(page.result_title))
+            self.assertTrue(result_page.isAncestorOf(page.model_scope_banner))
+            self.assertTrue(
+                result_page.findChildren(QScrollArea),
+                "result chapter must wrap content in QScrollArea",
+            )
+
+            banner = page.model_scope_banner
+            nav = page.chapter_list
+            self.assertTrue(banner.wordWrap())
+            self.assertGreater(banner.width(), 0)
+            self.assertGreater(banner.height(), 0)
+
+            banner_in_page = QRect(
+                page.mapFromGlobal(banner.mapToGlobal(banner.rect().topLeft())),
+                banner.size(),
+            )
+            nav_in_page = QRect(
+                page.mapFromGlobal(nav.mapToGlobal(nav.rect().topLeft())),
+                nav.size(),
+            )
+            self.assertFalse(
+                banner_in_page.intersects(nav_in_page),
+                f"banner {banner_in_page} overlaps chapter_list {nav_in_page}",
+            )
+            self.assertGreaterEqual(banner_in_page.left(), nav_in_page.right())
+            result_in_page = QRect(
+                page.mapFromGlobal(result_page.mapToGlobal(result_page.rect().topLeft())),
+                result_page.size(),
+            )
+            self.assertTrue(result_in_page.contains(banner_in_page))
+        finally:
+            page.close()
 
 
 if __name__ == "__main__":
