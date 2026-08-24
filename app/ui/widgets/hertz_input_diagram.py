@@ -6,7 +6,17 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
+from app.ui.design_tokens import qcolor, qpen
 from app.ui.fonts import make_ui_font
+
+
+def _token(name: str, alpha: int | float | None = None) -> QColor:
+    color = qcolor(name)
+    if isinstance(alpha, float):
+        color.setAlphaF(alpha)
+    elif isinstance(alpha, int):
+        color.setAlpha(alpha)
+    return color
 
 
 class HertzInputDiagramWidget(QWidget):
@@ -39,6 +49,17 @@ class HertzInputDiagramWidget(QWidget):
         self._e_eq = max(0.0, float(e_eq_mpa))
         self.update()
 
+    def geometry_context(self) -> tuple[str, float, float, float, float, float]:
+        """Stored input-geometry parameters used by paintEvent (no derived safety)."""
+        return (
+            self._mode,
+            self._r1,
+            self._r2,
+            self._length,
+            self._force,
+            self._e_eq,
+        )
+
     def paintEvent(self, event) -> None:  # noqa: N802
         del event
         painter = QPainter(self)
@@ -47,15 +68,15 @@ class HertzInputDiagramWidget(QWidget):
         w = float(self.width())
         h = float(self.height())
         panel = QRectF(12, 12, w - 24, h - 24)
-        painter.setPen(QPen(QColor("#D9D3CA"), 1.0))
-        painter.setBrush(QColor("#FBF8F3"))
+        painter.setPen(qpen("line_structural", 1.0))
+        painter.setBrush(_token("surface_glass_soft"))
         painter.drawRoundedRect(panel, 10, 10)
 
         left = QRectF(panel.left() + 12, panel.top() + 12, panel.width() * 0.55, panel.height() - 24)
         right = QRectF(left.right() + 10, panel.top() + 10, panel.right() - left.right() - 20, panel.height() - 20)
 
         painter.setFont(make_ui_font(14, 700))
-        painter.setPen(QPen(QColor("#2E2A25"), 1.0))
+        painter.setPen(qpen("ink_primary", 1.0))
         title = "线接触输入示意" if self._mode == "line" else "点接触输入示意"
         painter.drawText(QRectF(left.left(), left.top(), left.width(), 26), Qt.AlignmentFlag.AlignLeft, title)
 
@@ -103,40 +124,40 @@ class HertzInputDiagramWidget(QWidget):
         contact_y = mid_y + 8
 
         top_circle = QRectF(cx - radius, contact_y - 2 * radius, 2 * radius, 2 * radius)
-        painter.setPen(QPen(QColor("#7F7260"), 1.8))
-        painter.setBrush(QColor("#E8DFD3"))
+        painter.setPen(qpen("secondary", 1.8))
+        painter.setBrush(_token("secondary_soft"))
         painter.drawEllipse(top_circle)
 
         if self._r2 == 0:
-            painter.setPen(QPen(QColor("#7F7260"), 2.0))
+            painter.setPen(qpen("secondary", 2.0))
             painter.drawLine(QPointF(cx - radius * 2.2, contact_y), QPointF(cx + radius * 2.2, contact_y))
-            painter.setPen(QPen(QColor("#9B8D7A"), 1.0, Qt.PenStyle.DashLine))
+            painter.setPen(qpen("ink_quiet", 1.0, Qt.PenStyle.DashLine))
             painter.drawLine(QPointF(cx, contact_y - 38), QPointF(cx, contact_y + 38))
             self._draw_badge(painter, QRectF(cx + radius * 1.35, contact_y + 10, 78, 24), "R2=平面")
         else:
             bottom_circle = QRectF(cx - radius, contact_y, 2 * radius, 2 * radius)
-            painter.setPen(QPen(QColor("#7F7260"), 1.8))
-            painter.setBrush(QColor("#E8DFD3"))
+            painter.setPen(qpen("secondary", 1.8))
+            painter.setBrush(_token("secondary_soft"))
             painter.drawEllipse(bottom_circle)
             self._draw_badge(painter, QRectF(cx + radius * 1.35, contact_y + 18, 76, 24), "R2")
 
         # Contact strip and semi-width dimension.  The real contact is a
         # rectangle 2b by L; we show it as a warm strip at the interface.
         strip = QRectF(cx - radius * 0.55, contact_y - 3.2, radius * 1.10, 6.4)
-        painter.setPen(QPen(QColor("#D97757"), 1.2))
-        painter.setBrush(QColor(217, 119, 87, 95))
+        painter.setPen(qpen("accent", 1.2))
+        painter.setBrush(_token("accent", 95))
         painter.drawRoundedRect(strip, 3, 3)
         self._draw_dimension(
             painter,
             QPointF(strip.left(), contact_y + 18),
             QPointF(strip.right(), contact_y + 18),
             "2b",
-            QColor("#A6472A"),
+            _token("accent_ink"),
         )
 
         # Length direction shown as a small perspective rail below the patch.
         rail_y = rect.bottom() - 88
-        painter.setPen(QPen(QColor("#58707E"), 1.5))
+        painter.setPen(qpen("secondary", 1.5))
         painter.drawLine(QPointF(cx - 92, rail_y), QPointF(cx + 92, rail_y))
         painter.drawLine(QPointF(cx - 92, rail_y), QPointF(cx - 64, rail_y - 16))
         painter.drawLine(QPointF(cx + 92, rail_y), QPointF(cx + 120, rail_y - 16))
@@ -146,20 +167,20 @@ class HertzInputDiagramWidget(QWidget):
             QPointF(cx - 92, rail_y + 18),
             QPointF(cx + 92, rail_y + 18),
             "L 接触线长度",
-            QColor("#58707E"),
+            _token("secondary"),
         )
 
         # Force arrow
         top = QPointF(cx, rect.top() + 34)
         contact = QPointF(cx, top_circle.bottom() - 4)
-        self._draw_arrow(painter, top, contact, QColor("#D97757"))
+        self._draw_arrow(painter, top, contact, _token("accent"))
         painter.setFont(make_ui_font(13, 700))
-        painter.setPen(QPen(QColor("#7F2D1A"), 1.0))
+        painter.setPen(qpen("accent_ink", 1.0))
         painter.drawText(QRectF(contact.x() + 10, top.y() - 8, 84, 18), "F")
         self._draw_badge(painter, QRectF(cx - radius * 1.8, contact_y - radius * 1.2, 82, 24), "R1")
         self._draw_badge(painter, QRectF(rect.left() + 24, rect.top() + 42, 94, 24), "F' = F / L")
 
-        painter.setPen(QPen(QColor("#5C574F"), 1.0))
+        painter.setPen(qpen("ink_muted", 1.0))
         painter.setFont(make_ui_font(11))
         painter.drawText(QRectF(cx - 120, rect.bottom() - 28, 240, 20), Qt.AlignmentFlag.AlignCenter, "线接触：压力沿长度 L 分布")
 
@@ -169,24 +190,24 @@ class HertzInputDiagramWidget(QWidget):
         radius = min(rect.width(), rect.height()) * 0.18
 
         sphere = QRectF(cx - radius, cy - radius - 12, 2 * radius, 2 * radius)
-        painter.setPen(QPen(QColor("#7F7260"), 1.8))
-        painter.setBrush(QColor("#E8DFD3"))
+        painter.setPen(qpen("secondary", 1.8))
+        painter.setBrush(_token("secondary_soft"))
         painter.drawEllipse(sphere)
 
         y_plane = cy + radius + 8
         if self._r2 == 0:
-            painter.setPen(QPen(QColor("#7F7260"), 2.0))
+            painter.setPen(qpen("secondary", 2.0))
             painter.drawLine(QPointF(cx - radius * 2.1, y_plane), QPointF(cx + radius * 2.1, y_plane))
             self._draw_badge(painter, QRectF(cx + radius * 1.35, y_plane + 10, 78, 24), "R2=平面")
         else:
             bottom = QRectF(cx - radius * 0.92, y_plane - 4, radius * 1.84, radius * 1.84)
-            painter.setPen(QPen(QColor("#7F7260"), 1.8))
-            painter.setBrush(QColor("#E8DFD3"))
+            painter.setPen(qpen("secondary", 1.8))
+            painter.setBrush(_token("secondary_soft"))
             painter.drawEllipse(bottom)
             self._draw_badge(painter, QRectF(cx + radius * 1.35, y_plane + 12, 76, 24), "R2")
 
-        painter.setBrush(QColor("#D97757"))
-        painter.setPen(QPen(QColor("#D97757"), 1.0))
+        painter.setBrush(_token("accent"))
+        painter.setPen(qpen("accent", 1.0))
         patch = QRectF(cx - 18, y_plane - 5, 36, 10)
         painter.drawEllipse(patch)
         self._draw_dimension(
@@ -194,34 +215,34 @@ class HertzInputDiagramWidget(QWidget):
             QPointF(cx, y_plane),
             QPointF(cx + 34, y_plane),
             "a",
-            QColor("#A6472A"),
+            _token("accent_ink"),
         )
 
         top = QPointF(cx, rect.top() + 34)
         contact = QPointF(cx, cy - 4)
-        self._draw_arrow(painter, top, contact, QColor("#D97757"))
+        self._draw_arrow(painter, top, contact, _token("accent"))
         painter.setFont(make_ui_font(13, 700))
-        painter.setPen(QPen(QColor("#7F2D1A"), 1.0))
+        painter.setPen(qpen("accent_ink", 1.0))
         painter.drawText(QRectF(contact.x() + 10, top.y() - 8, 84, 18), "F")
         self._draw_badge(painter, QRectF(cx - radius * 1.9, cy - radius * 0.9, 78, 24), "R1")
         self._draw_badge(painter, QRectF(rect.left() + 24, rect.top() + 42, 110, 24), "A = pi·a²")
 
-        painter.setPen(QPen(QColor("#5C574F"), 1.0))
+        painter.setPen(qpen("ink_muted", 1.0))
         painter.setFont(make_ui_font(11))
         painter.drawText(QRectF(cx - 126, rect.bottom() - 32, 252, 20), Qt.AlignmentFlag.AlignCenter, "点接触：示意中放大显示接触斑")
 
     def _draw_text_card(self, painter: QPainter, rect: QRectF, text: str, bold_title: bool = False) -> None:
-        painter.setPen(QPen(QColor("#E4DDD2"), 1.0))
-        painter.setBrush(QColor("#FBF8F3"))
+        painter.setPen(qpen("line_structural", 1.0))
+        painter.setBrush(_token("surface_glass_soft"))
         painter.drawRoundedRect(rect, 8, 8)
         lines = text.splitlines()
         if not lines:
             return
         title_rect = QRectF(rect.left() + 12, rect.top() + 10, rect.width() - 24, 20)
-        painter.setPen(QPen(QColor("#2E2A25"), 1.0))
+        painter.setPen(qpen("ink_primary", 1.0))
         painter.setFont(make_ui_font(11, 700 if bold_title else 600))
         painter.drawText(title_rect, Qt.AlignmentFlag.AlignLeft, lines[0])
-        painter.setPen(QPen(QColor("#5C574F"), 1.0))
+        painter.setPen(qpen("ink_muted", 1.0))
         painter.setFont(make_ui_font(10))
         painter.drawText(
             rect.adjusted(12, 34, -12, -10),
@@ -230,10 +251,10 @@ class HertzInputDiagramWidget(QWidget):
         )
 
     def _draw_badge(self, painter: QPainter, rect: QRectF, text: str) -> None:
-        painter.setPen(QPen(QColor("#CDBFAA"), 1.0))
-        painter.setBrush(QColor(251, 248, 243, 235))
+        painter.setPen(qpen("line_structural", 1.0))
+        painter.setBrush(_token("surface_glass_strong"))
         painter.drawRoundedRect(rect, 5, 5)
-        painter.setPen(QPen(QColor("#5C574F"), 1.0))
+        painter.setPen(qpen("ink_muted", 1.0))
         painter.setFont(make_ui_font(9, 600))
         painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
 

@@ -8,7 +8,19 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QWidget
 
+from app.ui.design_tokens import qcolor, qpen
 from app.ui.fonts import make_ui_font
+
+GRID_ALPHA = 0.55
+
+
+def _token(name: str, alpha: int | float | None = None) -> QColor:
+    color = qcolor(name)
+    if isinstance(alpha, float):
+        color.setAlphaF(alpha)
+    elif isinstance(alpha, int):
+        color.setAlpha(alpha)
+    return color
 
 
 class PressForceCurveWidget(QWidget):
@@ -38,6 +50,16 @@ class PressForceCurveWidget(QWidget):
         self._delta_req = max(0.0, float(delta_required_um))
         self.update()
 
+    def curve_data(self) -> tuple[list[float], list[float], float, float, float]:
+        """Stored series and marker x-values consumed by paintEvent."""
+        return (
+            list(self._x),
+            list(self._y),
+            self._delta_min,
+            self._delta_max,
+            self._delta_req,
+        )
+
     def paintEvent(self, event) -> None:  # noqa: N802
         del event
         painter = QPainter(self)
@@ -48,17 +70,17 @@ class PressForceCurveWidget(QWidget):
         margin = 14.0
         panel = QRectF(margin, margin, w - margin * 2, h - margin * 2)
 
-        painter.setPen(QPen(QColor("#D9D3CA"), 1.0))
-        painter.setBrush(QColor("#FBF8F3"))
+        painter.setPen(qpen("line_structural", 1.0))
+        painter.setBrush(_token("surface_glass_soft"))
         painter.drawRoundedRect(panel, 10, 10)
 
         plot = QRectF(panel.left() + 68, panel.top() + 20, panel.width() - 98, panel.height() - 66)
-        painter.setPen(QPen(QColor("#E1DBD1"), 1.0))
+        painter.setPen(qpen("line_structural", 1.0))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(plot)
 
         if len(self._x) < 2 or len(self._y) < 2:
-            painter.setPen(QPen(QColor("#6B665E"), 1.0))
+            painter.setPen(qpen("ink_muted", 1.0))
             painter.setFont(make_ui_font(11))
             painter.drawText(panel, Qt.AlignmentFlag.AlignCenter, "执行校核后显示压入力曲线")
             return
@@ -85,7 +107,7 @@ class PressForceCurveWidget(QWidget):
             return plot.bottom() - (y - y_min) / (y_max - y_min) * plot.height()
 
         # Grid
-        grid_pen = QPen(QColor("#ECE6DC"), 1.0)
+        grid_pen = QPen(_token("line_structural", GRID_ALPHA), 1.0)
         painter.setPen(grid_pen)
         for i in range(1, 5):
             yy = plot.top() + plot.height() * i / 5.0
@@ -96,22 +118,22 @@ class PressForceCurveWidget(QWidget):
         right_x = max(plot.left(), min(plot.right(), sx(self._delta_max)))
         if right_x > left_x:
             painter.setPen(QPen(Qt.PenStyle.NoPen))
-            painter.setBrush(QColor(76, 98, 122, 28))
+            painter.setBrush(_token("secondary", 28))
             painter.drawRect(QRectF(left_x, plot.top(), right_x - left_x, plot.height()))
 
         # Curve
-        curve_pen = QPen(QColor("#D97757"), 2.4)
+        curve_pen = qpen("accent", 2.4)
         painter.setPen(curve_pen)
         for i in range(1, len(self._x)):
             painter.drawLine(QPointF(sx(self._x[i - 1]), sy(self._y[i - 1])), QPointF(sx(self._x[i]), sy(self._y[i])))
 
         # Explicit axes with arrow heads and ticks.
-        axis_pen = QPen(QColor("#5C574F"), 1.3)
+        axis_pen = qpen("ink_muted", 1.3)
         painter.setPen(axis_pen)
         painter.drawLine(QPointF(plot.left(), plot.bottom()), QPointF(plot.right() + 10, plot.bottom()))
         painter.drawLine(QPointF(plot.left(), plot.bottom()), QPointF(plot.left(), plot.top() - 10))
-        self._draw_arrow_head(painter, QPointF(plot.right() + 10, plot.bottom()), QPointF(1.0, 0.0), QColor("#5C574F"))
-        self._draw_arrow_head(painter, QPointF(plot.left(), plot.top() - 10), QPointF(0.0, -1.0), QColor("#5C574F"))
+        self._draw_arrow_head(painter, QPointF(plot.right() + 10, plot.bottom()), QPointF(1.0, 0.0), _token("ink_muted"))
+        self._draw_arrow_head(painter, QPointF(plot.left(), plot.top() - 10), QPointF(0.0, -1.0), _token("ink_muted"))
 
         painter.setFont(make_ui_font(8))
         for i in range(6):
@@ -127,14 +149,14 @@ class PressForceCurveWidget(QWidget):
             painter.drawText(QRectF(plot.left() - 56, y_tick - 7, 50, 14), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, y_tick_fmt.format(val))
 
         # Markers for min/max/required interference
-        self._draw_marker(painter, sx, plot, self._delta_min, QColor("#4C627A"), "delta_min")
-        self._draw_marker(painter, sx, plot, self._delta_max, QColor("#5A8A5E"), "delta_max")
-        self._draw_marker(painter, sx, plot, self._delta_req, QColor("#7F2D1A"), "delta_req")
-        self._draw_curve_point(painter, sx(self._delta_min), sy(self._interp_force(self._delta_min)), QColor("#4C627A"))
-        self._draw_curve_point(painter, sx(self._delta_max), sy(self._interp_force(self._delta_max)), QColor("#5A8A5E"))
+        self._draw_marker(painter, sx, plot, self._delta_min, _token("secondary"), "delta_min")
+        self._draw_marker(painter, sx, plot, self._delta_max, _token("pass_fg"), "delta_max")
+        self._draw_marker(painter, sx, plot, self._delta_req, _token("fail_fg"), "delta_req")
+        self._draw_curve_point(painter, sx(self._delta_min), sy(self._interp_force(self._delta_min)), _token("secondary"))
+        self._draw_curve_point(painter, sx(self._delta_max), sy(self._interp_force(self._delta_max)), _token("pass_fg"))
 
         # Axis labels
-        painter.setPen(QPen(QColor("#5C574F"), 1.0))
+        painter.setPen(qpen("ink_muted", 1.0))
         painter.setFont(make_ui_font(10))
         painter.drawText(QRectF(plot.left(), panel.bottom() - 22, plot.width(), 18), Qt.AlignmentFlag.AlignCenter, "过盈量 delta (um)")
         painter.save()
@@ -153,7 +175,7 @@ class PressForceCurveWidget(QWidget):
             f"delta_req={self._delta_req:.2f} um"
         )
         painter.setFont(make_ui_font(9))
-        painter.setPen(QPen(QColor("#6B665E"), 1.0))
+        painter.setPen(qpen("ink_muted", 1.0))
         painter.drawText(
             QRectF(plot.right() - 130, plot.top() + 6, 124, 70),
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop,
