@@ -10,38 +10,55 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from app.ui.design_tokens import cloud_porcelain_controls
+from app.ui.widgets.action_overflow import ActionOverflowController, ChapterActionButton
+from app.ui.widgets.chapter_delegate import ChapterNavigationDelegate
+
 
 class BaseChapterPage(QWidget):
-    """Reusable shell: header + actions + chapter navigation + footer state."""
+    """Reusable shell: combined header + chapter navigation + footer state."""
 
     def __init__(self, title: str, subtitle: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
+        controls = cloud_porcelain_controls()
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 10, 12, 10)
         root.setSpacing(8)
 
         header = QFrame(self)
-        header.setObjectName("Card")
-        header_layout = QVBoxLayout(header)
-        header_layout.setContentsMargins(12, 8, 12, 8)
-        header_layout.setSpacing(2)
-        title_label = QLabel(title, header)
-        title_label.setObjectName("SectionTitle")
-        hint_label = QLabel(subtitle, header)
+        header.setObjectName("ChapterHeader")
+        header.setMinimumHeight(controls.header_min_height)
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(16, 12, 16, 12)
+        header_layout.setSpacing(12)
+
+        title_block = QWidget(header)
+        title_block.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
+        title_layout = QVBoxLayout(title_block)
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        title_layout.setSpacing(2)
+        title_label = QLabel(title, title_block)
+        title_label.setObjectName("ChapterTitle")
+        hint_label = QLabel(subtitle, title_block)
         hint_label.setObjectName("SectionHint")
         hint_label.setWordWrap(True)
-        header_layout.addWidget(title_label)
-        header_layout.addWidget(hint_label)
-        root.addWidget(header)
+        title_layout.addWidget(title_label)
+        title_layout.addWidget(hint_label)
+        header_layout.addWidget(title_block, 1)
 
-        actions = QFrame(self)
+        actions = QWidget(header)
+        actions.setObjectName("ChapterActions")
+        actions.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
         self.actions_layout = QHBoxLayout(actions)
         self.actions_layout.setContentsMargins(0, 0, 0, 0)
         self.actions_layout.setSpacing(8)
@@ -54,7 +71,15 @@ class BaseChapterPage(QWidget):
         self.actions_layout.addLayout(self.left_actions_layout)
         self.actions_layout.addStretch(1)
         self.actions_layout.addLayout(self.right_actions_layout)
-        root.addWidget(actions)
+
+        self.overflow_button = QPushButton("更多", actions)
+        self.actions_layout.addWidget(self.overflow_button)
+        header_layout.addWidget(actions, 0)
+        root.addWidget(header)
+
+        self.chapter_header = header
+        self._primary_action_button: QPushButton | None = None
+        self._action_overflow = ActionOverflowController(header, self.overflow_button, self)
 
         content_splitter = QSplitter(Qt.Orientation.Horizontal, self)
         content_splitter.setHandleWidth(4)
@@ -70,12 +95,18 @@ class BaseChapterPage(QWidget):
         nav_layout.setContentsMargins(12, 12, 12, 12)
         nav_layout.setSpacing(8)
         self.nav_title_label = QLabel("计算顺序", nav_card)
-        self.nav_title_label.setObjectName("SectionTitle")
+        self.nav_title_label.setObjectName("SubSectionTitle")
         self.chapter_list = QListWidget(nav_card)
         self.chapter_list.setObjectName("ChapterList")
         self.chapter_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.chapter_list.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.chapter_list.setUniformItemSizes(True)
+        self.chapter_list.setMouseTracking(True)
+        self.chapter_list.viewport().setMouseTracking(True)
+        self.chapter_list.viewport().setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        self.chapter_list.setItemDelegate(ChapterNavigationDelegate(self.chapter_list))
+        self.chapter_list.setSpacing(0)
+        self.chapter_list.setFrameShape(QFrame.Shape.NoFrame)
         nav_layout.addWidget(self.nav_title_label)
         nav_layout.addWidget(self.chapter_list, 1)
         content_splitter.addWidget(nav_card)
@@ -109,13 +140,23 @@ class BaseChapterPage(QWidget):
             item.setToolTip(item.text())
 
     def add_action_button(self, text: str, primary: bool = False, side: str = "left") -> QPushButton:
-        button = QPushButton(text, self)
+        button = ChapterActionButton(text, self)
+        controls = cloud_porcelain_controls()
+        button.setMinimumHeight(controls.button_height)
         if primary:
+            if (
+                self._primary_action_button is not None
+                and self._primary_action_button is not button
+            ):
+                self._demote_primary(self._primary_action_button)
             button.setObjectName("PrimaryButton")
+            button.setMinimumHeight(controls.primary_button_height)
+            self._primary_action_button = button
         if side == "right":
             self.right_actions_layout.addWidget(button)
         else:
             self.left_actions_layout.addWidget(button)
+        self._action_overflow.register(button)
         return button
 
     def add_guide_button(
@@ -221,3 +262,16 @@ class BaseChapterPage(QWidget):
             return
         if any(marker in text for marker in ("错误", "变更", "失败", "待重新")):
             self.set_info(text)
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._action_overflow.relayout()
+
+    @staticmethod
+    def _demote_primary(button: QPushButton) -> None:
+        button.setObjectName("")
+        button.setMinimumHeight(cloud_porcelain_controls().button_height)
+        style = button.style()
+        style.unpolish(button)
+        style.polish(button)
+        button.update()

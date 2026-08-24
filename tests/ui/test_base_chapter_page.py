@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import pytest
-from PySide6.QtWidgets import QApplication, QFrame, QScrollArea
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QPushButton, QScrollArea
 
+from app.ui.design_tokens import cloud_porcelain_controls
 from app.ui.pages.base_chapter_page import BaseChapterPage
 
 
@@ -70,3 +71,29 @@ def test_footer_has_info_label_not_overall_badge(qapp):
     assert "总体不通过" not in shell.info_label.text()
     shell.set_overall_status("输入已变更，待重新计算", "wait")
     assert shell.info_label.text() == "输入已变更，待重新计算"
+
+
+def test_combined_header_contains_title_and_actions(qapp):
+    """PAGE-01: title, subtitle, and action buttons share one glass header."""
+    shell = BaseChapterPage("赫兹应力", "subtitle")
+    button = shell.add_action_button("执行校核", primary=True)
+    assert isinstance(button, QPushButton)
+    header = shell.chapter_header
+    assert header.objectName() == "ChapterHeader"
+    assert header.minimumHeight() >= cloud_porcelain_controls().header_min_height
+    title = header.findChild(QLabel, "ChapterTitle")
+    assert title is not None
+    assert title.text() == "赫兹应力"
+    assert header.isAncestorOf(title)
+    assert header.isAncestorOf(button)
+    assert header.isAncestorOf(shell.overflow_button)
+    assert shell.add_action_stretch() is None
+
+
+def test_second_primary_action_is_demoted(qapp):
+    """Only one PrimaryButton remains; the earlier primary is demoted."""
+    shell = BaseChapterPage("t", "s")
+    first = shell.add_action_button("导入曲线文件", primary=True)
+    second = shell.add_action_button("执行仿真", primary=True)
+    assert first.objectName() != "PrimaryButton"
+    assert second.objectName() == "PrimaryButton"

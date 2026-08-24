@@ -104,6 +104,9 @@ def build_style_sheet(palette: CloudPorcelainPalette | None = None) -> str:
         "radius_badge": radii.radius_badge,
         "radius_small": radii.radius_small,
         "help_button_inner": controls.help_button_inner,
+        "header_min_height": controls.header_min_height,
+        "button_height": controls.button_height,
+        "primary_button_height": controls.primary_button_height,
     }
 
     return _interpolate(_STYLE_TEMPLATE, values)
@@ -235,22 +238,41 @@ _STYLE_TEMPLATE = """
             border: none;
             background: transparent;
             outline: 0;
-            padding: 6px;
+            padding: 4px 0px;
         }
         QListWidget#ChapterList::item {
-            border: 1px solid transparent;
-            border-radius: ${radius_small}px;
-            padding: 8px 10px;
+            border: none;
+            border-radius: ${radius_control}px;
+            padding: 0px;
             margin-bottom: 3px;
+            min-height: 36px;
+            background: transparent;
         }
         QListWidget#ChapterList::item:hover {
-            background: ${surface_glass_soft};
-            border: 1px solid ${line_structural};
+            background: transparent;
         }
         QListWidget#ChapterList::item:selected {
-            background: ${accent_soft};
-            border: 1px solid ${accent};
+            background: transparent;
+            color: ${accent_ink};
+        }
+        QFrame#ChapterHeader {
+            background-color: ${surface_glass_strong};
+            border: 1px solid ${line_structural};
+            border-top-color: ${line_highlight};
+            border-radius: ${radius_primary}px;
+            min-height: ${header_min_height}px;
+        }
+        QWidget#ChapterActions {
+            background: transparent;
+        }
+        QLabel#ChapterTitle {
+            font-size: 15pt;
             font-weight: 600;
+            color: ${ink_primary};
+            background: transparent;
+        }
+        QPushButton#OverflowButton {
+            min-height: ${button_height}px;
         }
         QFrame#Card {
             background-color: ${surface_glass_strong};
