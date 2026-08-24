@@ -126,11 +126,11 @@ CHAPTERS: list[dict[str, Any]] = [
         "help_ref": "modules/bolt_tapped_axial/_section_assembly_preload",
         "fields": [
             FieldSpec("assembly.F_preload_min", "最小预紧力 F_preload_min", "N", "装配后可保证达到的最小预紧力。", default="12000.0", help_ref="terms/bolt_preload_fm"),
-            FieldSpec("assembly.alpha_A", "装配散差系数 alpha_A", "-", "预紧力上限与下限的比值。", default="1.6", help_ref="terms/bolt_tightening_factor_alpha_a"),
-            FieldSpec("assembly.mu_thread", "螺纹摩擦系数 mu_thread", "-", "螺纹副摩擦系数。", default="0.12", help_ref="terms/bolt_friction_thread"),
-            FieldSpec("assembly.mu_bearing", "支承面摩擦系数 mu_bearing", "-", "支承面摩擦系数。", default="0.14", help_ref="terms/bolt_friction_bearing"),
-            FieldSpec("assembly.bearing_d_inner", "支承内径 bearing_d_inner", "mm", "支承面内径。", default="11.0"),
-            FieldSpec("assembly.bearing_d_outer", "支承外径 bearing_d_outer", "mm", "支承面外径。", default="18.0"),
+            FieldSpec("assembly.alpha_A", "装配散差系数 alpha_A", "-", "预紧力上限与下限的比值。", default="1.6", min_value=1.0, help_ref="terms/bolt_tightening_factor_alpha_a"),
+            FieldSpec("assembly.mu_thread", "螺纹摩擦系数 mu_thread", "-", "螺纹副摩擦系数。", default="0.12", min_value=0.0, max_value=1.0, min_inclusive=False, help_ref="terms/bolt_friction_thread"),
+            FieldSpec("assembly.mu_bearing", "支承面摩擦系数 mu_bearing", "-", "支承面摩擦系数。", default="0.14", min_value=0.0, max_value=1.0, min_inclusive=False, help_ref="terms/bolt_friction_bearing"),
+            FieldSpec("assembly.bearing_d_inner", "支承内径 bearing_d_inner", "mm", "支承面内径。", default="11.0", min_value=0.0, min_inclusive=False),
+            FieldSpec("assembly.bearing_d_outer", "支承外径 bearing_d_outer", "mm", "支承面外径，必须大于支承内径。", default="18.0", min_value=0.0, min_inclusive=False),
             FieldSpec("assembly.prevailing_torque", "附加防松扭矩 prevailing_torque", "N·m", "锁紧件（尼龙圈螺母、螺纹胶等）产生的附加扭矩。", default="0.0", help_ref="terms/bolt_tapped_axial_prevailing_torque"),
             FieldSpec("assembly.thread_flank_angle_deg", "牙型角 thread_flank_angle_deg", "deg", "公制螺纹常用 60°。", default="60.0"),
             FieldSpec(
@@ -143,7 +143,7 @@ CHAPTERS: list[dict[str, Any]] = [
                 default="torque",
                 help_ref="terms/bolt_tightening_method",
             ),
-            FieldSpec("assembly.utilization", "装配利用系数 utilization", "-", "预紧力利用比例 ν；装配许用应力 = ν·Rp0.2。", default="0.9", help_ref="terms/bolt_utilization_nu"),
+            FieldSpec("assembly.utilization", "装配利用系数 utilization", "-", "预紧力利用比例 ν；装配许用应力 = ν·Rp0.2。", default="0.9", min_value=0.0, max_value=1.0, min_inclusive=False, help_ref="terms/bolt_utilization_nu"),
         ],
     },
     {
@@ -277,7 +277,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         self._refresh_all_field_errors()
 
         self._invalidate_cache()  # 初始禁用导出按钮
-        self.set_info('填写输入条件后点击"开始计算"。')
+        self.set_info('填写输入条件后点击"执行校核"。')
 
     def _build_input_chapters(self) -> None:
         for chapter in CHAPTERS:
@@ -431,7 +431,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         self.result_title = QLabel("尚未执行计算", summary_card)
         self.result_title.setObjectName("SubSectionTitle")
         self.result_summary = QLabel(
-            '填写参数并点击"开始计算"后，这里显示结论。', summary_card
+            '填写参数并点击"执行校核"后，这里显示结论。', summary_card
         )
         self.result_summary.setObjectName("SectionHint")
         self.result_summary.setWordWrap(True)
@@ -794,8 +794,45 @@ class BoltTappedAxialPage(BaseChapterPage):
         if spec is None:
             return
         raw_values = values if values is not None else self._current_raw_values()
-        ok, message = validate_text(spec, raw_values.get(field_id, ""), values=raw_values)
-        self._set_field_error(field_id, None if ok else message)
+        message = self._field_validation_message(field_id, raw_values)
+        self._set_field_error(field_id, message or None)
+
+    def _field_validation_message(
+        self,
+        field_id: str,
+        values: dict[str, str],
+    ) -> str:
+        """Validate one field, including relations that core will enforce."""
+        spec = self._field_specs[field_id]
+        ok, message = validate_text(spec, values.get(field_id, ""), values=values)
+        if not ok:
+            return message
+
+        relation: tuple[str, str, str, bool] | None = None
+        if field_id == "assembly.bearing_d_outer":
+            relation = (
+                "assembly.bearing_d_inner",
+                "assembly.bearing_d_outer",
+                "支承外径 bearing_d_outer 必须大于支承内径 bearing_d_inner",
+                True,
+            )
+        elif field_id == "service.FA_max":
+            relation = (
+                "service.FA_min",
+                "service.FA_max",
+                "最大轴向载荷 FA_max 必须大于等于最小轴向载荷 FA_min",
+                False,
+            )
+        if relation is None:
+            return ""
+        lower_id, upper_id, relation_message, strict = relation
+        try:
+            lower = float(values.get(lower_id, ""))
+            upper = float(values.get(upper_id, ""))
+        except (TypeError, ValueError):
+            return ""
+        invalid_relation = upper <= lower if strict else upper < lower
+        return relation_message if invalid_relation else ""
 
     def _dependent_field_ids(self, field_id: str) -> list[str]:
         dependents: list[str] = []
@@ -808,6 +845,13 @@ class BoltTappedAxialPage(BaseChapterPage):
                 ):
                     dependents.append(spec.field_id)
                     break
+        relational_dependents = {
+            "assembly.bearing_d_inner": "assembly.bearing_d_outer",
+            "service.FA_min": "service.FA_max",
+        }
+        relation_target = relational_dependents.get(field_id)
+        if relation_target is not None and relation_target not in dependents:
+            dependents.append(relation_target)
         return dependents
 
     def _refresh_all_field_errors(self) -> None:
@@ -818,12 +862,12 @@ class BoltTappedAxialPage(BaseChapterPage):
     def _collect_field_errors(self, *, show: bool) -> list[str]:
         values = self._current_raw_values()
         invalid: list[str] = []
-        for field_id, spec in self._field_specs.items():
-            ok, message = validate_text(spec, values.get(field_id, ""), values=values)
-            if not ok:
+        for field_id in self._field_specs:
+            message = self._field_validation_message(field_id, values)
+            if message:
                 invalid.append(field_id)
             if show:
-                self._set_field_error(field_id, None if ok else message)
+                self._set_field_error(field_id, message or None)
         return invalid
 
     def _focus_field(self, field_id: str) -> None:
@@ -1025,7 +1069,7 @@ class BoltTappedAxialPage(BaseChapterPage):
         if current != self._last_payload:
             QMessageBox.warning(
                 self, "输入已变更",
-                '当前表单与上次计算时的输入不一致，请先点击"开始计算"'
+                '当前表单与上次计算时的输入不一致，请先点击"执行校核"'
                 "刷新结果，再导出报告。",
             )
             return False

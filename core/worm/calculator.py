@@ -18,7 +18,7 @@ from core._validation import (
     safety_factor_min,
     section,
 )
-from core.worm.materials import PLASTIC_MATERIALS, apply_derate
+from core.worm.materials import PLASTIC_MATERIALS, apply_derate, effective_humidity_rh
 
 
 class InputError(ValueError):
@@ -142,15 +142,34 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
     humidity_rh = finite_float(
         advanced.get("humidity_rh", 50.0), "advanced.humidity_rh", error_cls=InputError
     )
+    if not 0.0 <= humidity_rh <= 100.0:
+        raise InputError(
+            "advanced.humidity_rh 必须在 0 ~ 100 %RH 范围内，"
+            f"当前值 {humidity_rh}。"
+        )
     wheel_plastic = PLASTIC_MATERIALS.get(wheel_material)
+    humidity_effective_rh = (
+        effective_humidity_rh(humidity_rh)
+        if wheel_plastic is not None
+        else humidity_rh
+    )
+    humidity_model_saturated = (
+        wheel_plastic is not None and humidity_rh > humidity_effective_rh
+    )
     material_warnings: list[str] = []
     if wheel_plastic is not None:
         # 根据温度和湿度降额，覆盖许用值（优先于 MATERIAL_ALLOWABLE_HINTS 的常温干态值）
         sigma_hlim_derated, sigma_flim_derated = apply_derate(
             wheel_plastic,
             operating_temp_c=operating_temp_c,
-            humidity_rh=humidity_rh,
+            humidity_rh=humidity_effective_rh,
         )
+        if humidity_model_saturated:
+            material_warnings.append(
+                f"输入相对湿度 {humidity_rh:.1f}%RH；当前简化材料模型在 50.0%RH 后按吸湿饱和处理，"
+                f"本次降额采用有效湿度 {humidity_effective_rh:.1f}%RH。"
+                "该假设不保证对所有材料牌号保守，高湿工况应使用供应商调湿数据复核。"
+            )
         if operating_temp_c > wheel_plastic.allowable_surface_temp_c:
             material_warnings.append(
                 f"工作温度 {operating_temp_c:.1f} degC 超过 {wheel_plastic.name} "
@@ -415,6 +434,13 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
         "application_factor": application_factor,
         "self_locking": self_locking,
         "phi_prime_deg": phi_prime_deg,
+        "material_condition": {
+            "operating_temp_c": operating_temp_c,
+            "humidity_input_rh": humidity_rh,
+            "humidity_effective_rh": humidity_effective_rh,
+            "humidity_model_applied": wheel_plastic is not None,
+            "humidity_model_saturated": humidity_model_saturated,
+        },
         "warnings": performance_warnings,
     }
     curve_out: Dict[str, Any] = {
@@ -456,7 +482,7 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
                 "root": {},
                 "torque_ripple": {},
                 "factors": {},
-                "warnings": [],
+                "warnings": material_warnings,
                 "assumptions": [],
                 "stress_curve": {},
             },
@@ -653,6 +679,12 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
         abs(lead_angle_delta_deg) <= 0.5
         and abs(center_distance_delta_mm) <= max(0.25 * module_mm, 0.5)
     )
+    formal_checks_pass = geometry_consistent and contact_ok and root_ok
+    load_capacity_overall_status = (
+        "incomplete"
+        if humidity_model_saturated
+        else ("pass" if formal_checks_pass else "fail")
+    )
 
     # ---- Mesh stress curve: contact geometry variation over one worm revolution ----
     curve_n_points = 360
@@ -735,7 +767,7 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
             "method": method,
             "status": (
                 f"{method} 最小子集校核通过"
-                if contact_ok and root_ok and not load_capacity_warnings
+                if load_capacity_overall_status == "pass" and not load_capacity_warnings
                 else f"{method} 最小子集已计算（存在警告或不通过项）"
             ),
             "warnings": load_capacity_warnings,
@@ -795,7 +827,8 @@ def calculate_worm_geometry(data: Dict[str, Any]) -> Dict[str, Any]:
                 "safety_factor_nominal": root_safety_factor_nominal,
                 "safety_factor_peak": root_safety_factor_peak,
             },
-            "overall_pass": geometry_consistent and contact_ok and root_ok,
+            "overall_status": load_capacity_overall_status,
+            "overall_pass": load_capacity_overall_status == "pass",
             "checks": {
                 # geometry_consistent 仅判断导程角和中心距是否自洽，
                 # q 不在推荐序列仅为提示性警告，不影响几何自洽判断

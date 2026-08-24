@@ -63,7 +63,9 @@ class BaseChapterPage(QWidget):
 
         nav_card = QFrame(self)
         nav_card.setObjectName("Card")
-        nav_card.setMinimumWidth(220)
+        # Include card/list padding in the supported-size width so current
+        # long step labels render fully instead of creating horizontal scroll.
+        nav_card.setMinimumWidth(260)
         nav_layout = QVBoxLayout(nav_card)
         nav_layout.setContentsMargins(12, 12, 12, 12)
         nav_layout.setSpacing(8)
@@ -71,6 +73,9 @@ class BaseChapterPage(QWidget):
         self.nav_title_label.setObjectName("SectionTitle")
         self.chapter_list = QListWidget(nav_card)
         self.chapter_list.setObjectName("ChapterList")
+        self.chapter_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.chapter_list.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.chapter_list.setUniformItemSizes(True)
         nav_layout.addWidget(self.nav_title_label)
         nav_layout.addWidget(self.chapter_list, 1)
         content_splitter.addWidget(nav_card)
@@ -79,7 +84,7 @@ class BaseChapterPage(QWidget):
 
         self.chapter_stack = QStackedWidget(self)
         content_splitter.addWidget(self.chapter_stack)
-        content_splitter.setSizes([240, 960])
+        content_splitter.setSizes([260, 940])
         content_splitter.setStretchFactor(0, 0)
         content_splitter.setStretchFactor(1, 1)
 
@@ -95,6 +100,13 @@ class BaseChapterPage(QWidget):
         root.addWidget(footer)
 
         self.chapter_list.currentRowChanged.connect(self.chapter_stack.setCurrentIndex)
+        self.chapter_list.itemChanged.connect(self._sync_chapter_item_tooltip)
+
+    @staticmethod
+    def _sync_chapter_item_tooltip(item: QListWidgetItem) -> None:
+        """Keep the complete dynamic step label available when text is elided."""
+        if item.toolTip() != item.text():
+            item.setToolTip(item.text())
 
     def add_action_button(self, text: str, primary: bool = False, side: str = "left") -> QPushButton:
         button = QPushButton(text, self)
@@ -130,7 +142,10 @@ class BaseChapterPage(QWidget):
         title — the wrapper renders it alongside the "?" button.
         """
         self._chapter_step_index += 1
-        self.chapter_list.addItem(QListWidgetItem(f"步骤 {self._chapter_step_index}. {title}"))
+        item_text = f"步骤 {self._chapter_step_index}. {title}"
+        item = QListWidgetItem(item_text)
+        item.setToolTip(item_text)
+        self.chapter_list.addItem(item)
 
         if help_ref:
             # Wrap page in a container with a chapter-header row: title + HelpButton.

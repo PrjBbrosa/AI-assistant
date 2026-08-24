@@ -6,7 +6,7 @@
 - 湿度降额（PA 系列显著降额，PEEK 几乎不降）
 """
 import pytest
-from core.worm.materials import PLASTIC_MATERIALS, apply_derate
+from core.worm.materials import PLASTIC_MATERIALS, apply_derate, effective_humidity_rh
 
 
 def test_all_plastic_materials_loaded():
@@ -64,6 +64,23 @@ def test_humidity_derate_hits_pa_only():
     assert sigma_peek_50rh == pytest.approx(sigma_peek_0rh, rel=5e-2), (
         f"PEEK 湿度降额不应显著：50%RH={sigma_peek_50rh:.2f} vs 干态={sigma_peek_0rh:.2f} MPa"
     )
+
+
+def test_humidity_model_exposes_50rh_saturation_value():
+    assert effective_humidity_rh(20.0) == 20.0
+    assert effective_humidity_rh(80.0) == 50.0
+
+    mat = PLASTIC_MATERIALS["PA66"]
+    sigma_h_50rh, sigma_f_50rh = apply_derate(mat, humidity_rh=50.0)
+    sigma_h_80rh, sigma_f_80rh = apply_derate(mat, humidity_rh=80.0)
+    assert sigma_h_80rh == pytest.approx(sigma_h_50rh)
+    assert sigma_f_80rh == pytest.approx(sigma_f_50rh)
+
+
+@pytest.mark.parametrize("humidity_rh", [-0.1, 100.1, float("inf"), float("nan")])
+def test_humidity_model_rejects_nonphysical_input(humidity_rh):
+    with pytest.raises(ValueError, match="0 ~ 100"):
+        effective_humidity_rh(humidity_rh)
 
 
 def test_derate_base_temp_no_change():

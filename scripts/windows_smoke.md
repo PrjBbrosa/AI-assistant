@@ -1,6 +1,8 @@
-# Windows desktop smoke（手工，未自动化）
+# Windows desktop smoke
 
-本清单 **没有** 接入 GitHub Actions 的 Windows runner。仓库 CI 只在 Ubuntu + `QT_QPA_PLATFORM=offscreen` 下跑 `pytest` 与 `git diff --check`，**不声称** 本 smoke 已执行或已通过。七个计算页的 offscreen 工作流 smoke 见 `tests/ui/test_module_workflow_smoke.py`；Windows 打包 exe smoke 仍按本清单手工验收，不由该测试代替。
+GitHub Actions 的 Windows runner 会执行 PyInstaller onedir 构建、校验 `build-info.json` 并启动 EXE 10 秒，覆盖“能构建且不会立即退出”的浅层门禁。它不操作真实桌面 UI，也不替代本清单的七模块人工验收。七个计算页的 offscreen 工作流 smoke 见 `tests/ui/test_module_workflow_smoke.py`。
+
+只有对应 CI run 实际通过时，才能声称该提交通过了自动 Windows 浅层 smoke；本地未运行不能据此声称 Windows 已通过。
 
 在本机 Windows 上按下列步骤做一次手工验收，并记下日期、构建版本、git SHA 和结果。任一步失败都不要把本次构建当成可发布。
 
@@ -18,12 +20,13 @@ scripts\build_exe.bat
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build_exe.ps1
 ```
 
-脚本实际写出路径由 `scripts/build_exe.ps1` 决定（默认 `dist/releases/<version>/LocalEngineeringAssistant/`）。以终端打印的 `Build completed:` 路径为准，不要假设 README 里的历史目录名一定仍然正确。
+脚本实际写出路径由 `scripts/build_exe.ps1` 决定，默认是 `dist/releases/<version>/LocalEngineeringAssistant/`。以终端打印的 `Build completed:` 路径为准。
 
 确认：
 
 - 构建命令退出码为 0
 - 产物目录里存在可启动的 `LocalEngineeringAssistant.exe`（onedir）或同名单文件 exe（若使用 `-OneFile`）
+- `build-info.json` 中的 `version`、`build_id`、`git_commit` 和 `git_dirty` 与本次构建一致；onedir 文件位于应用目录，onefile 文件位于 exe 同目录
 
 ## 2. 启动
 

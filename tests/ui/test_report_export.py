@@ -262,6 +262,163 @@ class ReportTraceTests(unittest.TestCase):
         )
         self.assertIn("模型等级: 正式子集", trace_report_lines(trace))
 
+    def test_packaged_trace_reads_embedded_build_info_without_git(self) -> None:
+        import json
+
+        from app.ui import report_trace
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle_root = Path(tmp) / "bundle"
+            executable_root = Path(tmp) / "release"
+            bundle_root.mkdir()
+            executable_root.mkdir()
+            build_info = {
+                "schema_version": 1,
+                "version": "2026.08.24.0",
+                "build_id": "2026.08.24.0-a1b2c3d-dirty-20260824T010203Z",
+                "build_mode": "onedir",
+                "built_at": "2026-08-24T01:02:03Z",
+                "git_commit": "a1b2c3d",
+                "git_dirty": True,
+            }
+            # utf-8-sig also covers Windows PowerShell 5.1's UTF-8 BOM output.
+            (bundle_root / "build-info.json").write_text(
+                json.dumps(build_info),
+                encoding="utf-8-sig",
+            )
+
+            with (
+                patch.object(report_trace.sys, "_MEIPASS", str(bundle_root), create=True),
+                patch.object(report_trace.sys, "frozen", True, create=True),
+                patch.object(
+                    report_trace.sys,
+                    "executable",
+                    str(executable_root / "LocalEngineeringAssistant.exe"),
+                ),
+                patch.object(
+                    report_trace.subprocess,
+                    "run",
+                    side_effect=AssertionError("packaged metadata must not invoke git"),
+                ),
+            ):
+                version = report_trace.software_version()
+
+        self.assertEqual(
+            version,
+            "2026.08.24.0 | git:a1b2c3d-dirty | "
+            "build:2026.08.24.0-a1b2c3d-dirty-20260824T010203Z",
+        )
+
+    def test_packaged_trace_falls_back_to_executable_sidecar(self) -> None:
+        import json
+
+        from app.ui import report_trace
+
+        with tempfile.TemporaryDirectory() as tmp:
+            release_root = Path(tmp)
+            (release_root / "build-info.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "version": "2026.08.24.1",
+                        "build_id": "release-sidecar-42",
+                        "build_mode": "onefile",
+                        "built_at": "2026-08-24T01:02:03Z",
+                        "git_commit": "f00ba42",
+                        "git_dirty": False,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch.object(report_trace.sys, "_MEIPASS", None, create=True),
+                patch.object(report_trace.sys, "frozen", True, create=True),
+                patch.object(
+                    report_trace.sys,
+                    "executable",
+                    str(release_root / "LocalEngineeringAssistant.exe"),
+                ),
+                patch.object(
+                    report_trace.subprocess,
+                    "run",
+                    side_effect=AssertionError("sidecar metadata must not invoke git"),
+                ),
+            ):
+                version = report_trace.software_version()
+
+        self.assertEqual(
+            version,
+            "2026.08.24.1 | git:f00ba42 | build:release-sidecar-42",
+        )
+
+    def test_packaged_trace_fails_closed_when_build_info_is_missing(self) -> None:
+        from app.ui import report_trace
+
+        with tempfile.TemporaryDirectory() as tmp:
+            release_root = Path(tmp)
+            with (
+                patch.object(report_trace.sys, "_MEIPASS", str(release_root), create=True),
+                patch.object(report_trace.sys, "frozen", True, create=True),
+                patch.object(
+                    report_trace.sys,
+                    "executable",
+                    str(release_root / "LocalEngineeringAssistant.exe"),
+                ),
+                patch.object(
+                    report_trace.subprocess,
+                    "run",
+                    side_effect=AssertionError("broken package must not fall back to git"),
+                ),
+            ):
+                version = report_trace.software_version()
+
+        self.assertEqual(version, "unknown-packaged-build")
+
+    def test_packaged_trace_skips_invalid_embedded_info_and_uses_sidecar(self) -> None:
+        import json
+
+        from app.ui import report_trace
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bundle_root = root / "bundle"
+            release_root = root / "release"
+            bundle_root.mkdir()
+            release_root.mkdir()
+            (bundle_root / "build-info.json").write_text(
+                json.dumps({"schema_version": 0, "version": "stale"}),
+                encoding="utf-8",
+            )
+            (release_root / "build-info.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "version": "2026.08.24.2",
+                        "build_id": "valid-sidecar-43",
+                        "build_mode": "onedir",
+                        "built_at": "2026-08-24T01:02:03Z",
+                        "git_commit": "abc1234",
+                        "git_dirty": False,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with (
+                patch.object(report_trace.sys, "_MEIPASS", str(bundle_root), create=True),
+                patch.object(report_trace.sys, "frozen", True, create=True),
+                patch.object(
+                    report_trace.sys,
+                    "executable",
+                    str(release_root / "LocalEngineeringAssistant.exe"),
+                ),
+            ):
+                version = report_trace.software_version()
+
+        self.assertEqual(
+            version,
+            "2026.08.24.2 | git:abc1234 | build:valid-sidecar-43",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

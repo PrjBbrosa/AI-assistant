@@ -472,6 +472,47 @@ class BoltTappedAxialPageTests(unittest.TestCase):
         self.assertTrue(error.isHidden())
         self.assertIn(widget.property("fieldError"), (False, "false", None))
 
+    def test_assembly_domain_constraints_are_live(self) -> None:
+        page = BoltTappedAxialPage()
+        invalid_values = {
+            "assembly.alpha_A": "0.5",
+            "assembly.mu_thread": "1.1",
+            "assembly.mu_bearing": "0",
+            "assembly.utilization": "1.1",
+        }
+
+        for field_id, raw in invalid_values.items():
+            with self.subTest(field_id=field_id):
+                page._field_widgets[field_id].setText(raw)  # type: ignore[attr-defined]
+                error = page._field_error_labels[field_id]
+                self.assertFalse(error.isHidden(), field_id)
+                self.assertIn(field_id, page._collect_field_errors(show=False))
+
+    def test_bearing_diameter_relation_updates_from_either_input(self) -> None:
+        page = BoltTappedAxialPage()
+        inner = page._field_widgets["assembly.bearing_d_inner"]
+        outer = page._field_widgets["assembly.bearing_d_outer"]
+        error = page._field_error_labels["assembly.bearing_d_outer"]
+
+        outer.setText("10")  # type: ignore[attr-defined]
+        self.assertFalse(error.isHidden())
+        self.assertIn("必须大于", error.text())
+
+        outer.setText("20")  # type: ignore[attr-defined]
+        self.assertTrue(error.isHidden())
+        inner.setText("21")  # type: ignore[attr-defined]
+        self.assertFalse(error.isHidden())
+        self.assertIn("assembly.bearing_d_outer", page._collect_field_errors(show=False))
+
+    def test_service_load_relation_is_prevalidated(self) -> None:
+        page = BoltTappedAxialPage()
+        page._field_widgets["service.FA_min"].setText("7000")  # type: ignore[attr-defined]
+        error = page._field_error_labels["service.FA_max"]
+
+        self.assertFalse(error.isHidden())
+        self.assertIn("大于等于", error.text())
+        self.assertIn("service.FA_max", page._collect_field_errors(show=False))
+
     def test_calculate_with_invalid_safety_shows_errors_and_skips_result(self) -> None:
         page = BoltTappedAxialPage()
         page._field_widgets["thread_strip.safety_required"].setText("0.5")

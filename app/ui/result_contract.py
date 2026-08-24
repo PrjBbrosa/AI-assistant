@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -124,6 +125,13 @@ _SPLINE_GEO_MODE_ZH = {
 
 @dataclass(frozen=True)
 class CheckView:
+    """Normalized verdict row.
+
+    ``source_kind`` describes the origin of the verdict limit/basis, not the
+    calculated ``actual`` value. A limit combined from multiple origins is
+    marked ``derived`` and its ingredients are explained in ``source_notes``.
+    """
+
     id: str
     label_zh: str
     status: CheckStatus
@@ -324,7 +332,11 @@ def from_spline(
         metrics=metrics,
         warnings=warnings,
         model_scope=SPLINE_SCOPE,
-        source_notes=(SPLINE_SCOPE.applicability,),
+        source_notes=(
+            SPLINE_SCOPE.applicability,
+            "来源追踪：安全系数门槛与工况系数 K_A 来自用户输入；"
+            "齿面许用压力可由载荷工况预设自动填充或由用户自定义。",
+        ),
         recommendations=_spline_recommendations(result),
         verdict_subtitle_zh=f"{mode_zh} | 模型等级: {model_level}",
     )
@@ -580,7 +592,6 @@ def from_worm(
     payload: dict[str, Any] | None = None,
 ) -> ResultViewModel:
     """Build the worm UI/PDF view model from calculator output."""
-    del payload  # inputs are echoed on the result; payload kept for call-site symmetry
     geometry = result.get("geometry")
     if not isinstance(geometry, dict):
         raise TypeError("geometry")
@@ -613,7 +624,7 @@ def from_worm(
         metrics=_worm_metrics(geometry, performance, load_capacity, lc_enabled),
         warnings=_worm_warnings(geometry, performance, load_capacity),
         model_scope=WORM_SCOPE,
-        source_notes=(WORM_SCOPE.applicability,),
+        source_notes=_worm_source_notes(result, payload, load_capacity),
         recommendations=_worm_recommendations(load_capacity, lc_enabled, overall_status),
         verdict_subtitle_zh=subtitle,
     )
@@ -624,6 +635,9 @@ def _worm_overall_status(
     load_capacity: dict[str, Any],
     lc_enabled: bool,
 ) -> OverallStatus:
+    load_capacity_status = load_capacity.get("overall_status")
+    if load_capacity_status in ("pass", "fail", "incomplete"):
+        return load_capacity_status
     raw_status = result.get("overall_status")
     if raw_status in ("pass", "fail", "incomplete"):
         return raw_status
@@ -633,6 +647,90 @@ def _worm_overall_status(
         return "incomplete"
     # Missing load-capacity overall_pass must not be inferred from checks.
     return "pass" if bool(load_capacity.get("overall_pass")) else "fail"
+
+
+def _worm_source_notes(
+    result: dict[str, Any],
+    payload: dict[str, Any] | None,
+    load_capacity: dict[str, Any],
+) -> tuple[str, ...]:
+    source = payload if isinstance(payload, dict) and payload else result.get("inputs_echo")
+    if not isinstance(source, dict):
+        source = {}
+    materials = source.get("materials")
+    if not isinstance(materials, dict):
+        materials = {}
+    advanced = source.get("advanced")
+    if not isinstance(advanced, dict):
+        advanced = {}
+    source_lc = source.get("load_capacity")
+    if not isinstance(source_lc, dict):
+        source_lc = {}
+    contact = load_capacity.get("contact")
+    if not isinstance(contact, dict):
+        contact = {}
+    root = load_capacity.get("root")
+    if not isinstance(root, dict):
+        root = {}
+
+    allowable_source = "来自显式输入或计算结果回显"
+    material_name = materials.get("wheel_material")
+    expected_allowables: tuple[float, float] | None = None
+    preset_description = f"材料预设 {material_name}"
+    try:
+        from core.worm.materials import PLASTIC_MATERIALS, apply_derate
+
+        material = PLASTIC_MATERIALS[str(material_name)]
+        expected_allowables = apply_derate(
+            material,
+            operating_temp_c=float(advanced.get("operating_temp_c", 23.0)),
+            humidity_rh=float(advanced.get("humidity_rh", 50.0)),
+        )
+        preset_description = f"材料预设 {material_name}，并按输入温度/湿度派生"
+    except (KeyError, TypeError, ValueError):
+        try:
+            from core.worm.calculator import MATERIAL_ALLOWABLE_HINTS
+
+            material_hint = MATERIAL_ALLOWABLE_HINTS[str(material_name)]
+            expected_allowables = (
+                float(material_hint["contact_mpa"]),
+                float(material_hint["root_mpa"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            expected_allowables = None
+
+    if expected_allowables is not None:
+        expected_contact, expected_root = expected_allowables
+        actual_contact = _as_float(contact.get("allowable_contact_stress_mpa"))
+        actual_root = _as_float(root.get("allowable_root_stress_mpa"))
+        matches_material_model = (
+            actual_contact is not None
+            and actual_root is not None
+            and math.isclose(actual_contact, expected_contact, rel_tol=1e-6, abs_tol=0.02)
+            and math.isclose(actual_root, expected_root, rel_tol=1e-6, abs_tol=0.02)
+        )
+        if matches_material_model:
+            allowable_source = f"来自{preset_description}"
+        elif {
+            "allowable_contact_stress_mpa",
+            "allowable_root_stress_mpa",
+        } & source_lc.keys():
+            allowable_source = "来自负载能力参数中的显式覆盖值"
+        else:
+            allowable_source = "未匹配当前材料温湿度模型，按计算结果回显"
+    else:
+        if {
+            "allowable_contact_stress_mpa",
+            "allowable_root_stress_mpa",
+        } & source_lc.keys():
+            allowable_source = "来自负载能力参数中的显式覆盖值"
+
+    return (
+        WORM_SCOPE.applicability,
+        f"来源追踪：齿面/齿根许用应力{allowable_source}；目标安全系数与"
+        "K_A、Kv、KHalpha、KHbeta 来自用户输入；分项有效应力门槛由"
+        "许用应力除以目标安全系数派生。",
+    )
 
 
 def _worm_summary(overall_status: OverallStatus) -> str:
@@ -645,7 +743,8 @@ def _worm_summary(overall_status: OverallStatus) -> str:
         )
     if overall_status == "incomplete":
         return (
-            "已完成蜗杆副几何与基础性能；负载能力（Load Capacity）未启用或未校核，总体结论不完整。"
+            "已完成蜗杆副几何与基础性能；负载能力（Load Capacity）未启用、"
+            "未校核或材料模型超出可信域，总体结论不完整。"
             f"{scope}"
         )
     return (
@@ -675,6 +774,14 @@ def _worm_checks(
     root = load_capacity.get("root")
     if not isinstance(root, dict):
         root = {}
+    contact_limit = _effective_stress_limit(
+        contact.get("allowable_contact_stress_mpa"),
+        contact.get("required_contact_safety"),
+    )
+    root_limit = _effective_stress_limit(
+        root.get("allowable_root_stress_mpa"),
+        root.get("required_root_safety"),
+    )
     skipped = "负载能力校核：未启用"
     checks: list[CheckView] = [
         CheckView(
@@ -683,32 +790,46 @@ def _worm_checks(
             status=_worm_flag_status(lc_enabled, raw_checks.get("geometry_consistent")),
             model_level=model_level,
             message="" if lc_enabled else skipped,
+            source_kind="derived",
         ),
         CheckView(
             id="contact_ok",
             label_zh=WORM_CHECK_LABELS["contact_ok"],
             status=_worm_flag_status(lc_enabled, raw_checks.get("contact_ok")),
             actual=_as_float(contact.get("sigma_hm_peak_mpa")),
-            limit=_as_float(contact.get("allowable_contact_stress_mpa")),
+            limit=contact_limit,
             unit="MPa",
             model_level=model_level,
             message="" if lc_enabled else skipped,
-            source_kind="user",
+            source_kind="derived",
         ),
         CheckView(
             id="root_ok",
             label_zh=WORM_CHECK_LABELS["root_ok"],
             status=_worm_flag_status(lc_enabled, raw_checks.get("root_ok")),
             actual=_as_float(root.get("sigma_f_peak_mpa")),
-            limit=_as_float(root.get("allowable_root_stress_mpa")),
+            limit=root_limit,
             unit="MPa",
             model_level=model_level,
             message="" if lc_enabled else skipped,
-            source_kind="user",
+            source_kind="derived",
         ),
     ]
     checks.extend(_worm_life_checks(load_capacity.get("life")))
     return tuple(checks)
+
+
+def _effective_stress_limit(allowable: Any, required_safety: Any) -> float | None:
+    """Return the stress threshold equivalent to ``allowable / S_required``."""
+    allowable_value = _as_float(allowable)
+    required_value = _as_float(required_safety)
+    if allowable_value is None:
+        return None
+    if required_value is None:
+        required_value = 1.0
+    if required_value <= 0.0:
+        return None
+    return allowable_value / required_value
 
 
 def _worm_life_checks(life: Any) -> tuple[CheckView, ...]:
@@ -726,6 +847,7 @@ def _worm_life_checks(life: Any) -> tuple[CheckView, ...]:
                 unit="h",
                 model_level=MODEL_LEVEL_REFERENCE,
                 message=ref_message,
+                source_kind="reference",
             )
         )
     if (
@@ -741,6 +863,7 @@ def _worm_life_checks(life: Any) -> tuple[CheckView, ...]:
                 unit="h",
                 model_level=MODEL_LEVEL_REFERENCE,
                 message=ref_message,
+                source_kind="reference",
             )
         )
     return tuple(checks)
@@ -984,6 +1107,12 @@ def from_interference(
     source_checks = source.get("checks")
     if not isinstance(source_checks, dict):
         source_checks = {}
+    source_fit = source.get("fit")
+    if not isinstance(source_fit, dict):
+        source_fit = {}
+    required = result.get("required")
+    if not isinstance(required, dict):
+        required = {}
     slip_limit = source_checks.get("slip_safety_min", safety.get("slip_safety_min"))
     stress_limit = source_checks.get(
         "stress_safety_min", safety.get("stress_safety_min")
@@ -993,24 +1122,36 @@ def from_interference(
         "axial_ok": slip_limit,
         "combined_ok": slip_limit,
         "gaping_ok": 0.0,
-        "fit_range_ok": None,
+        "fit_range_ok": required.get("delta_required_um"),
         "shaft_stress_ok": stress_limit,
         "hub_stress_ok": stress_limit,
     }
-    unit_by_id = {"gaping_ok": "MPa"}
+    actual_by_id = {
+        check_id: safety.get(actual_key)
+        for check_id, actual_key in _INTERFERENCE_CHECK_ACTUAL.items()
+    }
+    actual_by_id["fit_range_ok"] = source_fit.get("delta_max_um")
+    unit_by_id = {"gaping_ok": "MPa", "fit_range_ok": "um"}
+    source_kind_by_id = {
+        "torque_ok": "user",
+        "axial_ok": "user",
+        "combined_ok": "user",
+        "gaping_ok": "derived",
+        "fit_range_ok": "derived",
+        "shaft_stress_ok": "user",
+        "hub_stress_ok": "user",
+    }
 
     checks = tuple(
         CheckView(
             id=check_id,
             label_zh=label,
             status="pass" if checks_raw.get(check_id) else "fail",
-            actual=_as_float(safety.get(_INTERFERENCE_CHECK_ACTUAL[check_id]))
-            if check_id in _INTERFERENCE_CHECK_ACTUAL
-            else None,
+            actual=_as_float(actual_by_id.get(check_id)),
             limit=_as_float(limit_by_id.get(check_id)),
             unit=unit_by_id.get(check_id, ""),
             model_level=model_level,
-            source_kind="user",
+            source_kind=source_kind_by_id[check_id],
         )
         for check_id, label in INTERFERENCE_CHECK_LABELS.items()
     )
@@ -1026,7 +1167,11 @@ def from_interference(
         metrics=_interference_metrics(result, shaft_type_zh),
         warnings=warnings,
         model_scope=INTERFERENCE_SCOPE,
-        source_notes=(INTERFERENCE_SCOPE.applicability,),
+        source_notes=(
+            INTERFERENCE_SCOPE.applicability,
+            "来源追踪：防滑/材料安全系数门槛与工况系数 K_A 来自用户输入；"
+            "张口缝零裕量门槛及最大过盈覆盖需求由输入载荷、几何和模型派生。",
+        ),
         recommendations=_interference_recommendations(result),
         verdict_subtitle_zh=(
             f"模型: 圆柱面过盈配合（{shaft_type_zh}） | 模型等级: {model_level}"
@@ -1149,8 +1294,8 @@ def _interference_recommendations(result: dict[str, Any]) -> tuple[str, ...]:
         )
     if checks.get("fit_range_ok") is False:
         recs.append(
-            "过盈覆盖需求校核不通过：最大过盈端面压超出材料许用范围，"
-            "需缩小过盈公差带或提高材料强度。"
+            "过盈覆盖需求校核不通过：当前最大可用过盈小于载荷所需过盈，"
+            "需增大最大可用过盈、增加配合长度/摩擦系数或降低载荷。"
         )
     if checks.get("shaft_stress_ok") is False:
         recs.append(
@@ -1169,7 +1314,6 @@ def from_tapped_axial(
     payload: dict[str, Any] | None = None,
 ) -> ResultViewModel:
     """Build the tapped-axial UI/PDF view model from calculator output."""
-    del payload
     raw_status = result.get("overall_status")
     if raw_status in ("pass", "fail", "incomplete"):
         overall_status: OverallStatus = raw_status
@@ -1206,7 +1350,7 @@ def from_tapped_axial(
         else ()
     )
     scope_note = result.get("scope_note")
-    source_notes = (str(scope_note),) if scope_note else (TAPPED_SCOPE.applicability,)
+    source_notes = _tapped_source_notes(payload, scope_note)
     return ResultViewModel(
         overall_status=overall_status,
         title_zh=title,
@@ -1226,7 +1370,6 @@ def from_buffer(
     payload: dict[str, Any] | None = None,
 ) -> ResultViewModel:
     """Build the buffer-energy UI/PDF view model from calculator output."""
-    del payload
     impact = result.get("impact")
     if not isinstance(impact, dict):
         impact = {}
@@ -1236,6 +1379,32 @@ def from_buffer(
     checks_raw = result.get("checks")
     if not isinstance(checks_raw, dict):
         checks_raw = {}
+    source = payload if isinstance(payload, dict) and payload else result.get("inputs_echo")
+    if not isinstance(source, dict):
+        source = {}
+    impact_input = source.get("impact")
+    if not isinstance(impact_input, dict):
+        impact_input = {}
+    actual_by_id = {
+        "stroke_ok": impact.get("max_compression_mm"),
+        "peak_force_ok": impact.get("peak_force_n"),
+        "energy_capacity_ok": impact.get("initial_energy_j"),
+    }
+    limit_by_id = {
+        "stroke_ok": impact_input.get("available_stroke_mm"),
+        "peak_force_ok": impact_input.get("allowable_peak_force_n"),
+        "energy_capacity_ok": impact.get("available_energy_capacity_j"),
+    }
+    unit_by_id = {
+        "stroke_ok": "mm",
+        "peak_force_ok": "N",
+        "energy_capacity_ok": "J",
+    }
+    source_kind_by_id = {
+        "stroke_ok": "user",
+        "peak_force_ok": "user",
+        "energy_capacity_ok": "derived",
+    }
     overall_status: OverallStatus = (
         "pass" if bool(result.get("overall_pass")) else "fail"
     )
@@ -1257,12 +1426,16 @@ def from_buffer(
             id=check_id,
             label_zh=label,
             status=_check_status_from_raw(checks_raw.get(check_id)),
+            actual=_as_float(actual_by_id.get(check_id)),
+            limit=_as_float(limit_by_id.get(check_id)),
+            unit=unit_by_id[check_id],
             model_level=model_level,
             message=(
                 "触底，不可判定"
                 if check_id == "peak_force_ok" and checks_raw.get(check_id) is None
                 else ""
             ),
+            source_kind=source_kind_by_id[check_id],
         )
         for check_id, label in BUFFER_CHECK_LABELS.items()
     )
@@ -1278,7 +1451,11 @@ def from_buffer(
         metrics=metrics,
         warnings=warnings,
         model_scope=BUFFER_SCOPE,
-        source_notes=(BUFFER_SCOPE.applicability,),
+        source_notes=(
+            BUFFER_SCOPE.applicability,
+            "来源追踪：可用行程与允许峰值力来自用户输入；能量容量门槛由"
+            "导入测试曲线和有效行程派生。",
+        ),
         recommendations=_buffer_recommendations(result, impact, checks_raw),
         verdict_subtitle_zh=_buffer_verdict_subtitle(model_level, bottom_out),
     )
@@ -1290,6 +1467,28 @@ def _check_status_from_raw(value: Any) -> CheckStatus:
     if value is False:
         return "fail"
     return "not_checked"
+
+
+def _tapped_source_notes(
+    payload: dict[str, Any] | None,
+    scope_note: Any,
+) -> tuple[str, ...]:
+    scope = str(scope_note) if scope_note else TAPPED_SCOPE.applicability
+    fastener = payload.get("fastener") if isinstance(payload, dict) else None
+    if not isinstance(fastener, dict):
+        fastener = {}
+    grade = fastener.get("grade")
+    rp02_source = (
+        f"预设强度等级 {grade}"
+        if isinstance(grade, str) and grade and grade != "自定义"
+        else "用户输入"
+    )
+    return (
+        scope,
+        f"来源追踪：Rp0.2 来自{rp02_source}；装配、服役和疲劳许用值由 "
+        "Rp0.2、用户安全门槛/利用系数及模型公式派生；"
+        "螺纹脱扣目标安全系数来自用户输入。",
+    )
 
 
 def _tapped_check_view(
@@ -1336,6 +1535,12 @@ def _tapped_check_view(
     message = ""
     if check_id == "thread_strip_ok" and raw is None:
         message = str(thread_strip.get("note") or "未提供 m_eff，未执行螺纹脱扣校核。")
+    source_kind_by_id = {
+        "assembly_von_mises_ok": "derived",
+        "service_von_mises_ok": "derived",
+        "fatigue_ok": "derived",
+        "thread_strip_ok": "user",
+    }
     return CheckView(
         id=check_id,
         label_zh=label,
@@ -1345,7 +1550,7 @@ def _tapped_check_view(
         unit=unit,
         model_level=model_level,
         message=message,
-        source_kind="user",
+        source_kind=source_kind_by_id[check_id],
     )
 
 

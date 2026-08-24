@@ -11,6 +11,7 @@ import hashlib
 import importlib.metadata
 import json
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,7 @@ from typing import Any
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PACKAGE_CANDIDATES = ("ai-assistant", "codex-ai-assistant", "local-engineering-assistant")
+_BUILD_INFO_NAME = "build-info.json"
 
 
 @dataclass(frozen=True)
@@ -70,10 +72,65 @@ def _package_version() -> str | None:
     return None
 
 
-def _git_short_hash() -> str | None:
+def _build_info_paths() -> tuple[Path, ...]:
+    """Return release metadata locations in trust/order preference.
+
+    PyInstaller exposes bundled data under ``_MEIPASS``. The sidecar next to
+    the executable is retained for operators and as a fallback for builds that
+    do not bundle the file.
+    """
+    paths: list[Path] = []
+    bundle_root = getattr(sys, "_MEIPASS", None)
+    if bundle_root:
+        paths.append(Path(bundle_root) / _BUILD_INFO_NAME)
+    if getattr(sys, "frozen", False):
+        paths.append(Path(sys.executable).resolve().parent / _BUILD_INFO_NAME)
+    return tuple(dict.fromkeys(paths))
+
+
+def _load_build_info() -> dict[str, Any] | None:
+    for path in _build_info_paths():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8-sig"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if isinstance(raw, dict) and _valid_build_info(raw):
+            return raw
+    return None
+
+
+def _valid_build_info(info: dict[str, Any]) -> bool:
+    """Accept only the release metadata schema emitted by build_exe.ps1."""
+    if info.get("schema_version") != 1:
+        return False
+    for key in ("version", "build_id", "built_at", "build_mode"):
+        if not isinstance(info.get(key), str) or not info[key].strip():
+            return False
+    if info["build_mode"] not in ("onedir", "onefile"):
+        return False
+    if not isinstance(info.get("git_dirty"), bool):
+        return False
+    git_commit = info.get("git_commit", "")
+    return isinstance(git_commit, str)
+
+
+def _format_build_info(info: dict[str, Any]) -> str:
+    version = str(info["version"]).strip()
+    parts = [version]
+    git_commit = str(info.get("git_commit", "")).strip()
+    if git_commit:
+        dirty_suffix = "-dirty" if info.get("git_dirty") is True else ""
+        parts.append(f"git:{git_commit}{dirty_suffix}")
+    build_id = str(info.get("build_id", "")).strip()
+    if build_id:
+        parts.append(f"build:{build_id}")
+    return " | ".join(parts)
+
+
+def _git_text(*arguments: str) -> str | None:
     try:
         completed = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
+            ["git", *arguments],
             cwd=_REPO_ROOT,
             check=False,
             capture_output=True,
@@ -88,13 +145,30 @@ def _git_short_hash() -> str | None:
     return value or None
 
 
+def _git_version() -> str | None:
+    git_hash = _git_text("rev-parse", "--short", "HEAD")
+    if not git_hash:
+        return None
+    dirty = bool(_git_text("status", "--porcelain"))
+    return f"git:{git_hash}{'-dirty' if dirty else ''}"
+
+
 def software_version() -> str:
+    build_info = _load_build_info()
+    if build_info:
+        return _format_build_info(build_info)
+    # A frozen artifact must carry build-info.json. Falling back to the
+    # source-tree package marker would make a broken release look traceable as
+    # "0+source". Keep the failure explicit so CI and exported reports expose
+    # the packaging defect.
+    if getattr(sys, "frozen", False):
+        return "unknown-packaged-build"
+    git_version = _git_version()
+    if git_version:
+        return git_version
     packaged = _package_version()
     if packaged:
         return packaged
-    git_hash = _git_short_hash()
-    if git_hash:
-        return f"git:{git_hash}"
     return "unknown"
 
 

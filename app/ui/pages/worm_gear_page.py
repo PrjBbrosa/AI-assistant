@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -119,16 +120,16 @@ BASIC_SETTINGS_FIELDS = [
 ]
 
 WORM_GEOMETRY_FIELDS = [
-    FieldSpec("geometry.z1", "蜗杆头数 z1", "-", "蜗杆起始头数。", default="2"),
+    FieldSpec("geometry.z1", "蜗杆头数 z1", "-", "蜗杆起始头数，必须为 1~6 的整数。", default="2", value_type="int", min_value=1.0, max_value=6.0),
     FieldSpec("geometry.module_mm", "模数 m", "mm", "几何主输入。", default="4.0", help_ref="terms/module"),
     FieldSpec("geometry.diameter_factor_q", "直径系数 q", "-", "蜗杆直径系数。", default="10.0", help_ref="terms/diameter_factor_q"),
-    FieldSpec("geometry.lead_angle_deg", "导程角 gamma", "deg", "蜗杆导程角。默认值与 z1/q 保持自洽。", default="11.31", help_ref="terms/lead_angle"),
+    FieldSpec("geometry.lead_angle_deg", "导程角 gamma", "deg", "蜗杆导程角。默认值与 z1/q 保持自洽。", default="11.31", min_value=0.0, max_value=45.0, min_inclusive=False, help_ref="terms/lead_angle"),
     FieldSpec("geometry.worm_face_width_mm", "蜗杆齿宽 b1", "mm", "蜗杆工作齿宽。", default="32.0"),
     FieldSpec("geometry.x1", "蜗杆变位系数 x1", "-", "蜗杆齿形变位系数。", default="0.0", help_ref="terms/gear_profile_shift"),
 ]
 
 WHEEL_GEOMETRY_FIELDS = [
-    FieldSpec("geometry.z2", "蜗轮齿数 z2", "-", "蜗轮总齿数。", default="40"),
+    FieldSpec("geometry.z2", "蜗轮齿数 z2", "-", "蜗轮总齿数，必须为正整数。", default="40", value_type="int", min_value=1.0),
     FieldSpec("geometry.wheel_face_width_mm", "蜗轮齿宽 b2", "mm", "蜗轮工作齿宽。", default="28.0"),
     FieldSpec("geometry.x2", "蜗轮变位系数 x2", "-", "蜗轮齿形变位系数。塑料蜗轮常用大正变位。", default="0.0", help_ref="terms/gear_profile_shift"),
 ]
@@ -214,8 +215,8 @@ MATERIAL_FIELDS = [
 ]
 
 OPERATING_FIELDS = [
-    FieldSpec("operating.input_torque_nm", "输入扭矩 T1", "Nm", "蜗杆轴输入扭矩。", default="19.76"),
-    FieldSpec("operating.speed_rpm", "输入转速 n", "rpm", "蜗杆轴转速。", default="1450"),
+    FieldSpec("operating.input_torque_nm", "输入扭矩 T1", "Nm", "蜗杆轴输入扭矩。", default="19.76", min_value=0.0, min_inclusive=False),
+    FieldSpec("operating.speed_rpm", "输入转速 n", "rpm", "蜗杆轴转速。", default="1450", min_value=0.0, min_inclusive=False),
     FieldSpec(
         "operating.application_factor",
         "使用系数 KA",
@@ -249,8 +250,10 @@ ADVANCED_FIELDS = [
         "advanced.humidity_rh",
         "相对湿度",
         "%",
-        "环境相对湿度，PA 系列吸水后弹性模量和强度降额使用。",
+        "环境相对湿度，允许 0~100%；材料模型在 50%RH 后按吸湿饱和值计算并给出提示。",
         default="50",
+        min_value=0.0,
+        max_value=100.0,
     ),
 ]
 
@@ -1028,14 +1031,35 @@ class WormGearPage(BaseChapterPage):
                 else:
                     text = str(value)
                 index = widget.findText(text)  # type: ignore[attr-defined]
+                if (
+                    index < 0
+                    and spec.field_id in {
+                        "materials.worm_material",
+                        "materials.wheel_material",
+                    }
+                    and text
+                ):
+                    # Saved custom materials must remain selectable so their
+                    # explicitly stored elastic/allowable values are not
+                    # replaced by the default material preset below.
+                    widget.addItem(text)  # type: ignore[attr-defined]
+                    self._field_specs[spec.field_id] = replace(
+                        spec,
+                        options=(*spec.options, text),
+                    )
+                    index = widget.findText(text)  # type: ignore[attr-defined]
                 if index >= 0:
                     widget.setCurrentIndex(index)  # type: ignore[attr-defined]
             else:
                 widget.setText(str(value))  # type: ignore[attr-defined]
         self._field_widgets["materials.worm_material"].blockSignals(False)
         self._field_widgets["materials.wheel_material"].blockSignals(False)
-        self._refresh_material_source_labels()
-        self._refresh_derived_geometry_preview()
+        # Reconcile all auto fields after every value has been restored.  The
+        # material signals were intentionally blocked during loading, so
+        # without this call a sample could retain the static FieldSpec defaults
+        # instead of the selected material's temperature/humidity derating.
+        # Unknown custom materials are left untouched by this handler.
+        self._on_material_changed()
         self._suspend_live_feedback = previous
         if not self._suspend_live_feedback:
             self._refresh_all_field_errors()
@@ -1145,6 +1169,10 @@ class WormGearPage(BaseChapterPage):
             rh = float(self._field_widgets["advanced.humidity_rh"].text() or 50.0)
         except (KeyError, ValueError):
             rh = 50.0
+        if not math.isfinite(rh) or not 0.0 <= rh <= 100.0:
+            # Keep the last valid auto-filled values; FieldSchema displays the
+            # actionable range error and blocks calculation.
+            return
         sigma_hlim_d, sigma_flim_d = apply_derate(mat, operating_temp_c=op_t, humidity_rh=rh)
         # 填充默认值（E / ν 不随温湿度变化，σ 用降额后值）
         w_e = self._field_widgets.get("materials.wheel_e_mpa")

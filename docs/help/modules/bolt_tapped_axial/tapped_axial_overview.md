@@ -109,7 +109,7 @@
 - **文本报告**（`_export_text_report`）：包含输入摘要、分项结论、关键数值、trace、warning、建议、标准引用
 - **PDF 报告**（`_export_pdf_report`）：需要 reportlab 依赖；通过 `app.ui.report_pdf_tapped_axial.generate_tapped_axial_report` 生成
 
-**重要**：任何输入变更、加载输入、清空参数后，导出按钮会**立即禁用**；必须重新点"开始计算"刷新缓存后才能导出。实现见 `core/bolt/tapped_axial_joint.py` 及 UI 的 `_invalidate_cache`。
+**重要**：任何输入变更、加载输入、清空参数后，导出按钮会**立即禁用**；必须重新点"执行校核"刷新缓存后才能导出。实现见 `core/bolt/tapped_axial_joint.py` 及 UI 的 `_invalidate_cache`。
 
 ## 参考标准
 

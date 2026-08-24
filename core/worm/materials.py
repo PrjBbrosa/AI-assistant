@@ -111,6 +111,18 @@ PLASTIC_MATERIALS: Dict[str, PlasticMaterial] = {
 }
 
 
+def effective_humidity_rh(humidity_rh: float) -> float:
+    """Return the humidity used by the simplified saturation model.
+
+    Values outside the physical input range are rejected. Within that range,
+    the simplified derating model saturates at 50%RH.
+    """
+    value = float(humidity_rh)
+    if not 0.0 <= value <= 100.0:
+        raise ValueError(f"humidity_rh 必须在 0 ~ 100 %RH 范围内，当前值 {value}")
+    return min(value, 50.0)
+
+
 def apply_derate(
     material: PlasticMaterial,
     *,
@@ -141,8 +153,9 @@ def apply_derate(
     湿度降额：线性插值，0%RH = 1.0，50%RH = humidity_derate_at_50rh。
         factor_RH = 1.0 - (1.0 - humidity_derate_at_50rh) * clamp(RH, 0, 50) / 50
 
-    注意：当 humidity_rh > 50% 时按 50% 钳位（保守）；PA 系列实测数据超过 50%RH
-    后强度下降趋于饱和，此简化模型在 0~50% 区间的精度较高。
+    注意：当 humidity_rh > 50% 时，本简化模型按 50%RH 的饱和值计算。
+    这是模型边界，不保证对所有 PA 牌号或调湿状态保守；高湿工况应使用
+    供应商在目标温湿度下的材料数据复核。
     """
     base_temp = 23.0
 
@@ -153,8 +166,8 @@ def apply_derate(
         temp_factor = material.temp_derate_per_10c ** max(0.0, steps)
 
     # 湿度降额（线性插值，0% RH = 1.0，50% RH = humidity_derate_at_50rh）
-    # clamp 到 [0, 50] 区间：超过 50% RH 的 PA 吸水近似饱和，用 50% 保守估算
-    rh_clamped = max(0.0, min(float(humidity_rh), 50.0))
+    # clamp 到 [0, 50]：超过 50%RH 采用本模型的显式饱和假设。
+    rh_clamped = effective_humidity_rh(humidity_rh)
     humidity_factor = 1.0 - (1.0 - material.humidity_derate_at_50rh) * rh_clamped / 50.0
 
     sigma_hlim_derated = material.sigma_hlim_mpa * temp_factor * humidity_factor

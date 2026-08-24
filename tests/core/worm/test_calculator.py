@@ -106,6 +106,33 @@ class WormCalculatorTests(unittest.TestCase):
                 }
             )
 
+    def test_humidity_outside_physical_range_is_rejected(self) -> None:
+        for humidity_rh in (-0.1, 100.1):
+            with self.subTest(humidity_rh=humidity_rh):
+                payload = self._base_payload()
+                payload["advanced"]["humidity_rh"] = humidity_rh
+                with self.assertRaisesRegex(InputError, "0 ~ 100"):
+                    calculate_worm_geometry(payload)
+
+    def test_humidity_above_50_reports_effective_saturation_value(self) -> None:
+        payload = self._base_payload()
+        payload["advanced"]["humidity_rh"] = 80.0
+
+        result = calculate_worm_geometry(payload)
+
+        condition = result["performance"]["material_condition"]
+        self.assertEqual(condition["humidity_input_rh"], 80.0)
+        self.assertEqual(condition["humidity_effective_rh"], 50.0)
+        self.assertTrue(condition["humidity_model_saturated"])
+        self.assertTrue(
+            any(
+                "有效湿度 50.0%RH" in warning
+                for warning in result["load_capacity"]["warnings"]
+            )
+        )
+        self.assertEqual(result["load_capacity"]["overall_status"], "incomplete")
+        self.assertFalse(result["load_capacity"]["overall_pass"])
+
     def test_invalid_poisson_ratio_is_rejected(self) -> None:
         payload = self._base_payload()
         payload["materials"]["wheel_nu"] = 0.6
@@ -958,9 +985,12 @@ def test_load_capacity_exposes_authoritative_overall_pass():
     lc = result["load_capacity"]
     checks = lc["checks"]
     assert "overall_pass" in lc
-    assert lc["overall_pass"] == (
-        checks["geometry_consistent"] and checks["contact_ok"] and checks["root_ok"]
-    )
+    assert lc["overall_status"] in ("pass", "fail", "incomplete")
+    assert lc["overall_pass"] == (lc["overall_status"] == "pass")
+    if lc["overall_status"] != "incomplete":
+        assert lc["overall_pass"] == (
+            checks["geometry_consistent"] and checks["contact_ok"] and checks["root_ok"]
+        )
 
 
 # ============================================================

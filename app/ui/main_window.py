@@ -107,7 +107,9 @@ class MainWindow(QMainWindow):
 
         # Populate sidebar list and stack placeholders
         for i, (name, _factory) in enumerate(self._page_factories):
-            item = QListWidgetItem(f"{i + 1}. {name}")
+            item_text = f"{i + 1}. {name}"
+            item = QListWidgetItem(item_text)
+            item.setToolTip(item_text)
             self.module_list.addItem(item)
             # Insert an empty placeholder widget; replaced when page is built
             self.stack.addWidget(QWidget())
@@ -233,6 +235,11 @@ class MainWindow(QMainWindow):
         self.module_list = QListWidget(sidebar)
         self.module_list.setObjectName("ModuleList")
         self.module_list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        # The styled item rectangle can be slightly wider than the viewport
+        # solely because of list padding. Avoid a non-content scrollbar while
+        # preserving full labels in tooltips for narrower resized layouts.
+        self.module_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.module_list.setTextElideMode(Qt.TextElideMode.ElideRight)
 
         brand_mark = QLabel(sidebar)
         brand_mark.setObjectName("SidebarBrandMark")

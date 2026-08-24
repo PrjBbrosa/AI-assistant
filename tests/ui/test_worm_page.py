@@ -1,5 +1,7 @@
 import os
+import json
 import unittest
+from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -12,6 +14,7 @@ from app.ui.result_contract import from_worm, status_label_zh
 from app.ui.widgets.worm_geometry_overview import WormGeometryOverviewWidget
 from app.ui.widgets.worm_performance_curve import WormPerformanceCurveWidget
 from app.ui.widgets.worm_stress_curve import WormStressCurveWidget
+from core.worm.materials import PLASTIC_MATERIALS, apply_derate
 
 
 class WormPerformanceCurveWidgetTests(unittest.TestCase):
@@ -222,6 +225,54 @@ class WormGearPageTests(unittest.TestCase):
         data = {"load_capacity": {"enabled": False}}
         page._apply_input_data(data)
         self.assertEqual(page._field_widgets["load_capacity.enabled"].currentText(), "关闭")
+
+    def test_loading_worm_case_01_recomputes_temperature_humidity_allowables(self) -> None:
+        page = WormGearPage()
+        sample_path = Path(__file__).resolve().parents[2] / "examples" / "worm_case_01.json"
+        data = json.loads(sample_path.read_text(encoding="utf-8"))
+
+        page._apply_input_data(data)
+
+        payload = page._build_payload()
+        material = PLASTIC_MATERIALS["PA66+GF30"]
+        expected_contact, expected_root = apply_derate(
+            material,
+            operating_temp_c=60.0,
+            humidity_rh=50.0,
+        )
+        self.assertAlmostEqual(
+            payload["load_capacity"]["allowable_contact_stress_mpa"],
+            expected_contact,
+            delta=0.01,
+        )
+        self.assertAlmostEqual(
+            payload["load_capacity"]["allowable_root_stress_mpa"],
+            expected_root,
+            delta=0.01,
+        )
+
+    def test_loading_unknown_custom_material_preserves_explicit_values(self) -> None:
+        page = WormGearPage()
+        page._apply_input_data(
+            {
+                "materials": {
+                    "wheel_material": "CUSTOM-PA",
+                    "wheel_e_mpa": 4321.0,
+                    "wheel_nu": 0.31,
+                },
+                "load_capacity": {
+                    "allowable_contact_stress_mpa": 77.0,
+                    "allowable_root_stress_mpa": 66.0,
+                },
+            }
+        )
+
+        payload = page._build_payload()
+        self.assertEqual(payload["materials"]["wheel_material"], "CUSTOM-PA")
+        self.assertEqual(payload["materials"]["wheel_e_mpa"], 4321.0)
+        self.assertEqual(payload["materials"]["wheel_nu"], 0.31)
+        self.assertEqual(payload["load_capacity"]["allowable_contact_stress_mpa"], 77.0)
+        self.assertEqual(payload["load_capacity"]["allowable_root_stress_mpa"], 66.0)
 
     def test_export_report_method_exists_and_button_connected(self) -> None:
         page = WormGearPage()
@@ -1088,6 +1139,60 @@ class WormGearPageFieldSchemaTests(unittest.TestCase):
             spec = page._field_specs[field_id]
             self.assertEqual(spec.min_value, 1.0, field_id)
             self.assertTrue(spec.min_inclusive, field_id)
+
+    def test_primary_operating_and_geometry_domains_match_core(self) -> None:
+        page = WormGearPage()
+        expected = {
+            "geometry.z1": ("int", 1.0, 6.0),
+            "geometry.lead_angle_deg": ("float", 0.0, 45.0),
+            "operating.input_torque_nm": ("float", 0.0, None),
+            "operating.speed_rpm": ("float", 0.0, None),
+            "advanced.humidity_rh": ("float", 0.0, 100.0),
+        }
+
+        for field_id, (value_type, minimum, maximum) in expected.items():
+            with self.subTest(field_id=field_id):
+                spec = page._field_specs[field_id]
+                self.assertEqual(spec.value_type, value_type)
+                self.assertEqual(spec.min_value, minimum)
+                self.assertEqual(spec.max_value, maximum)
+
+        self.assertFalse(page._field_specs["geometry.lead_angle_deg"].min_inclusive)
+        self.assertFalse(page._field_specs["operating.input_torque_nm"].min_inclusive)
+        self.assertFalse(page._field_specs["operating.speed_rpm"].min_inclusive)
+
+    def test_primary_invalid_inputs_show_live_errors(self) -> None:
+        page = WormGearPage()
+        invalid_values = {
+            "geometry.z1": "1.5",
+            "geometry.lead_angle_deg": "50",
+            "operating.input_torque_nm": "-1",
+            "operating.speed_rpm": "0",
+            "advanced.humidity_rh": "101",
+        }
+
+        for field_id, raw in invalid_values.items():
+            with self.subTest(field_id=field_id):
+                page._field_widgets[field_id].setText(raw)  # type: ignore[attr-defined]
+                error = page._field_error_labels[field_id]
+                self.assertFalse(error.isHidden(), field_id)
+                self.assertIn(field_id, page._collect_field_errors(show=False))
+
+    def test_humidity_saturation_is_visible_in_result_and_report(self) -> None:
+        page = WormGearPage()
+        page._field_widgets["advanced.humidity_rh"].setText("80")  # type: ignore[attr-defined]
+
+        page._calculate()
+
+        self.assertIsNotNone(page._last_result)
+        condition = page._last_result["performance"]["material_condition"]  # type: ignore[index]
+        self.assertEqual(condition["humidity_input_rh"], 80.0)
+        self.assertEqual(condition["humidity_effective_rh"], 50.0)
+        self.assertEqual(page._last_result["load_capacity"]["overall_status"], "incomplete")  # type: ignore[index]
+        self.assertFalse(page._last_result["load_capacity"]["overall_pass"])  # type: ignore[index]
+        self.assertEqual(from_worm(page._last_result, page._last_payload).overall_status, "incomplete")  # type: ignore[arg-type]
+        self.assertIn("有效湿度 50.0%RH", page.load_capacity_metrics.toPlainText())
+        self.assertIn("有效湿度 50.0%RH", "\n".join(page._build_report_lines()))
 
     def test_load_capacity_parameter_fields_omitted_when_disabled(self) -> None:
         page = WormGearPage()

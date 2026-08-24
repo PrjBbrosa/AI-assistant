@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QApplication, QFrame, QWidget
 
-from app.ui.fonts import UI_FONT_FAMILY_CSS
+from app.ui.fonts import UI_FONT_FAMILIES, UI_FONT_FAMILY_CSS
 
 
 INPUT_FIELD_SURFACE_ROLE = "inputField"
@@ -27,6 +27,10 @@ def mark_input_field_label_wrap(widget: QWidget) -> None:
 
 def apply_theme(app: QApplication) -> None:
     """Apply app-wide style sheet."""
+    app_font = app.font()
+    if app_font.families() != UI_FONT_FAMILIES:
+        app_font.setFamilies(UI_FONT_FAMILIES)
+        app.setFont(app_font)
     style_sheet = """
         QWidget {
             background-color: #F7F5F2;
@@ -60,12 +64,12 @@ def apply_theme(app: QApplication) -> None:
             border: none;
             background: transparent;
             outline: 0;
-            padding: 8px;
+            padding: 6px;
         }
         QListWidget#ModuleList::item {
             border: 1px solid transparent;
             border-radius: 10px;
-            padding: 10px 12px;
+            padding: 10px 10px;
             margin-bottom: 4px;
             background: transparent;
         }
@@ -797,4 +801,14 @@ def apply_theme(app: QApplication) -> None:
             padding: 4px 6px;
         }
         """
-    app.setStyleSheet(style_sheet.replace("__UI_FONT_FAMILY_CSS__", UI_FONT_FAMILY_CSS))
+    resolved_style_sheet = style_sheet.replace(
+        "__UI_FONT_FAMILY_CSS__", UI_FONT_FAMILY_CSS
+    )
+    # Re-applying an identical application stylesheet makes Qt unpolish and
+    # polish every existing widget.  Besides being unnecessary in production,
+    # that turns late UI tests into multi-second operations as their widget
+    # population grows.  Keep the operation idempotent while still allowing a
+    # genuinely changed theme to be applied.
+    if app.styleSheet() == resolved_style_sheet:
+        return
+    app.setStyleSheet(resolved_style_sheet)

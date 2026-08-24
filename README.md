@@ -53,7 +53,7 @@ QT_QPA_PLATFORM=offscreen python -m pytest tests/ -q
 
 GitHub Actions 工作流在 `.github/workflows/ci.yml`：Ubuntu、`QT_QPA_PLATFORM=offscreen`，按 `requirements.txt` + `requirements-dev.txt` 并受 `constraints.txt` 约束安装，然后跑 `python -m pytest tests/ -q` 和 `git diff --check`。
 
-Windows 打包与桌面手工 smoke **没有** 接入 CI runner。本机验收清单见 `scripts/windows_smoke.md`（构建 exe、启动、切换 7 个计算模块、加载样例、计算、保存输入、导出 PDF/DOCX/TXT）。不要把该清单当成已经跑过的绿测。
+Windows runner 会执行 PyInstaller onedir 构建、构建信息校验和 EXE 10 秒启动 smoke；只有对应 CI run 实际通过时，才能视为该提交通过了 Windows 浅层门禁。七模块计算、保存/加载和报告导出仍需按 `scripts/windows_smoke.md` 做真实桌面人工验收。
 
 ## 桌面端交互方式
 
@@ -101,4 +101,4 @@ Windows 打包与桌面手工 smoke **没有** 接入 CI runner。本机验收�
 scripts\build_exe.bat
 ```
 
-输出目录位于 `dist\LocalEngineeringAssistant\`。
+默认输出目录为 `dist\releases\<version>\LocalEngineeringAssistant\`。其中包含 `LocalEngineeringAssistant.exe` 和可人工审计的 `build-info.json`；实际路径以构建脚本打印的 `Build completed:` 为准。

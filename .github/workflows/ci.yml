@@ -23,6 +23,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -71,12 +73,74 @@ jobs:
         run: python -m pytest tests/ -q
 
       - name: Whitespace check
-        run: git diff --check
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [[ "$EVENT_NAME" == "pull_request" && -n "$PR_BASE_SHA" ]]; then
+            git diff --check "$PR_BASE_SHA...HEAD"
+          elif [[ -n "$PUSH_BEFORE_SHA" && ! "$PUSH_BEFORE_SHA" =~ ^0+$ ]]; then
+            git diff --check "$PUSH_BEFORE_SHA..HEAD"
+          else
+            git diff --check "HEAD^..HEAD"
+          fi
 
   windows-smoke:
-    name: Windows desktop smoke (not automated)
-    if: false
+    name: Windows build and launch smoke
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
-      - name: Manual checklist only
-        run: echo "Not run in CI. Follow scripts/windows_smoke.md on a local Windows machine."
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            constraints.txt
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt -c constraints.txt
+
+      - name: Test packaged provenance contract
+        run: python -m pytest tests/ui/test_report_export.py -q
+
+      - name: Build onedir artifact
+        shell: pwsh
+        run: |
+          ./scripts/build_exe.ps1 -Version "ci.${{ github.run_number }}.0" -SkipInstall
+
+      - name: Validate build metadata and launch executable
+        shell: pwsh
+        run: |
+          $releaseRoot = Join-Path $PWD "dist/releases/ci.${{ github.run_number }}.0"
+          $appRoot = Join-Path $releaseRoot "LocalEngineeringAssistant"
+          $exePath = Join-Path $appRoot "LocalEngineeringAssistant.exe"
+          $metadataPath = Join-Path $appRoot "build-info.json"
+          if (-not (Test-Path -LiteralPath $exePath)) { throw "Missing executable: $exePath" }
+          if (-not (Test-Path -LiteralPath $metadataPath)) { throw "Missing build metadata: $metadataPath" }
+          $metadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
+          if ($metadata.version -ne "ci.${{ github.run_number }}.0") { throw "Unexpected build version" }
+          if ([string]::IsNullOrWhiteSpace($metadata.build_id)) { throw "Missing build_id" }
+          if ([string]::IsNullOrWhiteSpace($metadata.git_commit)) { throw "Missing git_commit" }
+
+          $process = Start-Process -FilePath $exePath -PassThru
+          try {
+            Start-Sleep -Seconds 10
+            if ($process.HasExited) {
+              throw "Packaged app exited during launch smoke with code $($process.ExitCode)"
+            }
+          } finally {
+            if (-not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force
+              $process.WaitForExit(10000)
+            }
+          }

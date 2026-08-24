@@ -199,6 +199,7 @@ $versionOutputRoot = Join-Path $releaseRoot $Version
 $workPath = Join-Path $buildRootPath $Version
 $specPath = Join-Path $workPath "spec"
 $versionFilePath = Join-Path $workPath "windows-version-info.txt"
+$buildInfoStagingPath = Join-Path $workPath "build-info.json"
 
 if (-not $NoClean) {
     Write-Step "Cleaning previous artifacts for version $Version"
@@ -211,6 +212,26 @@ New-Item -ItemType Directory -Force -Path $workPath | Out-Null
 New-Item -ItemType Directory -Force -Path $specPath | Out-Null
 
 New-PyInstallerVersionFile -FilePath $versionFilePath -Name $AppName -VersionText $Version
+
+$pythonVersion = Get-PythonOutput -Arguments @("--version")
+$gitCommit = Get-GitText -Arguments @("rev-parse", "--short", "HEAD")
+$gitStatus = Get-GitText -Arguments @("status", "--porcelain")
+$builtAtUtc = (Get-Date).ToUniversalTime()
+$commitForId = if ([string]::IsNullOrWhiteSpace($gitCommit)) { "nogit" } else { $gitCommit }
+$treeState = if ([string]::IsNullOrWhiteSpace($gitStatus)) { "clean" } else { "dirty" }
+$buildId = "{0}-{1}-{2}-{3}" -f $Version, $commitForId, $treeState, $builtAtUtc.ToString("yyyyMMddTHHmmssZ")
+$metadata = [ordered]@{
+    schema_version = 1
+    app_name       = $AppName
+    version        = $Version
+    build_id       = $buildId
+    build_mode     = if ($OneFile) { "onefile" } else { "onedir" }
+    built_at       = $builtAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ")
+    python         = $pythonVersion
+    git_commit     = $gitCommit
+    git_dirty      = -not [string]::IsNullOrWhiteSpace($gitStatus)
+}
+$metadata | ConvertTo-Json | Set-Content -LiteralPath $buildInfoStagingPath -Encoding UTF8
 
 Write-Step "Using Python: $($pythonConfig.Display)"
 Write-Step "Building version: $Version"
@@ -247,6 +268,7 @@ if (Test-Path -LiteralPath $iconPath) {
 }
 
 $dataMappings = @(
+    @{ Source = $buildInfoStagingPath; Target = "." },
     @{ Source = "app/assets"; Target = "app/assets" },
     @{ Source = "examples"; Target = "examples" },
     @{ Source = "docs"; Target = "docs" }
@@ -274,26 +296,12 @@ if (-not (Test-Path -LiteralPath $artifactPath)) {
     throw "Build completed but artifact was not found: $artifactPath"
 }
 
-$pythonVersion = Get-PythonOutput -Arguments @("--version")
-$gitCommit = Get-GitText -Arguments @("rev-parse", "--short", "HEAD")
-$gitStatus = Get-GitText -Arguments @("status", "--porcelain")
-$metadata = [ordered]@{
-    app_name    = $AppName
-    version     = $Version
-    build_mode  = if ($OneFile) { "onefile" } else { "onedir" }
-    artifact    = $artifactPath
-    built_at    = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssK")
-    python      = $pythonVersion
-    git_commit  = $gitCommit
-    git_dirty   = -not [string]::IsNullOrWhiteSpace($gitStatus)
-}
-
 $metadataPath = if ($OneFile) {
     Join-Path $versionOutputRoot "build-info.json"
 } else {
     Join-Path $artifactPath "build-info.json"
 }
-$metadata | ConvertTo-Json | Set-Content -LiteralPath $metadataPath -Encoding UTF8
+Copy-Item -LiteralPath $buildInfoStagingPath -Destination $metadataPath -Force
 
 if ($Zip) {
     $zipPath = Join-Path $versionOutputRoot "$AppName-$Version.zip"
@@ -302,7 +310,8 @@ if ($Zip) {
     }
 
     Write-Step "Creating release archive"
-    Compress-Archive -Path $artifactPath -DestinationPath $zipPath -Force
+    $archivePaths = if ($OneFile) { @($artifactPath, $metadataPath) } else { @($artifactPath) }
+    Compress-Archive -Path $archivePaths -DestinationPath $zipPath -Force
 }
 
 Write-Step "Build completed: $artifactPath"
