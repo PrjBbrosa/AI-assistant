@@ -18,7 +18,11 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.design_tokens import cloud_porcelain_controls
-from app.ui.widgets.action_overflow import ActionOverflowController, ChapterActionButton
+from app.ui.widgets.action_overflow import (
+    ActionOverflowController,
+    ChapterActionButton,
+    ChapterActionsWidget,
+)
 from app.ui.widgets.chapter_delegate import ChapterNavigationDelegate
 
 
@@ -56,7 +60,7 @@ class BaseChapterPage(QWidget):
         title_layout.addWidget(hint_label)
         header_layout.addWidget(title_block, 1)
 
-        actions = QWidget(header)
+        actions = ChapterActionsWidget(header)
         actions.setObjectName("ChapterActions")
         actions.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
         self.actions_layout = QHBoxLayout(actions)

@@ -42,7 +42,11 @@ from app.ui.input_condition_store import (
     validate_snapshot,
     write_input_conditions,
 )
-from app.ui.widgets.action_overflow import ActionOverflowController, ChapterActionButton
+from app.ui.widgets.action_overflow import (
+    ActionOverflowController,
+    ChapterActionButton,
+    ChapterActionsWidget,
+)
 from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.chapter_delegate import ChapterNavigationDelegate
 from app.ui.widgets.clamping_diagram import ClampingDiagramWidget, ThreadForceTriangleWidget
@@ -316,7 +320,7 @@ class BoltPage(QWidget):
         title_layout.addWidget(hint)
         header_layout.addWidget(title_block, 1)
 
-        actions = QWidget(header)
+        actions = ChapterActionsWidget(header)
         actions.setObjectName("ChapterActions")
         actions.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
         actions_layout = QHBoxLayout(actions)

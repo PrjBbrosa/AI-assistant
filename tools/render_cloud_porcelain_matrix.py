@@ -416,15 +416,33 @@ def measure_parity(app: Any, win: Any, logger: Logger) -> ParityReport:
         _verdict(abs(sidebar_w - spacing.sidebar_width) <= 2),
         "spec is authoritative over HTML 226",
     )
+    configured_min = sidebar.minimumWidth() if sidebar is not None else -1
+    configured_max = sidebar.maximumWidth() if sidebar is not None else -1
+    actual_min = actual_max = -1
+    if sidebar is not None:
+        win.splitter.setSizes([spacing.sidebar_min, 2000])
+        pump(app, 6)
+        actual_min = sidebar.width()
+        win.splitter.setSizes([spacing.sidebar_max, 2000])
+        pump(app, 6)
+        actual_max = sidebar.width()
+        win.splitter.setSizes([spacing.sidebar_width, 2000])
+        pump(app, 6)
     report.add(
-        "sidebar min/max",
+        "sidebar configured and attainable min/max",
         "212–280 px",
-        f"min={sidebar.minimumWidth()} max={sidebar.maximumWidth()}",
-        "exact",
-        _verdict(
-            sidebar.minimumWidth() == spacing.sidebar_min
-            and sidebar.maximumWidth() == spacing.sidebar_max
+        (
+            f"configured={configured_min}–{configured_max}; "
+            f"attained={actual_min}–{actual_max}"
         ),
+        "configured exact; attained ±2 px",
+        _verdict(
+            configured_min == spacing.sidebar_min
+            and configured_max == spacing.sidebar_max
+            and abs(actual_min - spacing.sidebar_min) <= 2
+            and abs(actual_max - spacing.sidebar_max) <= 2
+        ),
+        "setSizes is measured, not inferred from QWidget min/max properties",
     )
 
     gap = None
@@ -1038,6 +1056,21 @@ def capture_gallery(app: Any, out_dir: Path, logger: Logger) -> None:
     gallery.resize(980, 860)
     gallery.show()
     pump(app, 8)
+    probe = gallery.grab().toImage()
+    sampled = [
+        probe.pixelColor(x, y)
+        for y in range(2, probe.height(), 20)
+        for x in range(2, probe.width(), 20)
+    ]
+    black_fraction = sum(
+        1 for color in sampled if max(color.red(), color.green(), color.blue()) < 20
+    ) / max(len(sampled), 1)
+    if black_fraction >= 0.05:
+        gallery.close()
+        raise RuntimeError(
+            f"gallery background is not reviewable: black_fraction={black_fraction:.3f}"
+        )
+    logger.log(f"gallery black_fraction={black_fraction:.3f}")
     save_widget(gallery, out_dir / "gallery-states.png", logger)
     gallery.field_focus.setFocus()
     pump(app, 4)
@@ -1137,18 +1170,9 @@ def run_offscreen_matrix(args: argparse.Namespace) -> int:
         save_widget(win.centralWidget(), overlay_dir / "qt-central-1400x860.png", logger)
 
     report = measure_parity(app, win, logger)
-    write_parity_md(report, Path(args.parity_md), logger)
-    (Path(args.out_dir).parent.parent / "w7-parity.json").write_text(
-        json.dumps(
-            [row.__dict__ for row in report.rows],
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
 
     html_png = None
+    overlay_note = ""
     if not args.skip_html:
         html_png = capture_html_window(overlay_dir, logger)
         qt_png = overlay_dir / "qt-central-1400x860.png"
@@ -1163,10 +1187,6 @@ def run_offscreen_matrix(args: argparse.Namespace) -> int:
             f"Qt central widget: `{qt_png if qt_png.exists() else qt_shell}`\n"
             f"50% overlay: `{overlay_dir / 'overlay-50-html-over-qt.png'}`\n"
         )
-        with Path(args.parity_md).open("a", encoding="utf-8") as fh:
-            fh.write("\n## HTML overlay\n\n")
-            fh.write(overlay_note)
-            fh.write("Overlay is an alignment aid, not a binary-equality gate.\n")
     else:
         logger.unverified("html overlay", "--skip-html")
 
@@ -1213,6 +1233,40 @@ def run_offscreen_matrix(args: argparse.Namespace) -> int:
                 out_dir / f"module-{name}-1400x860-result.png",
                 logger,
             )
+            if name == "buffer":
+                for width, height in (
+                    (1400, 860),
+                    (1180, 720),
+                    (1600, 1000),
+                ):
+                    if (width, height) != (1400, 860):
+                        win.resize(width, height)
+                        pump(app, 8)
+                        save_widget(
+                            win.centralWidget(),
+                            out_dir / f"module-buffer-{width}x{height}-result.png",
+                            logger,
+                        )
+                    result_scroll = page.overall_verdict_label.parentWidget()
+                    while result_scroll is not None and not hasattr(
+                        result_scroll, "horizontalScrollBar"
+                    ):
+                        result_scroll = result_scroll.parentWidget()
+                    hmax = (
+                        result_scroll.horizontalScrollBar().maximum()
+                        if result_scroll is not None
+                        else -1
+                    )
+                    curve_width = page.overview_curve_widget.width()
+                    report.add(
+                        f"buffer result layout {width}x{height}",
+                        "no page hscroll; engineering curve ≥300 px",
+                        f"hmax={hmax}; curve={curve_width} px",
+                        "exact; minimum",
+                        _verdict(hmax == 0 and curve_width >= 300),
+                    )
+                win.resize(1400, 860)
+                pump(app, 8)
             capture_diagrams(app, page, name, out_dir, logger)
         except Exception as exc:
             logger.unverified(
@@ -1221,11 +1275,13 @@ def run_offscreen_matrix(args: argparse.Namespace) -> int:
             )
 
     # Splitter extremes (offscreen evidence; cocoa re-takes separately).
+    spacing = cloud_porcelain_spacing()
+    post_results_min = post_results_max = -1
     try:
-        spacing = cloud_porcelain_spacing()
         sidebar = win.findChild(QFrame, "SidebarPanel")
         win.splitter.setSizes([spacing.sidebar_min, 2000])
         pump(app, 6)
+        post_results_min = sidebar.width() if sidebar is not None else -1
         save_widget(
             win.centralWidget(),
             out_dir / "shell-1400x860-sidebar-min.png",
@@ -1233,6 +1289,7 @@ def run_offscreen_matrix(args: argparse.Namespace) -> int:
         )
         win.splitter.setSizes([spacing.sidebar_max, 2000])
         pump(app, 6)
+        post_results_max = sidebar.width() if sidebar is not None else -1
         save_widget(
             win.centralWidget(),
             out_dir / "shell-1400x860-sidebar-max.png",
@@ -1246,6 +1303,34 @@ def run_offscreen_matrix(args: argparse.Namespace) -> int:
     except Exception as exc:
         logger.unverified("splitter resize", f"{type(exc).__name__}: {exc}")
 
+    report.add(
+        "sidebar attainable range after all module results",
+        f"{spacing.sidebar_min}–{spacing.sidebar_max} px",
+        f"attained={post_results_min}–{post_results_max}",
+        "±2 px",
+        _verdict(
+            abs(post_results_min - spacing.sidebar_min) <= 2
+            and abs(post_results_max - spacing.sidebar_max) <= 2
+        ),
+        "guards against page-header minimum widths permanently squeezing the shell",
+    )
+
+    write_parity_md(report, Path(args.parity_md), logger)
+    (Path(args.out_dir).parent.parent / "w7-parity.json").write_text(
+        json.dumps(
+            [row.__dict__ for row in report.rows],
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    if overlay_note:
+        with Path(args.parity_md).open("a", encoding="utf-8") as fh:
+            fh.write("\n## HTML overlay\n\n")
+            fh.write(overlay_note)
+            fh.write("Overlay is an alignment aid, not a binary-equality gate.\n")
+
     win.close()
     pngs = sorted(out_dir.glob("*.png"))
     logger.log(f"done png_count={len(pngs)} unverified={len(logger.unverified_items)}")
@@ -1254,7 +1339,7 @@ def run_offscreen_matrix(args: argparse.Namespace) -> int:
         + ("\n" if logger.unverified_items else ""),
         encoding="utf-8",
     )
-    return 0
+    return 1 if any(row.verdict == "FAIL" for row in report.rows) else 0
 
 
 def run_macos_fg_worker(args: argparse.Namespace) -> int:

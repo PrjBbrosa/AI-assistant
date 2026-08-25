@@ -8,6 +8,7 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -21,7 +22,12 @@ from PySide6.QtWidgets import (
     QTableWidget,
 )
 
-from app.ui.design_tokens import cloud_porcelain_controls, qss_rgba
+from app.ui.design_tokens import (
+    cloud_porcelain_controls,
+    contrast_ratio,
+    qcolor,
+    qss_rgba,
+)
 from app.ui.theme import apply_theme, build_style_sheet
 from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.help_button import HelpButton
@@ -85,6 +91,48 @@ def test_gallery_constructs_named_controls(app):
     assert gallery.findChild(QTabBar) is not None
     assert gallery.menu.actions()
     gallery.close()
+
+
+def test_gallery_grab_has_canvas_background_and_readable_labels(app):
+    gallery = build_cloud_component_gallery()
+    gallery.resize(980, 860)
+    gallery.show()
+    app.processEvents()
+    try:
+        image = gallery.grab().toImage()
+        expected = qcolor("canvas_base")
+        corner = image.pixelColor(2, 2)
+        assert max(
+            abs(corner.red() - expected.red()),
+            abs(corner.green() - expected.green()),
+            abs(corner.blue() - expected.blue()),
+        ) <= 2
+
+        sampled = [
+            image.pixelColor(x, y)
+            for y in range(2, image.height(), 20)
+            for x in range(2, image.width(), 20)
+        ]
+        black_fraction = sum(
+            1 for color in sampled if max(color.red(), color.green(), color.blue()) < 20
+        ) / len(sampled)
+        assert black_fraction < 0.05, black_fraction
+
+        caption = gallery.caption_labels[0]
+        caption_origin = caption.mapTo(gallery, QPoint(0, 0))
+        caption_background = image.pixelColor(
+            caption_origin.x(),
+            caption_origin.y(),
+        )
+        readable_pixels = sum(
+            1
+            for y in range(caption_origin.y(), caption_origin.y() + caption.height())
+            for x in range(caption_origin.x(), caption_origin.x() + caption.width())
+            if contrast_ratio(image.pixelColor(x, y), caption_background) >= 4.5
+        )
+        assert readable_pixels >= 5, readable_pixels
+    finally:
+        gallery.close()
 
 
 def test_gallery_is_not_a_main_window_module():

@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtWidgets import QApplication, QFrame, QLabel, QWidget
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QScrollArea, QWidget
 
 from app.ui.design_tokens import cloud_porcelain_spacing
 from app.ui.main_window import MainWindow
@@ -101,6 +101,166 @@ def test_sidebar_min_max_via_splitter_resize(app):
         app.processEvents()
         assert sidebar.width() >= spacing.sidebar_min
         assert sidebar.width() <= spacing.sidebar_max
+    finally:
+        window.close()
+
+
+def test_sidebar_and_overflow_geometry_survive_tapped_result_round_trip(app):
+    """A wide page header must not raise the whole shell's minimum width.
+
+    This follows the user-visible route that exposed the regression: open the
+    tapped-joint module, calculate its sample, then return to the bolt module.
+    The sidebar must keep its nominal width and remain resizable through the
+    complete supported range; the visible overflow control must paint its full
+    text instead of being squeezed below its minimum size hint.
+    """
+    window = MainWindow()
+    try:
+        _show(app, window, 1400, 860)
+        spacing = cloud_porcelain_spacing()
+        sidebar = window.findChild(QFrame, "SidebarPanel")
+        assert sidebar is not None
+        assert abs(sidebar.width() - spacing.sidebar_width) <= 2
+
+        window.module_list.setCurrentRow(1)
+        app.processEvents()
+        tapped_page = window._pages[1]
+        assert tapped_page is not None
+        tapped_page._load_sample("tapped_axial_joint_case_01.json")
+        app.processEvents()
+        tapped_page._run_calculation()
+        app.processEvents()
+
+        assert tapped_page.chapter_list.currentRow() >= 0
+        overflow = tapped_page.overflow_button
+        assert not overflow.isHidden()
+        assert overflow.text() == "更多"
+        assert overflow.width() >= overflow.minimumSizeHint().width(), (
+            overflow.width(),
+            overflow.minimumSizeHint().width(),
+        )
+        assert (
+            overflow.visibleRegion().boundingRect().width()
+            >= overflow.width() - 1
+        )
+
+        window.module_list.setCurrentRow(0)
+        app.processEvents()
+        assert abs(sidebar.width() - spacing.sidebar_width) <= 2, sidebar.width()
+
+        window.splitter.setSizes([spacing.sidebar_max, 2000])
+        app.processEvents()
+        assert abs(sidebar.width() - spacing.sidebar_max) <= 2, sidebar.width()
+
+        window.splitter.setSizes([spacing.sidebar_min, 2000])
+        app.processEvents()
+        assert abs(sidebar.width() - spacing.sidebar_min) <= 2, sidebar.width()
+    finally:
+        window.close()
+
+
+def test_tapped_action_overflow_has_no_resize_hysteresis(app):
+    spacing = cloud_porcelain_spacing()
+
+    def _state_after(sizes: tuple[tuple[int, int], ...]):
+        window = MainWindow()
+        try:
+            first_width, first_height = sizes[0]
+            _show(app, window, first_width, first_height)
+            window.module_list.setCurrentRow(1)
+            app.processEvents()
+            for width, height in sizes[1:]:
+                window.resize(width, height)
+                app.processEvents()
+                app.processEvents()
+
+            page = window._pages[1]
+            assert page is not None
+            controller = page._action_overflow
+            visible = tuple(
+                proxy.button.text()
+                for proxy in controller._proxies
+                if not proxy.button.isHidden()
+            )
+            overflowed = tuple(
+                button.text() for button in controller.overflowed_buttons()
+            )
+            return (
+                visible,
+                overflowed,
+                page.overflow_button.isHidden(),
+                window.sidebar.width(),
+            )
+        finally:
+            window.close()
+
+    fresh_large = _state_after(((1600, 1000),))
+    small_to_large = _state_after(((1180, 720), (1600, 1000)))
+    large_round_trip = _state_after(
+        ((1600, 1000), (1180, 720), (1600, 1000))
+    )
+
+    assert fresh_large[1] == ()
+    assert fresh_large[2] is True
+    assert abs(fresh_large[3] - spacing.sidebar_width) <= 2
+    assert small_to_large == fresh_large
+    assert large_round_trip == fresh_large
+
+
+@pytest.mark.parametrize(
+    ("width", "height"),
+    ((1180, 720), (1400, 860), (1600, 1000)),
+    ids=("min-1180x720", "default-1400x860", "large-1600x1000"),
+)
+def test_buffer_result_has_no_page_hscroll_and_right_summary_is_accessible(
+    app,
+    width: int,
+    height: int,
+):
+    """Every supported shell size must expose the complete result workbench."""
+    window = MainWindow()
+    try:
+        _show(app, window, width, height)
+        window.module_list.setCurrentRow(6)
+        app.processEvents()
+        page = window._pages[6]
+        assert page is not None
+        page._load_sample("buffer_energy_case_01.csv")
+        app.processEvents()
+        page._on_calculate()
+        app.processEvents()
+        page.set_current_chapter(3)
+        app.processEvents()
+
+        result_scroll = page.overall_verdict_label.parentWidget()
+        while result_scroll is not None and not isinstance(result_scroll, QScrollArea):
+            result_scroll = result_scroll.parentWidget()
+        assert isinstance(result_scroll, QScrollArea)
+        assert not result_scroll.isHidden()
+        assert result_scroll.horizontalScrollBar().maximum() == 0
+        assert page.overview_curve_widget.width() >= 300, (
+            width,
+            height,
+            page.overview_curve_widget.width(),
+        )
+
+        viewport = result_scroll.viewport()
+        verdict = page.overall_verdict_label
+        result_scroll.ensureWidgetVisible(verdict)
+        app.processEvents()
+        verdict_pos = verdict.mapTo(viewport, verdict.rect().topLeft())
+        assert verdict_pos.x() >= 0
+        assert verdict_pos.x() + verdict.width() <= viewport.width()
+        assert verdict.visibleRegion().boundingRect().width() >= verdict.width() - 1
+
+        summary = page.compare_preview_table
+        result_scroll.ensureWidgetVisible(summary)
+        app.processEvents()
+        summary_pos = summary.mapTo(viewport, summary.rect().topLeft())
+        assert summary_pos.x() >= 0
+        assert summary_pos.x() + summary.width() <= viewport.width()
+        assert summary.visibleRegion().boundingRect().width() >= summary.width() - 1
+        assert summary.visibleRegion().boundingRect().height() > 0
     finally:
         window.close()
 

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -67,6 +67,65 @@ DISCLAIMER_TEXT = (
 # 与 calculator 一致：冲击量与曲线倍率必须 > 0；噪声容差允许 0。
 _POSITIVE_KW = dict(min_value=0.0, min_inclusive=False, finite=True)
 _NONNEGATIVE_KW = dict(min_value=0.0, min_inclusive=True, finite=True)
+
+
+class _ResponsiveResultContainer(QWidget):
+    """Reflow the result summary instead of forcing horizontal scrolling."""
+
+    _THREE_COLUMN_MIN_WIDTH = 900
+    _STATUS_MAX_WIDTH = 220
+    _SUMMARY_MAX_WIDTH = 340
+    _UNBOUNDED_WIDGET_WIDTH = 16_777_215
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.grid = QGridLayout(self)
+        self.grid.setContentsMargins(0, 0, 0, 0)
+        self.grid.setHorizontalSpacing(10)
+        self.grid.setVerticalSpacing(8)
+        self._regions: tuple[QWidget, QWidget, QWidget] | None = None
+        self._three_columns: bool | None = None
+
+    def set_regions(self, status: QWidget, center: QWidget, right: QWidget) -> None:
+        self._regions = (status, center, right)
+        self._sync_layout()
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        hint = super().minimumSizeHint()
+        return QSize(0, hint.height())
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._sync_layout()
+
+    def _sync_layout(self) -> None:
+        if self._regions is None:
+            return
+        three_columns = self.width() >= self._THREE_COLUMN_MIN_WIDTH
+        if three_columns == self._three_columns:
+            return
+        self._three_columns = three_columns
+
+        status, center, right = self._regions
+        for widget in self._regions:
+            self.grid.removeWidget(widget)
+        status.setMaximumWidth(self._STATUS_MAX_WIDTH)
+        if three_columns:
+            right.setMaximumWidth(self._SUMMARY_MAX_WIDTH)
+            self.grid.addWidget(status, 0, 0)
+            self.grid.addWidget(center, 0, 1)
+            self.grid.addWidget(right, 0, 2)
+        else:
+            # Keep the engineering verdict first in the narrow reading order;
+            # status and curve detail remain available directly below it.
+            right.setMaximumWidth(self._UNBOUNDED_WIDGET_WIDTH)
+            self.grid.addWidget(right, 0, 0, 1, 2)
+            self.grid.addWidget(status, 1, 0)
+            self.grid.addWidget(center, 1, 1)
+        self.grid.setColumnStretch(0, 0)
+        self.grid.setColumnStretch(1, 1)
+        self.grid.setColumnStretch(2, 0)
+        self.updateGeometry()
 
 
 FIELD_SPECS: tuple[FieldSchema, ...] = (
@@ -274,11 +333,7 @@ class BufferEnergyPage(BaseChapterPage):
         scroll = QScrollArea(page)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        container = QWidget(scroll)
-        outer = QGridLayout(container)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setHorizontalSpacing(10)
-        outer.setVerticalSpacing(8)
+        container = _ResponsiveResultContainer(scroll)
 
         status_card = QFrame(container)
         status_card.setObjectName("SubCard")
@@ -303,6 +358,7 @@ class BufferEnergyPage(BaseChapterPage):
         metric_grid = QGridLayout()
         metric_grid.setContentsMargins(0, 0, 0, 0)
         metric_grid.setHorizontalSpacing(8)
+        metric_grid.setVerticalSpacing(8)
         metrics = (
             ("initial_energy", "初始动能", "J"),
             ("max_compression", "最大压缩量", "mm"),
@@ -310,7 +366,13 @@ class BufferEnergyPage(BaseChapterPage):
             ("rebound_velocity", "估算回弹速度", "m/s"),
         )
         for index, (key, title, unit) in enumerate(metrics):
-            metric_grid.addWidget(self._metric_card(center, key, title, unit), 0, index)
+            metric_grid.addWidget(
+                self._metric_card(center, key, title, unit),
+                index // 2,
+                index % 2,
+            )
+        metric_grid.setColumnStretch(0, 1)
+        metric_grid.setColumnStretch(1, 1)
         center_layout.addLayout(metric_grid)
 
         curve_card = QFrame(center)
@@ -372,12 +434,7 @@ class BufferEnergyPage(BaseChapterPage):
         right_layout.addWidget(self.results_label)
         right_layout.addStretch(1)
 
-        outer.addWidget(status_card, 0, 0)
-        outer.addWidget(center, 0, 1)
-        outer.addWidget(right, 0, 2)
-        outer.setColumnStretch(0, 0)
-        outer.setColumnStretch(1, 1)
-        outer.setColumnStretch(2, 0)
+        container.set_regions(status_card, center, right)
         scroll.setWidget(container)
         body.addWidget(scroll, 1)
         self.add_chapter("吸能结果", page)

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtCore import QEvent, QObject, QSize, Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMenu, QPushButton, QWidget
 
@@ -89,6 +89,21 @@ class ChapterActionButton(QPushButton):
             return
 
 
+class ChapterActionsWidget(QWidget):
+    """Action row whose contents do not become a hard page-width constraint.
+
+    The toolbar still reports its natural ``sizeHint`` so a roomy header keeps
+    all actions visible.  Its horizontal minimum is deliberately zero: the
+    overflow controller owns the responsive packing and must be allowed to
+    hide lower-priority buttons before the containing page pushes an outer
+    splitter past its requested sidebar width.
+    """
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        hint = super().minimumSizeHint()
+        return QSize(0, hint.height())
+
+
 @dataclass
 class ActionProxy:
     button: QPushButton
@@ -110,6 +125,7 @@ class ActionOverflowController(QObject):
         super().__init__(parent)
         self._header = header
         self.overflow_button = overflow_button
+        self._actions = overflow_button.parentWidget()
         self._menu = QMenu(overflow_button)
         self._proxies: list[ActionProxy] = []
         self._applying = False
@@ -129,6 +145,8 @@ class ActionOverflowController(QObject):
 
         self._menu.aboutToShow.connect(self._sync_all)
         header.installEventFilter(self)
+        if widget_is_alive(self._actions):
+            self._actions.installEventFilter(self)
 
     def register(self, button: QPushButton) -> QAction:
         action = QAction(button.text(), self)
@@ -195,7 +213,7 @@ class ActionOverflowController(QObject):
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
         if not widget_is_alive(self):
             return False
-        if obj is self._header and event.type() == QEvent.Type.Resize:
+        if obj in {self._header, self._actions} and event.type() == QEvent.Type.Resize:
             self.relayout()
         return False
 
@@ -206,6 +224,13 @@ class ActionOverflowController(QObject):
         gap = layout.spacing() if layout is not None else 12
         inner = max(0, self._header.width() - inset)
         title_reserve = min(max(168, inner // 4), 280)
+        if layout is not None:
+            for index in range(layout.count()):
+                widget = layout.itemAt(index).widget()
+                if widget is None or widget is self._actions:
+                    continue
+                title_reserve = max(title_reserve, widget.minimumSizeHint().width())
+                break
         return max(0, inner - title_reserve - gap)
 
     def _pack(self, available: int) -> tuple[list[ActionProxy], list[ActionProxy]]:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QPaintEvent, QPainter
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -24,6 +25,15 @@ from PySide6.QtWidgets import (
 from app.ui.design_tokens import cloud_porcelain_controls, qcolor
 from app.ui.widgets.app_combo_box import AppComboBox
 from app.ui.widgets.help_button import HelpButton
+
+
+class _CanvasSurface(QWidget):
+    """Opaque test surface immune to the product's transparent QWidget QSS."""
+
+    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.fillRect(event.rect(), qcolor("canvas_base"))
 
 
 def _field(text: str, *, read_only: bool = False, disabled: bool = False, error: bool = False) -> QLineEdit:
@@ -58,7 +68,7 @@ def _card(object_name: str, title: str, body: str) -> QFrame:
     return frame
 
 
-class CloudComponentGallery(QWidget):
+class CloudComponentGallery(_CanvasSurface):
     """Test-only widget covering CONTROL-01..03 surfaces."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -79,10 +89,11 @@ class CloudComponentGallery(QWidget):
         scroll.setObjectName("GalleryScroll")
         scroll.setAutoFillBackground(True)
         scroll.setPalette(palette)
-        host = QWidget()
+        host = _CanvasSurface()
         host.setObjectName("GalleryHost")
         host.setAutoFillBackground(True)
         host.setPalette(palette)
+        self.gallery_host = host
         layout = QVBoxLayout(host)
         layout.setSpacing(16)
 
@@ -102,8 +113,11 @@ class CloudComponentGallery(QWidget):
             ("read-only", self.field_readonly),
             ("disabled", self.field_disabled),
         )
+        self.caption_labels: list[QLabel] = []
         for index, (caption, widget) in enumerate(labels):
-            fields_grid.addWidget(QLabel(caption), index, 0)
+            caption_label = QLabel(caption)
+            self.caption_labels.append(caption_label)
+            fields_grid.addWidget(caption_label, index, 0)
             fields_grid.addWidget(widget, index, 1)
         layout.addWidget(fields_box)
 
