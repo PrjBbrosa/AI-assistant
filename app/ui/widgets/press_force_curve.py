@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QWidget
 
 from app.ui.design_tokens import qcolor, qpen
 from app.ui.fonts import make_ui_font
+from app.ui.widgets.interactive_chart import ChartSample, InteractiveChartWidget
 
 GRID_ALPHA = 0.55
 
@@ -23,7 +24,7 @@ def _token(name: str, alpha: int | float | None = None) -> QColor:
     return color
 
 
-class PressForceCurveWidget(QWidget):
+class PressForceCurveWidget(InteractiveChartWidget):
     """Draw F_press - interference curve with key markers."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -64,6 +65,7 @@ class PressForceCurveWidget(QWidget):
         del event
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        self.begin_interactive_paint()
 
         w = float(self.width())
         h = float(self.height())
@@ -74,7 +76,7 @@ class PressForceCurveWidget(QWidget):
         painter.setBrush(_token("surface_glass_soft"))
         painter.drawRoundedRect(panel, 10, 10)
 
-        plot = QRectF(panel.left() + 68, panel.top() + 20, panel.width() - 98, panel.height() - 66)
+        plot = QRectF(panel.left() + 68, panel.top() + 40, panel.width() - 98, panel.height() - 86)
         painter.setPen(qpen("line_structural", 1.0))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(plot)
@@ -85,26 +87,39 @@ class PressForceCurveWidget(QWidget):
             painter.drawText(panel, Qt.AlignmentFlag.AlignCenter, "执行校核后显示压入力曲线")
             return
 
-        x_min = min(self._x)
-        x_max = max(self._x)
-        y_min = 0.0
+        auto_x_min = min(self._x)
+        auto_x_max = max(self._x)
+        auto_y_min = 0.0
         y_max_raw = max(max(self._y), 1.0)
         # Auto-scale: use kN when peak force >= 10 kN for readability
         use_kn = y_max_raw >= 10_000.0
         y_scale = 0.001 if use_kn else 1.0
         y_unit = "kN" if use_kn else "N"
-        y_max = y_max_raw * y_scale
+        auto_y_max = y_max_raw * y_scale
+        samples = [
+            ChartSample(
+                x,
+                y * y_scale,
+                f"delta={x:.4g} um · F={y * y_scale:.5g} {y_unit}",
+            )
+            for x, y in zip(self._x, self._y)
+        ]
+        x_min, x_max, y_min, y_max = self.prepare_plot_context(
+            "press_force",
+            plot,
+            (auto_x_min, auto_x_max),
+            (auto_y_min, auto_y_max),
+            samples=samples,
+            x_label="过盈量 delta [um]",
+            y_label=f"压入力 F_press [{y_unit}]",
+        )
 
         def sx(x: float) -> float:
-            if x_max <= x_min:
-                return plot.left()
-            return plot.left() + (x - x_min) / (x_max - x_min) * plot.width()
+            return self.map_data("press_force", x, y_min).x()
 
         def sy(y_raw: float) -> float:
             y = y_raw * y_scale
-            if y_max <= y_min:
-                return plot.bottom()
-            return plot.bottom() - (y - y_min) / (y_max - y_min) * plot.height()
+            return self.map_data("press_force", x_min, y).y()
 
         # Grid
         grid_pen = QPen(_token("line_structural", GRID_ALPHA), 1.0)
@@ -181,6 +196,7 @@ class PressForceCurveWidget(QWidget):
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop,
             label,
         )
+        self.draw_interaction_overlay(painter)
 
     def _draw_marker(self, painter: QPainter, sx, plot: QRectF, x: float, color: QColor, name: str) -> None:
         x_coord = sx(x)

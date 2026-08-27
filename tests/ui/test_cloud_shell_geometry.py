@@ -25,6 +25,7 @@ OFFICIAL_MODULE_NAMES = (
     "蜗轮蜗杆设计",
     "赫兹应力",
     "缓冲块吸能仿真",
+    "疲劳强度与可靠性",
 )
 
 
@@ -200,8 +201,9 @@ def test_tapped_action_overflow_has_no_resize_hysteresis(app):
         ((1600, 1000), (1180, 720), (1600, 1000))
     )
 
-    assert fresh_large[1] == ()
-    assert fresh_large[2] is True
+    assert any(text.startswith("执行") for text in fresh_large[0])
+    assert fresh_large[1]
+    assert fresh_large[2] is False
     assert abs(fresh_large[3] - spacing.sidebar_width) <= 2
     assert small_to_large == fresh_large
     assert large_round_trip == fresh_large
@@ -322,7 +324,6 @@ def test_module_item_text_format_and_no_status_dots(app):
     window = MainWindow()
     try:
         expected = [f"{index + 1}. {name}" for index, name in enumerate(OFFICIAL_MODULE_NAMES)]
-        expected.append("8. 材料与标准库（即将推出）")
         actual = [
             window.module_list.item(index).text()
             for index in range(window.module_list.count())

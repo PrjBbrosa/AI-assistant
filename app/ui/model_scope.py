@@ -159,6 +159,26 @@ BUFFER_SCOPE = ModuleScope(
     ),
 )
 
+FATIGUE_SCOPE = ModuleScope(
+    module_id="fatigue_reliability",
+    model_level=MODEL_LEVEL_PRECHECK,
+    covered=(
+        "金属、工程塑料与短纤增强塑料的单轴有限寿命 S-N/P-S-N 拟合",
+        "runout 右删失、块谱/单通道时序 rainflow、线性 Miner 损伤",
+        "强度散差与整体载荷 COV 的概率可靠性预校核",
+    ),
+    not_covered=(
+        "连续纤维层合复合材料",
+        "多轴/非比例载荷与应变寿命法",
+        "载荷次序、裂纹扩展、腐蚀/蠕变疲劳和塑料自发热模型",
+        "正式标准签发或试验认证",
+    ),
+    applicability=(
+        "当前结论为单轴、有限寿命、线性累积损伤假设下的工程预校核。"
+        "样本不足、全 runout、条件不匹配或外推时总体状态为校核不完整，不会给出虚假通过。"
+    ),
+)
+
 BOLT_SCOPE = ModuleScope(
     module_id="bolt_vdi2230",
     model_level=MODEL_LEVEL_FORMAL_SUBSET,
@@ -187,6 +207,7 @@ MODULE_SCOPES: dict[str, ModuleScope] = {
     INTERFERENCE_SCOPE.module_id: INTERFERENCE_SCOPE,
     TAPPED_SCOPE.module_id: TAPPED_SCOPE,
     BUFFER_SCOPE.module_id: BUFFER_SCOPE,
+    FATIGUE_SCOPE.module_id: FATIGUE_SCOPE,
     BOLT_SCOPE.module_id: BOLT_SCOPE,
 }
 

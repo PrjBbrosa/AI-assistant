@@ -44,9 +44,9 @@ class ChapterNavigationDelegate(QStyledItemDelegate):
         self._item_height = _ITEM_HEIGHT
         self._radius = cloud_porcelain_radii().radius_control
         self._tile_radius = cloud_porcelain_radii().radius_small
-        self._label_font = make_ui_font(10)
-        self._label_font_selected = make_ui_font(10, QFont.Weight.DemiBold)
-        self._index_font = make_mono_font(8, QFont.Weight.DemiBold)
+        self._label_font = make_ui_font(11)
+        self._label_font_selected = make_ui_font(11, QFont.Weight.DemiBold)
+        self._index_font = make_mono_font(9, QFont.Weight.DemiBold)
 
     def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:
         width = option.rect.width() if option.rect.width() > 0 else 160

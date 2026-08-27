@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QWidget
 
 from app.ui.design_tokens import qcolor, qpen
 from app.ui.fonts import make_ui_font
+from app.ui.widgets.interactive_chart import ChartSample, InteractiveChartWidget
 
 
 GRID_ALPHA = 0.55
@@ -24,7 +25,7 @@ def _token(name: str, alpha: int | float | None = None) -> QColor:
     return color
 
 
-class WormPerformanceCurveWidget(QWidget):
+class WormPerformanceCurveWidget(InteractiveChartWidget):
     """Draw efficiency, power-loss and temperature-rise curves together."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -34,7 +35,7 @@ class WormPerformanceCurveWidget(QWidget):
         self._power_loss_kw: list[float] = []
         self._temperature_rise_k: list[float] = []
         self._current_index = -1
-        self.setMinimumHeight(300)
+        self.setMinimumHeight(360)
 
     def set_curves(
         self,
@@ -69,13 +70,14 @@ class WormPerformanceCurveWidget(QWidget):
             return
         try:
             painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            self.begin_interactive_paint()
 
             panel = QRectF(14.0, 14.0, self.width() - 28.0, self.height() - 28.0)
             painter.setPen(qpen("line_structural", 1.0))
             painter.setBrush(_token("surface_glass_soft"))
             painter.drawRoundedRect(panel, 10, 10)
 
-            title_rect = QRectF(panel.left() + 18, panel.top() + 12, panel.width() - 36, 22)
+            title_rect = QRectF(panel.left() + 18, panel.top() + 38, panel.width() - 36, 22)
             painter.setPen(qpen("ink_primary", 1.0))
             painter.setFont(make_ui_font(12, 600))
             painter.drawText(title_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, "性能曲线")
@@ -86,19 +88,20 @@ class WormPerformanceCurveWidget(QWidget):
                 painter.drawText(panel, Qt.AlignmentFlag.AlignCenter, "执行计算后显示效率 / 损失功率曲线")
                 return
 
-            chart_top = panel.top() + 48
-            chart_height = (panel.height() - 72) / 3.0
+            chart_top = panel.top() + 66
+            chart_height = (panel.height() - 88) / 3.0
             charts = [
-                (QRectF(panel.left() + 18, chart_top + chart_height * 0, panel.width() - 36, chart_height - 10), self._efficiency, _token("accent"), "效率 eta"),
-                (QRectF(panel.left() + 18, chart_top + chart_height * 1, panel.width() - 36, chart_height - 10), self._power_loss_kw, _token("secondary"), "损失功率 P_loss"),
-                (QRectF(panel.left() + 18, chart_top + chart_height * 2, panel.width() - 36, chart_height - 10), self._temperature_rise_k, _token("warning_fg"), "温升 delta_T (K)"),
+                ("efficiency", QRectF(panel.left() + 18, chart_top + chart_height * 0, panel.width() - 36, chart_height - 8), self._efficiency, _token("accent"), "效率 eta"),
+                ("power_loss", QRectF(panel.left() + 18, chart_top + chart_height * 1, panel.width() - 36, chart_height - 8), self._power_loss_kw, _token("secondary"), "损失功率 P_loss [kW]"),
+                ("temperature", QRectF(panel.left() + 18, chart_top + chart_height * 2, panel.width() - 36, chart_height - 8), self._temperature_rise_k, _token("warning_fg"), "温升 delta_T [K]"),
             ]
-            for rect, values, color, label in charts:
-                self._draw_chart(painter, rect, values, color, label)
+            for key, rect, values, color, label in charts:
+                self._draw_chart(painter, key, rect, values, color, label)
+            self.draw_interaction_overlay(painter)
         finally:
             painter.end()
 
-    def _draw_chart(self, painter: QPainter, rect: QRectF, values: list[float], color: QColor, label: str) -> None:
+    def _draw_chart(self, painter: QPainter, key: str, rect: QRectF, values: list[float], color: QColor, label: str) -> None:
         painter.setPen(qpen("line_structural", 1.0))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(rect, 8, 8)
@@ -113,20 +116,32 @@ class WormPerformanceCurveWidget(QWidget):
             y = plot.top() + plot.height() * idx / 4.0
             painter.drawLine(QPointF(plot.left(), y), QPointF(plot.right(), y))
 
-        x0 = min(self._load_factor)
-        x1 = max(self._load_factor)
-        y0 = min(values)
-        y1 = max(values)
-        if y1 <= y0:
-            y1 = y0 + 1.0
+        auto_x0 = min(self._load_factor)
+        auto_x1 = max(self._load_factor)
+        auto_y0 = min(values)
+        auto_y1 = max(values)
+        if auto_y1 <= auto_y0:
+            auto_y1 = auto_y0 + 1.0
+        y_pad = max((auto_y1 - auto_y0) * 0.08, 1e-9)
+        samples = [
+            ChartSample(load, value, f"负载系数={load:.4g} · {label}={value:.5g}")
+            for load, value in zip(self._load_factor, values)
+        ]
+        x0, x1, y0, y1 = self.prepare_plot_context(
+            key,
+            plot,
+            (auto_x0, auto_x1),
+            (auto_y0 - y_pad, auto_y1 + y_pad),
+            samples=samples,
+            x_label="负载系数",
+            y_label=label,
+        )
 
         def sx(value: float) -> float:
-            if x1 <= x0:
-                return plot.left()
-            return plot.left() + (value - x0) / (x1 - x0) * plot.width()
+            return self.map_data(key, value, y0).x()
 
         def sy(value: float) -> float:
-            return plot.bottom() - (value - y0) / (y1 - y0) * plot.height()
+            return self.map_data(key, x0, value).y()
 
         painter.setPen(QPen(color, 2.2))
         for idx in range(1, len(self._load_factor)):

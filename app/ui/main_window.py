@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSplitter,
     QStackedWidget,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -68,9 +69,11 @@ class MainWindow(QMainWindow):
         t0 = time.perf_counter()
         super().__init__()
         self.setWindowTitle("Local Engineering Assistant")
-        self.resize(1400, 860)
-        self.setMinimumSize(1180, 720)
+        self.resize(1280, 800)
+        self.setMinimumSize(1024, 640)
         self._sidebar_sizes_applied = False
+        self._sidebar_collapsed = False
+        self._expanded_sidebar_width = cloud_porcelain_spacing().sidebar_width
 
         spacing = cloud_porcelain_spacing()
         canvas = CloudCanvas(self)
@@ -115,7 +118,7 @@ class MainWindow(QMainWindow):
             ("蜗轮蜗杆设计", self._make_worm_gear_page),
             ("赫兹应力", self._make_hertz_contact_page),
             ("缓冲块吸能仿真", self._make_buffer_energy_page),
-            ("材料与标准库（即将推出）", self._make_placeholder_page),
+            ("疲劳强度与可靠性", self._make_fatigue_reliability_page),
         ]
 
         # _pages[i] is None until the page has been constructed
@@ -229,9 +232,9 @@ class MainWindow(QMainWindow):
         from app.ui.pages.buffer_energy_page import BufferEnergyPage
         return BufferEnergyPage(self)
 
-    def _make_placeholder_page(self) -> QWidget:
-        from app.ui.pages.placeholder_page import PlaceholderPage
-        return PlaceholderPage("材料与标准库（即将推出）", self)
+    def _make_fatigue_reliability_page(self) -> QWidget:
+        from app.ui.pages.fatigue_reliability_page import FatigueReliabilityPage
+        return FatigueReliabilityPage(self)
 
     # ------------------------------------------------------------------
     # Sidebar / workspace chrome
@@ -249,6 +252,7 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(sidebar)
         layout.setContentsMargins(14, 16, 14, 14)
         layout.setSpacing(12)
+        self._sidebar_layout = layout
 
         brand_row = QWidget(sidebar)
         brand_row.setObjectName("BrandRow")
@@ -277,11 +281,13 @@ class MainWindow(QMainWindow):
         subtitle.setWordWrap(True)
         copy_layout.addWidget(brand)
         copy_layout.addWidget(subtitle)
+        self._brand_copy = copy
         brand_layout.addWidget(tile, 0, Qt.AlignmentFlag.AlignVCenter)
         brand_layout.addWidget(copy, 1)
 
         nav_label = QLabel("模块", sidebar)
         nav_label.setObjectName("NavLabel")
+        self._nav_label = nav_label
 
         self.module_list = QListWidget(sidebar)
         self.module_list.setObjectName("ModuleList")
@@ -311,6 +317,7 @@ class MainWindow(QMainWindow):
         info_body.setWordWrap(True)
         info_layout.addWidget(info_title)
         info_layout.addWidget(info_body)
+        self._sidebar_info = info
 
         layout.addWidget(brand_row)
         layout.addWidget(nav_label)
@@ -335,6 +342,12 @@ class MainWindow(QMainWindow):
         chrome_layout = QHBoxLayout(chrome)
         chrome_layout.setContentsMargins(4, 0, 4, 0)
         chrome_layout.setSpacing(8)
+        self.sidebar_toggle = QToolButton(chrome)
+        self.sidebar_toggle.setObjectName("ShellNavToggle")
+        self.sidebar_toggle.setText("收起模块")
+        self.sidebar_toggle.setToolTip("隐藏左侧模块名称，释放正文宽度")
+        self.sidebar_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self.sidebar_toggle.clicked.connect(self.toggle_sidebar)
         breadcrumb = QLabel("本地机械设计工作台 / 螺栓连接", chrome)
         breadcrumb.setObjectName("WorkspaceBreadcrumb")
         breadcrumb.setSizePolicy(
@@ -342,6 +355,7 @@ class MainWindow(QMainWindow):
         )
         run_state = QLabel("本地运行", chrome)
         run_state.setObjectName("WorkspaceRunState")
+        chrome_layout.addWidget(self.sidebar_toggle, 0, Qt.AlignmentFlag.AlignVCenter)
         chrome_layout.addWidget(breadcrumb, 1)
         chrome_layout.addWidget(run_state, 0, Qt.AlignmentFlag.AlignVCenter)
         self._workspace_breadcrumb = breadcrumb
@@ -356,6 +370,52 @@ class MainWindow(QMainWindow):
         total = max(self.splitter.size().width(), 1)
         rest = max(total - spacing.sidebar_width, 1)
         self.splitter.setSizes([spacing.sidebar_width, rest])
+
+    def is_sidebar_collapsed(self) -> bool:
+        """Return whether the shell shows the compact numbered module rail."""
+        return self._sidebar_collapsed
+
+    def toggle_sidebar(self) -> None:
+        self.set_sidebar_collapsed(not self._sidebar_collapsed)
+
+    def set_sidebar_collapsed(self, collapsed: bool) -> None:
+        """Switch between full module navigation and a compact numbered rail."""
+        collapsed = bool(collapsed)
+        if collapsed == self._sidebar_collapsed:
+            return
+        spacing = cloud_porcelain_spacing()
+        if collapsed:
+            self._expanded_sidebar_width = max(
+                spacing.sidebar_min,
+                min(self.sidebar.width(), spacing.sidebar_max),
+            )
+            self._brand_copy.hide()
+            self._nav_label.hide()
+            self._sidebar_info.hide()
+            self._sidebar_layout.setContentsMargins(8, 10, 8, 10)
+            self._sidebar_layout.setSpacing(8)
+            self.sidebar.setMinimumWidth(spacing.sidebar_collapsed)
+            self.sidebar.setMaximumWidth(spacing.sidebar_collapsed)
+            self.splitter.setSizes(
+                [spacing.sidebar_collapsed, max(self.splitter.width() - spacing.sidebar_collapsed, 1)]
+            )
+            self.sidebar_toggle.setText("展开模块")
+            self.sidebar_toggle.setToolTip("展开左侧功能模块")
+        else:
+            self.sidebar.setMinimumWidth(spacing.sidebar_min)
+            self.sidebar.setMaximumWidth(spacing.sidebar_max)
+            self._sidebar_layout.setContentsMargins(14, 16, 14, 14)
+            self._sidebar_layout.setSpacing(12)
+            self._brand_copy.show()
+            self._nav_label.show()
+            self._sidebar_info.show()
+            target = max(spacing.sidebar_min, min(self._expanded_sidebar_width, spacing.sidebar_max))
+            self.splitter.setSizes([target, max(self.splitter.width() - target, 1)])
+            self.sidebar_toggle.setText("收起模块")
+            self.sidebar_toggle.setToolTip("隐藏左侧模块名称，释放正文宽度")
+        self._sidebar_collapsed = collapsed
+        self.module_list.viewport().update()
+        self._sync_shell_chrome()
 
     def _update_workspace_chrome(self, index: int) -> None:
         if index < 0 or index >= len(self._page_factories):

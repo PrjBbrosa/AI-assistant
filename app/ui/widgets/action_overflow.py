@@ -223,7 +223,10 @@ class ActionOverflowController(QObject):
         inset = (margins.left() + margins.right()) if margins is not None else 32
         gap = layout.spacing() if layout is not None else 12
         inner = max(0, self._header.width() - inset)
-        title_reserve = min(max(168, inner // 4), 280)
+        # The title/subtitle is operational context, not decorative copy.  Keep
+        # enough width for a two-line Chinese subtitle before exposing lower-
+        # priority actions; those actions remain available through “更多”.
+        title_reserve = min(max(300, inner // 3), 440)
         if layout is not None:
             for index in range(layout.count()):
                 widget = layout.itemAt(index).widget()

@@ -136,7 +136,7 @@ _STYLE_TEMPLATE = """
             background-color: transparent;
             color: ${ink_primary};
             font-family: ${font_family};
-            font-size: 10pt;
+            font-size: 11pt;
         }
         QMainWindow {
             background-color: ${canvas_base};
@@ -161,19 +161,19 @@ _STYLE_TEMPLATE = """
             padding: 0px;
         }
         QLabel#BrandTitle {
-            font-size: 13px;
+            font-size: 14px;
             font-weight: 700;
             color: ${ink_primary};
             background: transparent;
         }
         QLabel#BrandSubtitle {
             color: ${ink_muted};
-            font-size: 10px;
+            font-size: 11px;
             background: transparent;
         }
         QLabel#NavLabel {
             color: ${ink_quiet};
-            font-size: 9px;
+            font-size: 10px;
             font-weight: 700;
             background: transparent;
             padding: 2px 2px 0px 2px;
@@ -184,13 +184,13 @@ _STYLE_TEMPLATE = """
             border-radius: ${radius_panel}px;
         }
         QLabel#SidebarInfoTitle {
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 700;
             color: ${ink_primary};
             background: transparent;
         }
         QLabel#SidebarInfoBody {
-            font-size: 10px;
+            font-size: 11px;
             color: ${ink_muted};
             background: transparent;
         }
@@ -204,12 +204,12 @@ _STYLE_TEMPLATE = """
         }
         QLabel#WorkspaceBreadcrumb {
             color: ${ink_muted};
-            font-size: 11px;
+            font-size: 12px;
             background: transparent;
         }
         QLabel#WorkspaceRunState {
             color: ${ink_muted};
-            font-size: 10px;
+            font-size: 11px;
             background-color: ${surface_glass_soft};
             border: 1px solid ${line_structural};
             border-radius: ${radius_badge}px;
@@ -400,7 +400,7 @@ _STYLE_TEMPLATE = """
             font-weight: 700;
         }
         QLabel#SectionTitle {
-            font-size: 16px;
+            font-size: 17px;
             font-weight: 700;
             color: ${ink_primary};
             background: transparent;
@@ -424,14 +424,14 @@ _STYLE_TEMPLATE = """
             background: transparent;
         }
         QLabel#SubSectionTitle {
-            font-size: 13px;
+            font-size: 14px;
             font-weight: 700;
             color: ${ink_primary};
             background: transparent;
         }
         QLabel#SectionHint {
             color: ${ink_muted};
-            font-size: 12px;
+            font-size: 13px;
             background: transparent;
         }
         QLabel#DerivedValue {
@@ -467,7 +467,7 @@ _STYLE_TEMPLATE = """
             background-color: ${surface_field};
             border: 1px solid ${line_structural};
             border-radius: ${radius_small}px;
-            padding: 6px 10px;
+            padding: 5px 9px;
             min-height: 22px;
             selection-background-color: ${accent_soft};
             selection-color: ${accent_ink};
@@ -484,7 +484,7 @@ _STYLE_TEMPLATE = """
                the 1px rest border. Do not replace this with a 1px accent-only
                border-color change. */
             border: 4px solid ${focus_ring};
-            padding: 3px 7px;
+            padding: 2px 6px;
         }
         QLineEdit#InputField[fieldError="true"] {
             border: 1px solid ${input_error_fg};
@@ -529,7 +529,7 @@ _STYLE_TEMPLATE = """
             background-color: ${surface_field};
             border: 1px solid ${line_structural};
             border-radius: ${radius_small}px;
-            padding: 6px 10px;
+            padding: 5px 9px;
             min-height: 22px;
         }
         QComboBox:hover {
@@ -538,7 +538,7 @@ _STYLE_TEMPLATE = """
         QComboBox:focus, QComboBox:on {
             /* Same Qt-capable focus ring as InputField; see comment there. */
             border: 4px solid ${focus_ring};
-            padding: 3px 7px;
+            padding: 2px 6px;
         }
         QComboBox[fieldError="true"] {
             border: 1px solid ${input_error_fg};
@@ -620,7 +620,7 @@ _STYLE_TEMPLATE = """
             color: ${ink_primary};
             border: 1px solid ${line_structural};
             border-radius: ${radius_control}px;
-            padding: 8px 12px;
+            padding: 6px 10px;
             font-weight: 600;
         }
         QPushButton:hover {
@@ -981,7 +981,46 @@ _STYLE_TEMPLATE = """
             border: none;
             border-right: 1px solid ${line_structural};
             border-bottom: 1px solid ${line_structural};
-            padding: 6px 8px;
+            padding: 5px 7px;
+        }
+        QToolButton#ShellNavToggle {
+            background-color: ${surface_glass_strong};
+            color: ${ink_primary};
+            border: 1px solid ${line_structural};
+            border-radius: ${radius_small}px;
+            padding: 4px 8px;
+            font-weight: 600;
+        }
+        QToolButton#ShellNavToggle:hover {
+            border-color: ${secondary};
+            background-color: ${surface_glass};
+        }
+        QFrame#ChartToolbar, QToolBar#ChartToolbar {
+            background-color: ${surface_glass_strong};
+            border: 1px solid ${line_structural};
+            border-radius: ${radius_small}px;
+        }
+        QLabel#ChartGestureHint {
+            color: ${ink_muted};
+            font-size: 11px;
+            padding-left: 4px;
+        }
+        QLabel#ChartReadout {
+            color: ${secondary};
+            font-size: 11px;
+            font-weight: 600;
+        }
+        QToolButton#ChartToolButton {
+            background-color: ${surface_field};
+            color: ${ink_primary};
+            border: 1px solid ${line_structural};
+            border-radius: 6px;
+            padding: 2px 7px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        QToolButton#ChartToolButton:hover {
+            border-color: ${accent};
         }
         QLabel#PassBadge {
             background-color: ${pass_bg};

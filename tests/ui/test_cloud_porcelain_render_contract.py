@@ -37,7 +37,7 @@ from tools.render_cloud_porcelain_matrix import (
 )
 
 
-SUPPORTED_SIZES = ((1180, 720), (1400, 860))
+SUPPORTED_SIZES = ((1024, 640), (1400, 860))
 OLD_SIDEBAR_BEIGE = QColor("#EEE7DE")
 INSUFFICIENT_ACCENT = QColor("#C76C4D")
 GREEN_READY = QColor("#2B715C")
@@ -64,14 +64,14 @@ def _map_px(image, widget, x: int, y: int) -> tuple[int, int, int]:
 def test_supported_window_sizes(app):
     window = MainWindow()
     try:
-        assert window.minimumWidth() == 1180
-        assert window.minimumHeight() == 720
+        assert window.minimumWidth() == 1024
+        assert window.minimumHeight() == 640
         _show(app, window, 1400, 860)
         assert window.width() == 1400
         assert window.height() == 860
-        _show(app, window, 1180, 720)
-        assert window.width() == 1180
-        assert window.height() == 720
+        _show(app, window, 1024, 640)
+        assert window.width() == 1024
+        assert window.height() == 640
     finally:
         window.close()
 
@@ -306,7 +306,7 @@ def test_selected_module_uses_accent_soft_not_green_ready_dot(app):
         fill = _map_px(
             image,
             module_list,
-            rect.left() + min(56, max(36, rect.width() // 2)),
+            rect.right() - 20,
             rect.center().y(),
         )
         accent_soft = rgb_tuple(qcolor("accent_soft"))

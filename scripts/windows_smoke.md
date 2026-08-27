@@ -1,6 +1,6 @@
 # Windows desktop smoke
 
-GitHub Actions 的 Windows runner 会执行 PyInstaller onedir 构建、校验 `build-info.json` 并启动 EXE 10 秒，覆盖“能构建且不会立即退出”的浅层门禁。它不操作真实桌面 UI，也不替代本清单的七模块人工验收。七个计算页的 offscreen 工作流 smoke 见 `tests/ui/test_module_workflow_smoke.py`。
+GitHub Actions 的 Windows runner 会执行 PyInstaller onedir 构建、校验 `build-info.json`，再通过 `--fatigue-package-smoke` 实际加载疲劳页面、SciPy 计算和 PDF 报告链，最后启动 EXE 10 秒。它不操作真实桌面 UI，也不替代本清单的八模块人工验收。计算页的 offscreen 工作流 smoke 见 `tests/ui/test_module_workflow_smoke.py` 和 `tests/ui/test_fatigue_reliability_page.py`。
 
 只有对应 CI run 实际通过时，才能声称该提交通过了自动 Windows 浅层 smoke；本地未运行不能据此声称 Windows 已通过。
 
@@ -31,10 +31,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build_exe.ps1
 ## 2. 启动
 
 - 从产物目录启动 exe（不要只靠开发态 `python app\main.py` 代替本次打包验收）
-- 主窗口能出来，侧栏可见 7 个计算模块 +「材料与标准库（即将推出）」占位项
+- 主窗口能出来，侧栏可见 8 个计算模块，第 8 项为「疲劳强度与可靠性」
 - 最小窗口约为 `1180×720`，不要在启动后立即崩、白屏或无法点侧栏
 
-## 3. 七个计算模块各走一遍最小路径
+## 3. 八个计算模块各走一遍最小路径
 
 对下列每个模块重复：切到该页 → 加载测试案例/样例 → 执行校核或计算 → 确认有可见结果（不是半成功残留）→ 保存输入条件 → 导出三种格式。
 
@@ -47,8 +47,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\build_exe.ps1
 | 赫兹应力 | `examples/hertz_case_01.json` 或「测试案例 1」 | 执行校核 |
 | 蜗轮蜗杆设计 | `examples/worm_case_01.json` 或「测试案例 1」 | 执行计算 |
 | 缓冲块吸能仿真 | `examples/buffer_energy_input_conditions.json`；曲线可用 `examples/buffer_energy_case_01.csv` | 导入曲线后执行仿真 |
-
-材料与标准库是占位页，不要求计算、保存或导出。
+| 疲劳强度与可靠性 | 页内「测试案例 1」；也可导入 `examples/fatigue_sn_case_01.csv` 与 `examples/fatigue_spectrum_case_01.csv` | 执行预校核 |
 
 每模块还要确认：
 
@@ -72,5 +71,6 @@ git SHA:
 赫兹应力: 加载 / 计算 / 保存 / PDF / DOCX / TXT
 蜗轮蜗杆设计: 加载 / 计算 / 保存 / PDF / DOCX / TXT
 缓冲块吸能仿真: 加载 / 计算 / 保存 / PDF / DOCX / TXT
+疲劳强度与可靠性: 导入 / 拟合 / 计算 / 保存 / PDF / DOCX / TXT
 阻塞问题:
 ```

@@ -132,6 +132,11 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($metadata.build_id)) { throw "Missing build_id" }
           if ([string]::IsNullOrWhiteSpace($metadata.git_commit)) { throw "Missing git_commit" }
 
+          $fatigueProbe = Start-Process -FilePath $exePath -ArgumentList "--fatigue-package-smoke" -Wait -PassThru
+          if ($fatigueProbe.ExitCode -ne 0) {
+            throw "Packaged fatigue/SciPy/PDF smoke failed with code $($fatigueProbe.ExitCode)"
+          }
+
           $process = Start-Process -FilePath $exePath -PassThru
           try {
             Start-Sleep -Seconds 10

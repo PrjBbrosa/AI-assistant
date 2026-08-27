@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QWidget
 
 from app.ui.design_tokens import qcolor, qpen
 from app.ui.fonts import make_ui_font
+from app.ui.widgets.interactive_chart import ChartSample, InteractiveChartWidget
 
 
 GRID_ALPHA = 0.55
@@ -25,7 +26,7 @@ def _token(name: str, alpha: int | float | None = None) -> QColor:
     return color
 
 
-class BufferEnergyCurveWidget(QWidget):
+class BufferEnergyCurveWidget(InteractiveChartWidget):
     """Draw loading/unloading F-x curves with impact annotations."""
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
@@ -36,7 +37,7 @@ class BufferEnergyCurveWidget(QWidget):
         self._available_stroke_mm = 0.0
         self._allowable_peak_n = 0.0
         self._bottom_out = False
-        self.setMinimumHeight(260)
+        self.setMinimumHeight(300)
         self.setFont(make_ui_font(12))
 
     def set_curves(
@@ -74,8 +75,9 @@ class BufferEnergyCurveWidget(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.fillRect(self.rect(), _token("surface_glass_soft"))
+        self.begin_interactive_paint()
 
-        plot = QRectF(self.rect()).adjusted(54, 18, -18, -38)
+        plot = QRectF(self.rect()).adjusted(54, 44, -18, -38)
         if plot.width() <= 8 or plot.height() <= 8:
             return
 
@@ -84,25 +86,39 @@ class BufferEnergyCurveWidget(QWidget):
             painter.drawText(plot, Qt.AlignmentFlag.AlignCenter, "导入曲线后显示 F-x 滞回曲线")
             return
 
-        max_x = max(
+        auto_max_x = max(
             1.0,
             self._available_stroke_mm,
             self._x_max_mm,
             *(x for x, _force in self._loading),
             *(x for x, _force in self._unloading),
         )
-        max_f = max(
+        auto_max_f = max(
             1.0,
             self._allowable_peak_n,
             *(force for _x, force in self._loading),
             *(force for _x, force in self._unloading),
         )
-        max_f *= 1.08
+        auto_max_f *= 1.08
+        samples = [
+            ChartSample(x, force, f"加载 · x={x:.4g} mm · F={force:.5g} N")
+            for x, force in self._loading
+        ] + [
+            ChartSample(x, force, f"卸载 · x={x:.4g} mm · F={force:.5g} N")
+            for x, force in self._unloading
+        ]
+        _x_min, max_x, _y_min, max_f = self.prepare_plot_context(
+            "energy",
+            plot,
+            (0.0, auto_max_x),
+            (0.0, auto_max_f),
+            samples=samples,
+            x_label="压缩位移 x [mm]",
+            y_label="反力 F [N]",
+        )
 
         def to_px(x_mm: float, force_n: float) -> QPointF:
-            x = plot.left() + x_mm / max_x * plot.width()
-            y = plot.bottom() - force_n / max_f * plot.height()
-            return QPointF(x, y)
+            return self.map_data("energy", x_mm, force_n)
 
         self._draw_grid(painter, plot)
 
@@ -122,6 +138,7 @@ class BufferEnergyCurveWidget(QWidget):
         self._draw_limits(painter, plot, to_px)
         self._draw_marker(painter, to_px)
         self._draw_labels(painter, plot, max_x, max_f)
+        self.draw_interaction_overlay(painter)
 
     def _draw_grid(self, painter: QPainter, plot: QRectF) -> None:
         painter.setPen(QPen(_token("line_structural", GRID_ALPHA), 1))

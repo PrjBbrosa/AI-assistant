@@ -1,4 +1,4 @@
-# Exact versions importable in the project Python 3.12 venv (checked 2026-08-23).
+# Exact versions importable in the project Python 3.12 venv (checked 2026-08-26).
 # Direct production packages plus pytest only — not a full pip freeze.
 #
 # Install (same as CI):
@@ -14,4 +14,6 @@ pyinstaller==6.19.0
 reportlab==4.4.10
 matplotlib==3.10.8
 openpyxl==3.1.5
+numpy==2.4.4
+scipy==1.16.1
 pytest==9.0.2

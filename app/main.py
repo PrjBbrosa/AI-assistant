@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -17,10 +18,44 @@ from app.ui.icons import app_icon_path, load_app_icon
 from app.ui.theme import apply_theme
 
 
+FATIGUE_PACKAGE_SMOKE_ARG = "--fatigue-package-smoke"
+
+
+def _run_fatigue_package_smoke(app: QApplication) -> int:
+    """Exercise the lazy fatigue UI, SciPy calculation, and PDF stack."""
+    from app.ui.pages.fatigue_reliability_page import (  # noqa: PLC0415
+        FatigueReliabilityPage,
+    )
+    from app.ui.report_pdf_fatigue import generate_fatigue_report  # noqa: PLC0415
+
+    page = FatigueReliabilityPage()
+    try:
+        page.mc_samples_edit.setText("1000")
+        page.bootstrap_samples_edit.setText("0")
+        payload = page._build_payload()
+        result = page._calculate_fatigue(payload)
+        if result.get("overall_status") not in {"pass", "fail"}:
+            return 2
+        with tempfile.TemporaryDirectory(prefix="fatigue-package-smoke-") as folder:
+            report_path = Path(folder) / "fatigue-smoke.pdf"
+            generate_fatigue_report(report_path, payload, result)
+            if not report_path.read_bytes().startswith(b"%PDF"):
+                return 3
+        app.processEvents()
+        return 0
+    finally:
+        page.deleteLater()
+
+
 def main() -> int:
-    app = QApplication(sys.argv)
+    package_smoke = FATIGUE_PACKAGE_SMOKE_ARG in sys.argv
+    qt_argv = [arg for arg in sys.argv if arg != FATIGUE_PACKAGE_SMOKE_ARG]
+    app = QApplication(qt_argv)
     app.setApplicationName("Local Engineering Assistant")
     app.setOrganizationName("Personal")
+
+    if package_smoke:
+        return _run_fatigue_package_smoke(app)
 
     # Show splash as early as possible — before any heavy imports.
     splash_pixmap = QPixmap(str(app_icon_path()))

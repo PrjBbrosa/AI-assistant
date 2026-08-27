@@ -87,6 +87,7 @@ class CloudPorcelainSpacing:
     sidebar_width: int = 228
     sidebar_min: int = 212
     sidebar_max: int = 280
+    sidebar_collapsed: int = 56
     card_padding: int = 16
     subcard_padding: int = 12
 
@@ -96,10 +97,10 @@ class CloudPorcelainControls:
     """Spec §6.6 control heights and HelpButton geometry contract."""
 
     module_item_height: int = 40
-    header_min_height: int = 78
-    button_height: int = 32
-    primary_button_height: int = 34
-    input_height: int = 36
+    header_min_height: int = 64
+    button_height: int = 30
+    primary_button_height: int = 32
+    input_height: int = 34
     icon_hit: int = 32
     icon_hit_min: int = 28
     help_button_outer: int = 24

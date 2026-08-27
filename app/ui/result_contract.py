@@ -9,6 +9,7 @@ from typing import Any, Literal
 from app.ui.model_scope import (
     BOLT_SCOPE,
     BUFFER_SCOPE,
+    FATIGUE_SCOPE,
     HERTZ_ALLOWABLE_SOURCE_NOTE,
     HERTZ_SCOPE,
     INTERFERENCE_SCOPE,
@@ -93,6 +94,14 @@ BUFFER_CHECK_LABELS: dict[str, str] = {
     "stroke_ok": "行程校核",
     "peak_force_ok": "峰值力校核",
     "energy_capacity_ok": "曲线能量容量校核",
+}
+
+FATIGUE_CHECK_LABELS: dict[str, str] = {
+    "data_adequacy": "试验数据充分性",
+    "condition_compatibility": "试验/服役条件一致性",
+    "extrapolation": "实测范围覆盖",
+    "damage": "目标寿命 Miner 损伤",
+    "reliability": "目标寿命可靠度",
 }
 
 BOLT_CHECK_LABELS: dict[str, str] = {
@@ -1467,6 +1476,99 @@ def _check_status_from_raw(value: Any) -> CheckStatus:
     if value is False:
         return "fail"
     return "not_checked"
+
+
+def from_fatigue(
+    result: dict[str, Any],
+    payload: dict[str, Any] | None = None,
+) -> ResultViewModel:
+    """Build the fatigue/reliability UI and report view model."""
+    checks_raw = result.get("checks")
+    if not isinstance(checks_raw, dict):
+        checks_raw = {}
+    fit = result.get("fit") if isinstance(result.get("fit"), dict) else {}
+    damage = result.get("damage") if isinstance(result.get("damage"), dict) else {}
+    reliability = (
+        result.get("reliability") if isinstance(result.get("reliability"), dict) else {}
+    )
+    reliability_input: dict[str, Any] = {}
+    if isinstance(payload, dict) and isinstance(payload.get("reliability"), dict):
+        reliability_input = payload["reliability"]
+    overall_raw = str(result.get("overall_status", "incomplete"))
+    overall_status: OverallStatus = (
+        overall_raw if overall_raw in {"pass", "fail", "incomplete"} else "incomplete"
+    )  # type: ignore[assignment]
+    title = overall_title_zh(overall_status, FATIGUE_SCOPE.model_level)
+    if overall_status == "pass":
+        summary = "目标谱寿命的设计曲线损伤与概率可靠度均满足要求。"
+    elif overall_status == "fail":
+        summary = "完整模型下目标 Miner 损伤或可靠度不满足要求。"
+    else:
+        summary = "数据、条件或实测范围不足，当前结果不能形成通过结论。"
+    summary += FATIGUE_SCOPE.applicability
+    actual_by_id = {
+        "damage": damage.get("target_damage"),
+        "reliability": reliability.get("reliability"),
+    }
+    limit_by_id = {
+        "damage": 1.0,
+        "reliability": reliability_input.get("required_reliability"),
+    }
+    unit_by_id = {"damage": "-", "reliability": "-"}
+    check_views: list[CheckView] = []
+    for check_id, label in FATIGUE_CHECK_LABELS.items():
+        raw_status = str(checks_raw.get(check_id, "not_checked"))
+        status: CheckStatus = (
+            raw_status
+            if raw_status in {"pass", "fail", "incomplete", "not_checked", "reference_only"}
+            else "not_checked"
+        )  # type: ignore[assignment]
+        check_views.append(
+            CheckView(
+                id=check_id,
+                label_zh=label,
+                status=status,
+                actual=_as_float(actual_by_id.get(check_id)),
+                limit=_as_float(limit_by_id.get(check_id)),
+                unit=unit_by_id.get(check_id, ""),
+                model_level=FATIGUE_SCOPE.model_level,
+                source_kind="derived",
+            )
+        )
+    metrics: list[MetricView] = []
+    if fit.get("a") is not None:
+        metrics.append(MetricView("S-N 截距 a", f"{float(fit['a']):.5g}"))
+    if fit.get("b") is not None:
+        metrics.append(MetricView("S-N 斜率 b", f"{float(fit['b']):.5g}"))
+    if fit.get("scatter_log10_n") is not None:
+        metrics.append(MetricView("lgN 散差 s", f"{float(fit['scatter_log10_n']):.5g}"))
+    if damage.get("target_damage") is not None:
+        metrics.append(MetricView("目标 Miner 损伤", f"{float(damage['target_damage']):.5g}"))
+    if reliability.get("reliability") is not None:
+        metrics.append(MetricView("目标可靠度 R", f"{float(reliability['reliability']):.5%}"))
+    if reliability.get("pf_ppm") is not None:
+        metrics.append(MetricView("目标寿命前失效概率 Pf", f"{float(reliability['pf_ppm']):.6g}", "ppm"))
+    quantiles = reliability.get("life_quantiles_blocks")
+    if isinstance(quantiles, dict) and quantiles.get("Ps90") is not None:
+        metrics.append(MetricView("存活率 Ps=90% 对应寿命", f"{float(quantiles['Ps90']):.6g}", "谱块"))
+    warnings = tuple(str(item) for item in result.get("warnings", []) if item is not None)
+    return ResultViewModel(
+        overall_status=overall_status,
+        title_zh=title,
+        summary_zh=summary,
+        checks=tuple(check_views),
+        metrics=tuple(metrics),
+        warnings=warnings,
+        model_scope=FATIGUE_SCOPE,
+        source_notes=(
+            FATIGUE_SCOPE.applicability,
+            "主拟合采用包含 runout 右删失项的对数正态极大似然；MRR 仅作对照。",
+        ),
+        recommendations=tuple(
+            str(item) for item in result.get("warnings", []) if item is not None
+        ),
+        verdict_subtitle_zh=f"模型等级: {FATIGUE_SCOPE.model_level}",
+    )
 
 
 def _tapped_source_notes(

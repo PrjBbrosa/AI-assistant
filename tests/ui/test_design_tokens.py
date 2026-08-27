@@ -131,10 +131,10 @@ def test_geometry_tokens_match_spec() -> None:
     assert spacing.subcard_padding == 12
 
     assert controls.module_item_height == 40
-    assert controls.header_min_height == 78
-    assert controls.button_height == 32
-    assert controls.primary_button_height == 34
-    assert controls.input_height == 36
+    assert controls.header_min_height == 64
+    assert controls.button_height == 30
+    assert controls.primary_button_height == 32
+    assert controls.input_height == 34
     assert controls.icon_hit == 32
     assert controls.icon_hit_min == 28
     assert controls.help_button_outer == 24

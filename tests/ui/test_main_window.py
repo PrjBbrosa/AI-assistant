@@ -14,7 +14,7 @@ from app.ui.widgets.navigation_delegate import (
 )
 
 
-OFFICIAL_MODULE_COUNT = 7
+OFFICIAL_MODULE_COUNT = 8
 
 
 @pytest.fixture(scope="module")
@@ -27,8 +27,8 @@ def app():
 def test_main_window_minimum_supported_size(app):
     window = MainWindow()
     try:
-        assert window.minimumWidth() == 1180
-        assert window.minimumHeight() == 720
+        assert window.minimumWidth() == 1024
+        assert window.minimumHeight() == 640
     finally:
         window.close()
 
@@ -76,7 +76,7 @@ def _module_paint_option(widget: QListWidget, item_index: int):
 
 
 def _assert_official_module_names_are_not_elided(widget: QListWidget) -> None:
-    """Assert the 7 official module names (text after ``N. ``) fit the tile layout."""
+    """Assert the official module names (text after ``N. ``) fit the tile layout."""
     delegate = widget.itemDelegate()
     assert isinstance(delegate, ModuleNavigationDelegate)
     for item_index in range(min(OFFICIAL_MODULE_COUNT, widget.count())):
@@ -91,7 +91,7 @@ def _assert_official_module_names_are_not_elided(widget: QListWidget) -> None:
 
 
 def _assert_primary_module_names_are_identifiable(widget: QListWidget) -> None:
-    """At 1180 the official names stay readable; the unfinished library may elide."""
+    """At 1180 every official module name stays identifiable."""
     delegate = widget.itemDelegate()
     assert isinstance(delegate, ModuleNavigationDelegate)
     for item_index in range(min(OFFICIAL_MODULE_COUNT, widget.count())):
@@ -103,11 +103,6 @@ def _assert_primary_module_names_are_identifiable(widget: QListWidget) -> None:
         assert rendered.startswith(name[:2]), (
             f"primary module {name!r} is not identifiable as {rendered!r}"
         )
-    if widget.count() > OFFICIAL_MODULE_COUNT:
-        placeholder = widget.item(OFFICIAL_MODULE_COUNT)
-        assert placeholder.toolTip() == placeholder.text()
-        assert "材料与标准库" in placeholder.text()
-        assert "即将推出" in placeholder.text()
 
 
 def _assert_list_has_no_hidden_horizontal_overflow(
@@ -165,7 +160,7 @@ def test_supported_size_navigation_has_no_horizontal_overflow(app):
                 chapter_list.horizontalScrollBarPolicy()
                 == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
             )
-            assert chapter_list.viewport().width() >= 220
+            assert chapter_list.viewport().width() >= 190
             _assert_list_has_no_hidden_horizontal_overflow(app, chapter_list)
             _assert_list_labels_are_not_elided(chapter_list)
 
@@ -195,13 +190,29 @@ def test_official_module_names_do_not_elide_at_default_size(app):
         window.close()
 
 
-def test_materials_library_sidebar_is_marked_unfinished(app):
+def test_fatigue_reliability_replaces_materials_placeholder(app):
     window = MainWindow()
     try:
         items = [
             window.module_list.item(i).text()
             for i in range(window.module_list.count())
         ]
-        assert any("材料与标准库" in text and "即将推出" in text for text in items)
+        assert any("疲劳强度与可靠性" in text for text in items)
+        assert not any("材料与标准库" in text for text in items)
+    finally:
+        window.close()
+
+
+def test_fatigue_sidebar_constructs_real_seven_step_page(app):
+    from app.ui.pages.fatigue_reliability_page import FatigueReliabilityPage
+
+    window = MainWindow()
+    try:
+        window.module_list.setCurrentRow(7)
+        app.processEvents()
+        page = window.stack.widget(7)
+        assert isinstance(page, FatigueReliabilityPage)
+        assert page.chapter_list.count() == 7
+        assert window.stack.currentWidget() is page
     finally:
         window.close()

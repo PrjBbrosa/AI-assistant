@@ -10,6 +10,7 @@ from PySide6.QtWidgets import QWidget
 
 from app.ui.design_tokens import qcolor, qpen
 from app.ui.fonts import make_ui_font
+from app.ui.widgets.interactive_chart import ChartSample, InteractiveChartWidget
 
 
 GRID_ALPHA = 0.55
@@ -31,14 +32,14 @@ def _token(name: str, alpha: int | float | None = None) -> QColor:
     return color
 
 
-class BufferResponseCurveWidget(QWidget):
+class BufferResponseCurveWidget(InteractiveChartWidget):
     """Draw x(t), v(t), a(t), or F(t) from reconstructed time response."""
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._response: Optional[dict[str, Any]] = None
         self._variable = "x"
-        self.setMinimumHeight(250)
+        self.setMinimumHeight(300)
         self.setFont(make_ui_font(12))
 
     def set_response(self, response: Optional[dict[str, Any]]) -> None:
@@ -49,6 +50,7 @@ class BufferResponseCurveWidget(QWidget):
         if variable not in _VARIABLES:
             raise ValueError(f"未知时域变量: {variable!r}")
         self._variable = variable
+        self.reset_view()
         self.update()
 
     def variable(self) -> str:
@@ -62,8 +64,9 @@ class BufferResponseCurveWidget(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.fillRect(self.rect(), _token("surface_glass_soft"))
+        self.begin_interactive_paint()
 
-        plot = QRectF(self.rect()).adjusted(58, 34, -18, -38)
+        plot = QRectF(self.rect()).adjusted(58, 58, -18, -38)
         if plot.width() <= 8 or plot.height() <= 8:
             return
 
@@ -81,22 +84,33 @@ class BufferResponseCurveWidget(QWidget):
             painter.drawText(plot, Qt.AlignmentFlag.AlignCenter, "响应数据不足")
             return
 
-        t_min = times[0]
-        t_max = max(times[-1], t_min + 1e-9)
-        y_min = min(values)
-        y_max = max(values)
-        if abs(y_max - y_min) < 1e-12:
-            y_min -= 0.5
-            y_max += 0.5
+        auto_t_min = times[0]
+        auto_t_max = max(times[-1], auto_t_min + 1e-9)
+        auto_y_min = min(values)
+        auto_y_max = max(values)
+        if abs(auto_y_max - auto_y_min) < 1e-12:
+            auto_y_min -= 0.5
+            auto_y_max += 0.5
         else:
-            pad = (y_max - y_min) * 0.10
-            y_min -= pad
-            y_max += pad
+            pad = (auto_y_max - auto_y_min) * 0.10
+            auto_y_min -= pad
+            auto_y_max += pad
+        samples = [
+            ChartSample(t_s, value, f"t={t_s:.6g} s · {axis_label}={value:.6g}")
+            for t_s, value in zip(times, values)
+        ]
+        t_min, t_max, y_min, y_max = self.prepare_plot_context(
+            f"response_{self._variable}",
+            plot,
+            (auto_t_min, auto_t_max),
+            (auto_y_min, auto_y_max),
+            samples=samples,
+            x_label="时间 t [s]",
+            y_label=axis_label,
+        )
 
         def to_px(t_s: float, value: float) -> QPointF:
-            x = plot.left() + (t_s - t_min) / (t_max - t_min) * plot.width()
-            y = plot.bottom() - (value - y_min) / (y_max - y_min) * plot.height()
-            return QPointF(x, y)
+            return self.map_data(f"response_{self._variable}", t_s, value)
 
         self._draw_grid(painter, plot, to_px, y_min, y_max)
         painter.setPen(QPen(_token("accent"), 2.0))
@@ -104,6 +118,7 @@ class BufferResponseCurveWidget(QWidget):
             painter.drawLine(to_px(times[index], values[index]), to_px(times[index + 1], values[index + 1]))
         self._draw_markers(painter, plot, times, values, to_px)
         self._draw_labels(painter, plot, axis_label, t_max, y_min, y_max)
+        self.draw_interaction_overlay(painter)
 
     def _draw_header(self, painter: QPainter) -> None:
         if self._response is None:
@@ -113,7 +128,7 @@ class BufferResponseCurveWidget(QWidget):
         total = float(self._response.get("duration_s", 0.0)) * 1000.0
         painter.setPen(qpen("ink_muted", 1.0))
         painter.drawText(
-            QRectF(self.rect()).adjusted(10, 6, -10, -4),
+            QRectF(self.rect()).adjusted(10, 38, -10, -4),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
             f"压缩 {compression:.2f} ms    回弹 {rebound:.2f} ms    总时长 {total:.2f} ms",
         )

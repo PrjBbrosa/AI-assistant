@@ -33,7 +33,7 @@ class WormPerformanceCurveWidgetTests(unittest.TestCase):
             current_index=1,
         )
 
-        self.assertEqual(widget.minimumHeight(), 300)
+        self.assertEqual(widget.minimumHeight(), 360)
         self.assertEqual(widget._current_index, 1)
         self.assertEqual(len(widget._load_factor), 3)
 

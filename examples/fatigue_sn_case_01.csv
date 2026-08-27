@@ -1,0 +1,17 @@
+specimen_id,level_id,condition_group,stress_amplitude_mpa,stress_mean_mpa,cycles,status,failure_mode
+100-1,S100,C1,100,0,820000,failure,section
+100-2,S100,C1,100,0,930000,failure,section
+100-3,S100,C1,100,0,1000000,failure,section
+100-4,S100,C1,100,0,1080000,failure,section
+100-5,S100,C1,100,0,1180000,failure,section
+100-R,S100,C1,100,0,1250000,runout,
+140-1,S140,C1,140,0,298834,failure,section
+140-2,S140,C1,140,0,338921,failure,section
+140-3,S140,C1,140,0,364431,failure,section
+140-4,S140,C1,140,0,393585,failure,section
+140-5,S140,C1,140,0,430029,failure,section
+200-1,S200,C1,200,0,102500,failure,section
+200-2,S200,C1,200,0,116250,failure,section
+200-3,S200,C1,200,0,125000,failure,section
+200-4,S200,C1,200,0,135000,failure,section
+200-5,S200,C1,200,0,147500,failure,section

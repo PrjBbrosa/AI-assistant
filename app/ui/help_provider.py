@@ -32,6 +32,7 @@ _MODULE_CATEGORY: Dict[str, str] = {
     "interference": "过盈 · 章节",
     "spline": "花键 · 章节",
     "worm": "蜗轮 · 章节",
+    "fatigue": "疲劳可靠性 · 章节",
 }
 
 _TERM_PREFIX_CATEGORY: Dict[str, str] = {
